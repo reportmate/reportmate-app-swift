@@ -120,8 +120,12 @@ environment variables and the Keychain always win over the inherited values.
 
 The header mirrors the web app: **Dashboard | Devices | Events** and then the
 reports as tabs (Installs, Applications, System, Management, Identity,
-Hardware, Peripherals, Security, Network). A narrow window collapses the
-reports into a Reports menu. ⌘1–⌘9 and ⌘0 jump between sections, ⌘K opens
+Hardware, Peripherals, Security, Network). Nothing else sits in the bar: the API
+endpoint lives in Settings, and a red or grey dot appears at the right only while
+the connection is failing or unset. A window too narrow for every tab collapses
+the reports into a Reports menu, and a device page always uses that menu so the
+device's own tabs lead. The app's accent is pinned to blue, like the web's links,
+whatever the Mac's accent colour setting. ⌘1–⌘9 and ⌘0 jump between sections, ⌘K opens
 device search, ⌘R refreshes, and the toolbar's platform toggle (Mac / Windows
 / All) applies everywhere the web platform filter does.
 
@@ -146,10 +150,10 @@ where the native counterpart lives.
 | `/applications/coverage` (usage telemetry collection health) | `Views/Reports/ApplicationCoverageView.swift` | Complete; reachable from the Usage report's Coverage button. |
 | `/system` (OS version filter widget, uptime and pending update buckets, Windows edition, activation and license widgets) | `Views/Reports/SystemReportView.swift` | Complete. |
 | `/management` (providers, enrollment status and type widgets, enrollment table) | `Views/Reports/ManagementReportView.swift` | Complete. |
-| `/identity` (directory and authentication donuts with drill-downs, admin accounts, admins and utilization reports) | `Views/Reports/IdentityReportView.swift` | Complete. |
+| `/identity` (directory and authentication donuts with drill-downs, admin accounts, admins and utilization reports) | `Views/Reports/IdentityReportView.swift` | Complete.  Reads FastAPI's raw row shape (the web's own API route flattens it), so directory, auth and user counts fill without the Next.js layer. |
 | `/hardware` (architecture, chip, processor, graphics, memory and storage widgets) | `Views/Reports/HardwareReportView.swift` | Complete. |
 | `/peripherals` (kind and printer widgets) | `Views/Reports/PeripheralsReportView.swift` | Complete. |
-| `/security` (eight status donuts, certificate search) | `Views/Reports/SecurityReportView.swift` | Complete. |
+| `/security` (eight status donuts, certificate search) | `Views/Reports/SecurityReportView.swift` | Complete.  The Protection figure counts only devices that report antivirus (Windows, or a Mac that names a product) and says so; the API sends `false` for a Mac otherwise, which would count every Mac as Disabled. |
 | `/network` (wireless state, networks, speed and signal widgets) | `Views/Reports/NetworkReportView.swift` | Complete. |
 | `/settings` (General, Inventory Mapping, Security Rules, Kiosk Displays, Maintenance) and `/settings/onboarding` | `Views/Settings/SettingsView.swift`, `FleetSettingsView.swift` | Complete. Theme and text size live under Appearance. |
 | `/live-installs` | — | Not ported: the page reads a Next.js route that no longer exists. |
