@@ -552,3 +552,43 @@ import Foundation
         #expect(LogsInfo.installedVersion(for: "mdm", platform: "macOS", installs: installs) == nil)
     }
 }
+
+@Suite struct ReportRowShapeTests {
+    @Test func identityReadsTheRawApiShape() {
+        let raw: JSONValue = [
+            "platform": "macOS",
+            "summary": ["totalUsers": 4, "adminUsers": 2, "currentlyLoggedIn": 1],
+            "directoryServices": ["activeDirectory": ["bound": false], "azureAd": ["joined": false]],
+            "platformSSOUsers": ["deviceRegistered": true, "registeredUserCount": 1],
+            "secureTokenUsers": ["tokenGrantedCount": 3, "tokenMissingCount": 1],
+            "users": [["username": "one"], ["username": "two"]],
+            "adminUsernames": ["one"],
+            "loggedInUsernames": ["two"],
+        ]
+        let row = IdentityReportRow(json: raw)
+        #expect(row.totalUsers == 4)
+        #expect(row.currentlyLoggedIn == 1)
+        #expect(row.secureTokenUsers == 3 && row.secureTokenMissing == 1)
+        #expect(row.enrollmentType == "Cloud Joined")
+        #expect(row.authMethod == "Platform SSO")
+        #expect(row.authLabel == "Modern")
+        #expect(row.usernames == ["one", "two"])
+
+        let domain: JSONValue = ["directoryServices": ["activeDirectory": ["bound": true, "domain": "corp.example"]], "domainTrust": ["trustStatus": "Healthy"], "windowsHello": ["statusDisplay": "Disabled (policy)"]]
+        let d = IdentityReportRow(json: domain)
+        #expect(d.enrollmentType == "Domain Joined")
+        #expect(d.trustLabel == "Trusted")
+        #expect(d.authLabel == "Legacy")
+
+        // The web route's flat shape still wins when present.
+        let flat: JSONValue = ["totalUsers": 9, "enrollmentType": "Unjoined", "authMethod": "Hello for Business"]
+        let f = IdentityReportRow(json: flat)
+        #expect(f.totalUsers == 9 && f.enrollmentType == "Unjoined" && f.authMethod == "Hello for Business")
+    }
+
+    @Test func platformFromTopLevelOperatingSystem() {
+        #expect(Platform.detect(device: ["operatingSystem": "macOS 26 Tahoe", "osVersion": "26.4"]) == .macOS)
+        #expect(Platform.detect(device: ["operatingSystem": "Windows 11 25H2"]) == .windows)
+        #expect(Platform.detect(device: ["serialNumber": "SAMPLE1"]) == .unknown)
+    }
+}
