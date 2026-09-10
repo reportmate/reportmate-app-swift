@@ -38,6 +38,26 @@ Build a disk image for distribution (`.build/app/ReportMate-<version>.dmg`):
 make app-dmg
 ```
 
+Build an installer package (`.build/app/ReportMate-<version>.pkg`). It installs the
+app into `/Applications` and its postinstall links the bundled command line tool to
+`/usr/local/bin/reportmateutil`:
+
+```bash
+make app-pkg
+```
+
+### The reportmateutil command line tool
+
+Every build fetches the latest `reportmateutil` release from
+[reportmate-cli](https://github.com/reportmate/reportmate-cli) (the universal
+macOS tarball) and places it at `ReportMate.app/Contents/Helpers/reportmateutil`, the way
+Managed Reports Runner.app carries `managedreportsrunner`. It lives under `Contents/Helpers`, the
+place for a bundled tool, beside the app's own executable in `Contents/MacOS`. With `--sign` the tool is
+signed with the hardened runtime before the app, so notarization covers it. Pin a
+release with `--cli-version=vYYYY.MM.DD.HHMM` (or `REPORTMATE_CLI_VERSION`), or
+skip the download with `--no-cli`. FleetMate and other tools look for the binary at
+that bundle path and at `/usr/local/bin/reportmateutil`.
+
 ## Releases
 
 A version tag (`vYYYY.MM.DD.HHMM`, or the bare version) runs `.github/workflows/release.yml`,
