@@ -2,16 +2,20 @@ import SwiftUI
 import ReportMateKit
 
 struct SettingsView: View {
+    @State private var fleet = FleetSettingsStore()
+
     var body: some View {
         TabView {
             ConnectionSettingsView()
                 .tabItem { Label("Connection", systemImage: "network") }
             AppearanceSettingsView()
                 .tabItem { Label("Appearance", systemImage: "textformat.size") }
-            FleetSettingsView()
-                .tabItem { Label("Fleet", systemImage: "slider.horizontal.3") }
+            ForEach(FleetSettingsView.Section.allCases) { section in
+                FleetSettingsView(section: section, store: fleet)
+                    .tabItem { Label(section.rawValue, systemImage: section.systemImage) }
+            }
         }
-        .frame(width: 820)
+        .frame(width: 880)
         .frame(minHeight: 520)
     }
 }
