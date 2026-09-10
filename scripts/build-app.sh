@@ -9,6 +9,16 @@ set -euo pipefail
 #   scripts/build-app.sh --open     build, then launch
 #   scripts/build-app.sh --sign     codesign with SIGNING_IDENTITY_APP from .env
 #   scripts/build-app.sh --dmg      also write .build/app/ReportMate-<version>.dmg
+#   scripts/build-app.sh --pkg      also write .build/app/ReportMate-<version>.pkg (installs to /Applications
+#                                   and links the bundled CLI into /usr/local/bin)
+#   scripts/build-app.sh --no-cli   skip bundling the reportmate CLI
+#   scripts/build-app.sh --cli-version=vYYYY.MM.DD.HHMM  pin the CLI release (default: latest)
+#
+# The reportmate CLI (reportmate/reportmate-cli) rides inside the bundle at
+# Contents/Helpers/reportmate, the way Managed Reports Runner.app carries
+# managedreportsrunner; the pkg postinstall puts it on PATH. It cannot sit in
+# Contents/MacOS: on a case-insensitive volume "reportmate" and the app's own
+# "ReportMate" executable are the same file.
 #
 # The Managed Reports Runner (the per-device client) is built by build.sh;
 # this script only produces the operator app.
@@ -28,6 +38,9 @@ CONFIG="release"
 OPEN=0
 SIGN=0
 DMG=0
+PKG=0
+CLI=1
+CLI_VERSION="${REPORTMATE_CLI_VERSION:-}"
 VERSION="${VERSION:-$(date +%Y.%m.%d.%H%M)}"
 for arg in "$@"; do
     case "$arg" in
@@ -35,6 +48,9 @@ for arg in "$@"; do
         --open) OPEN=1 ;;
         --sign) SIGN=1 ;;
         --dmg) DMG=1 ;;
+        --pkg) PKG=1 ;;
+        --no-cli) CLI=0 ;;
+        --cli-version=*) CLI_VERSION="${arg#--cli-version=}" ;;
         --version=*) VERSION="${arg#--version=}" ;;
     esac
 done
@@ -54,6 +70,25 @@ cp "$BIN" "$APP/Contents/MacOS/ReportMate"
 chmod +x "$APP/Contents/MacOS/ReportMate"
 sed -e "s|<string>0.1.0</string>|<string>$VERSION</string>|" Sources/ReportMateMac/Info.plist > "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
+
+if [ "$CLI" = "1" ]; then
+    ASSET="reportmate-universal-apple-darwin.tar.gz"
+    if [ -n "$CLI_VERSION" ]; then
+        CLI_URL="https://github.com/reportmate/reportmate-cli/releases/download/$CLI_VERSION/$ASSET"
+    else
+        CLI_URL="https://github.com/reportmate/reportmate-cli/releases/latest/download/$ASSET"
+    fi
+    CLI_TMP="$(mktemp -d)"
+    curl -fsSL --retry 3 -o "$CLI_TMP/$ASSET" "$CLI_URL"
+    tar -xzf "$CLI_TMP/$ASSET" -C "$CLI_TMP"
+    CLI_BIN="$(find "$CLI_TMP" -type f -name reportmate | head -1)"
+    [ -n "$CLI_BIN" ] || { echo "reportmate binary not found in $ASSET"; exit 1; }
+    mkdir -p "$APP/Contents/Helpers"
+    cp "$CLI_BIN" "$APP/Contents/Helpers/reportmate"
+    chmod 755 "$APP/Contents/Helpers/reportmate"
+    rm -rf "$CLI_TMP"
+    echo "Bundled reportmate CLI: $("$APP/Contents/Helpers/reportmate" --version 2>/dev/null | head -1 || echo unknown)"
+fi
 if [ ! -f "Sources/ReportMateMac/Resources/AppIcon.icns" ] && command -v iconutil >/dev/null; then
     swift scripts/make-app-icon.swift "Sources/ReportMateMac/Resources/AppIcon.icns" >/dev/null || true
 fi
@@ -66,6 +101,9 @@ if [ "$SIGN" = "1" ]; then
         set -a; . ./.env; set +a
     fi
     : "${SIGNING_IDENTITY_APP:?SIGNING_IDENTITY_APP is not set (put it in .env)}"
+    if [ -f "$APP/Contents/Helpers/reportmate" ]; then
+        codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY_APP" "$APP/Contents/Helpers/reportmate"
+    fi
     codesign --force --deep --options runtime --timestamp --sign "$SIGNING_IDENTITY_APP" "$APP"
     codesign --verify --verbose=2 "$APP"
 else
@@ -83,6 +121,35 @@ if [ "$DMG" = "1" ] && command -v hdiutil >/dev/null; then
     hdiutil create -volname "ReportMate $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG_PATH" >/dev/null
     rm -rf "$STAGE"
     echo "Wrote $DMG_PATH"
+fi
+
+if [ "$PKG" = "1" ]; then
+    SCRIPTS=".build/app/pkg-scripts"
+    rm -rf "$SCRIPTS"
+    mkdir -p "$SCRIPTS"
+    cat > "$SCRIPTS/postinstall" <<'POSTINSTALL'
+#!/bin/bash
+# Put the bundled reportmate CLI on PATH, the way the runner pkg links managedreportsrunner.
+CLI="/Applications/ReportMate.app/Contents/Helpers/reportmate"
+if [ -x "$CLI" ]; then
+    mkdir -p /usr/local/bin
+    ln -sf "$CLI" /usr/local/bin/reportmate
+fi
+exit 0
+POSTINSTALL
+    chmod 755 "$SCRIPTS/postinstall"
+    PKG_PATH=".build/app/ReportMate-$VERSION.pkg"
+    rm -f "$PKG_PATH"
+    pkgbuild --component "$APP" --install-location /Applications --scripts "$SCRIPTS" \
+        --identifier com.github.reportmate.app --version "$VERSION" "$PKG_PATH.unsigned" >/dev/null
+    if [ "$SIGN" = "1" ] && [ -n "${SIGNING_IDENTITY_INSTALLER:-}" ]; then
+        productsign --sign "$SIGNING_IDENTITY_INSTALLER" "$PKG_PATH.unsigned" "$PKG_PATH" >/dev/null
+        rm -f "$PKG_PATH.unsigned"
+    else
+        mv "$PKG_PATH.unsigned" "$PKG_PATH"
+    fi
+    rm -rf "$SCRIPTS"
+    echo "Wrote $PKG_PATH"
 fi
 
 echo "Built $APP ($CONFIG, $VERSION)"
