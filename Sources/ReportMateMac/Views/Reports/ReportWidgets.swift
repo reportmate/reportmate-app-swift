@@ -60,7 +60,10 @@ struct CountListWidget: View {
                         }
                     }
                 }
-                .frame(maxHeight: 190)
+                // A short list is shown whole: clipping a Memory list at six rows hid the
+                // 64 GB and 128 GB buckets below the fold with nothing to say so. Only
+                // long lists (models, processors) scroll.
+                .frame(maxHeight: rows.count <= 12 ? nil : 190)
             }
         }
     }
