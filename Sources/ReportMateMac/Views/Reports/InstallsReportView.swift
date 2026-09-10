@@ -10,10 +10,14 @@ struct InstallsReportView: View {
 
     enum ConfigColumn { case device, total, installed, pending, errors, warnings, removed, manifest, lastSeen, version }
     enum InstallColumn { case device, manifest, name, version, status, lastSeen }
-    @State private var configSort: ConfigColumn = .device
-    @State private var configAscending = true
-    @State private var installSort: InstallColumn = .device
-    @State private var installAscending = true
+    enum StatusColumn { case device, packages, manifest, lastSeen }
+    // Every installs table opens on Last Seen, newest first.
+    @State private var configSort: ConfigColumn = .lastSeen
+    @State private var configAscending = false
+    @State private var installSort: InstallColumn = .lastSeen
+    @State private var installAscending = false
+    @State private var statusSort: StatusColumn = .lastSeen
+    @State private var statusAscending = false
     @State private var errorSort = ItemCountTable.Sort()
     @State private var warningSort = ItemCountTable.Sort()
     @State private var pendingSort = ItemCountTable.Sort()
@@ -521,7 +525,7 @@ struct InstallsReportView: View {
             case .warnings: r = UsageCells.compare(a.warningCount, b.warningCount)
             case .removed: r = UsageCells.compare(a.removedCount, b.removedCount)
             case .manifest: r = UsageCells.compare(a.clientIdentifier, b.clientIdentifier)
-            case .lastSeen: r = UsageCells.compare(a.lastSeen ?? "", b.lastSeen ?? "")
+            case .lastSeen: r = UsageCells.compare(UsageCells.date(a.lastSeen), UsageCells.date(b.lastSeen))
             case .version: r = UsageCells.compare(a.version, b.version)
             }
             return UsageCells.ordered(r, ascending: configAscending)
@@ -707,14 +711,25 @@ struct InstallsReportView: View {
     }
 
     private func statusDevicesTable(_ copy: InstallStatusCopy, _ devices: [InstallsDevice], category: InstallItems.Category) -> some View {
-        StickyTable {
-            ReportHeaderLabel(title: "Device", width: 240)
-            ReportHeaderLabel(title: copy.packagesColumn)
-            ReportHeaderLabel(title: "Manifest / Repo", width: 200)
-            ReportHeaderLabel(title: "Last Seen", width: 110)
+        let sorted = devices.sorted { a, b in
+            var r: ComparisonResult
+            switch statusSort {
+            case .device: r = a.deviceName.localizedCaseInsensitiveCompare(b.deviceName)
+            case .packages: r = UsageCells.compare(model.affectedPackages(of: a).count, model.affectedPackages(of: b).count)
+            case .manifest: r = (a.manifest ?? "").localizedCaseInsensitiveCompare(b.manifest ?? "")
+            case .lastSeen: r = UsageCells.compare(UsageCells.date(a.lastSeen), UsageCells.date(b.lastSeen))
+            }
+            if r == .orderedSame { r = a.deviceName.localizedCaseInsensitiveCompare(b.deviceName) }
+            return statusAscending ? r == .orderedAscending : r == .orderedDescending
+        }
+        return StickyTable {
+            ReportSortHeader(title: "Device", column: .device, sortColumn: $statusSort, ascending: $statusAscending, width: 240)
+            ReportSortHeader(title: copy.packagesColumn, column: .packages, sortColumn: $statusSort, ascending: $statusAscending)
+            ReportSortHeader(title: "Manifest / Repo", column: .manifest, sortColumn: $statusSort, ascending: $statusAscending, width: 200)
+            ReportSortHeader(title: "Last Seen", column: .lastSeen, sortColumn: $statusSort, ascending: $statusAscending, width: 110)
             ReportHeaderLabel(title: "Actions", width: 100)
         } rows: {
-            ForEach(devices) { device in
+            ForEach(sorted) { device in
                 let packages = model.affectedPackages(of: device)
                 if !packages.isEmpty {
                     HStack(alignment: .top, spacing: 12) {
