@@ -60,6 +60,10 @@ that bundle path and at `/usr/local/bin/reportmateutil`.
 
 ## Releases
 
+Every push and pull request builds the app with the bundled tool and uploads the
+unsigned `ReportMate.app.zip` and `ReportMate-<version>.pkg` as workflow artifacts
+(14 days), so a PR proves the bundle builds.
+
 A version tag (`vYYYY.MM.DD.HHMM`, or the bare version) runs `.github/workflows/release.yml`,
 which builds the app, the pkg and the dmg and publishes them as a GitHub release,
 unsigned, with a checksum file. Signing and notarization happen downstream with the
