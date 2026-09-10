@@ -20,6 +20,12 @@ make app
 Produces `.build/app/ReportMate.app`. `make app-dmg` also writes a disk image, and
 `make app-open` launches the build.
 
+The bundle carries the `reportmate` command line tool from
+[reportmate-cli](https://github.com/reportmate/reportmate-cli) at
+`ReportMate.app/Contents/Helpers/reportmate`. `make app-pkg` writes an installer that
+puts the app in `/Applications` and links the tool to `/usr/local/bin/reportmate`, so
+it is on PATH in every shell.
+
 ## Configure
 
 Settings takes the API endpoint and a read credential: a per-client API key, the
