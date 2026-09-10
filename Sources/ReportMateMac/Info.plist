@@ -7,9 +7,9 @@
 	<key>CFBundleExecutable</key>
 	<string>ReportMate</string>
 	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
+	<string>ReportMate</string>
 	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
+	<string>ReportMate</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.github.reportmate.mac</string>
 	<key>CFBundleInfoDictionaryVersion</key>
