@@ -65,7 +65,8 @@ public enum Platform: String, Sendable, Hashable, CaseIterable, Codable {
             if configType == "Cimian" { return .windows }
             if configType == "Munki" { return .macOS }
         }
-        if let legacy = device.firstString("osName", "os") {
+        // Report rows (network, system) carry the OS as a top-level string.
+        if let legacy = device.firstString("osName", "os", "operatingSystem", "operating_system") ?? device["operatingSystem"]["name"].nonEmptyString {
             let n = normalize(legacy)
             if n != .unknown { return n }
         }
