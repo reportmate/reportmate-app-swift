@@ -6,11 +6,14 @@ import ReportMateKit
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.openSettings) private var openSettings
+    @State private var searchQuery = ""
+    @State private var searchIndex = 0
+    @FocusState private var searchFocused: Bool
+    @State private var windowWidth: CGFloat = 1400
 
     var body: some View {
         @Bindable var state = appState
-        VStack(spacing: 0) {
-            TopNavBar()
+        ZStack(alignment: .top) {
             NavigationStack(path: $state.path) {
                 sectionView
                     .navigationDestination(for: Route.self) { route in
@@ -19,6 +22,12 @@ struct ContentView: View {
                         destination(for: route).id(route)
                     }
             }
+            // The search results drop down under the toolbar field, like the web header.
+            if searchFocused, !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+                ToolbarSearchResults(query: $searchQuery, selectedIndex: $searchIndex, focused: $searchFocused)
+                    .padding(.top, 6)
+                    .zIndex(10)
+            }
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
@@ -26,15 +35,25 @@ struct ContentView: View {
                     .help("Back (⌘[)")
                     .disabled(!appState.canGoBack)
             }
+            // One row, like the web header: platform toggle on the left, search dead
+            // centre, the sections on the right. Fixed items only: a fit-to-width
+            // view inside a toolbar item makes the whole toolbar overflow.
+            // The dashboard is the app's front door: it carries the app icon and name
+            // where the web shows its logo and wordmark.
+            if appState.section == .dashboard, appState.path.isEmpty {
+                ToolbarItem(placement: .navigation) {
+                    Image(nsImage: AppLogo.image).resizable().aspectRatio(contentMode: .fit).frame(height: 24)
+                }
+            }
             ToolbarItem(placement: .principal) {
-                PlatformToggle()
+                HStack(spacing: 10) {
+                    PlatformToggle()
+                    ToolbarSearchField(query: $searchQuery, selectedIndex: $searchIndex, focused: $searchFocused)
+                }
             }
             ToolbarItemGroup(placement: .primaryAction) {
+                TopNavBar(inline: true, compact: windowWidth < 1900)
                 CopyLinkMenu()
-                Button { appState.showSearch = true } label: {
-                    Label("Search", systemImage: "magnifyingglass")
-                }
-                .help("Find a device by name, serial, asset tag or hostname (⌘K)")
                 Button { appState.refreshRequested += 1 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
@@ -50,13 +69,14 @@ struct ContentView: View {
                     .help("Settings (⌘,)")
             }
         }
+        .background(GeometryReader { geo in Color.clear.onAppear { windowWidth = geo.size.width }.onChange(of: geo.size.width) { _, w in windowWidth = w } })
         .focusedSceneValue(\.appState, appState)
         .onOpenURL { url in
             if let link = DeepLink(url: url) { appState.open(deepLink: link) }
         }
-        .sheet(isPresented: $state.showSearch) {
-            GlobalSearchView()
-                .environment(appState)
+        // ⌘K (and the Find Device menu item) puts the cursor in the toolbar search.
+        .onChange(of: appState.showSearch) { _, wants in
+            if wants { searchFocused = true; appState.showSearch = false }
         }
         .task(id: appState.configuration) {
             guard appState.isConfigured else { return }
@@ -135,6 +155,9 @@ struct PlatformToggle: View {
 /// Copy Link: the web handoff URL when a web dashboard is configured (it
 /// opens the app when installed and the web page otherwise), plus the raw
 /// `reportmate://` and web forms.
+/// One button: copies the link that opens this exact view in the app and falls
+/// back to the web dashboard when a web URL is configured, otherwise the plain
+/// app link. No choices to make; the fallback is a Settings concern.
 struct CopyLinkMenu: View {
     @Environment(AppState.self) private var appState
     @State private var copied = false
@@ -143,19 +166,10 @@ struct CopyLinkMenu: View {
     private var webBase: URL? { appState.configuration.normalizedWebURL }
 
     var body: some View {
-        Menu {
-            if let webBase, let handoff = link.handoffURL(webBase: webBase) {
-                Button("Copy Link") { copy(handoff.absoluteString) }
-                Button("Copy Web Link") { copy(link.webURL(base: webBase)?.absoluteString ?? handoff.absoluteString) }
-                Button("Copy App Link") { copy(link.url.absoluteString) }
-            } else {
-                Button("Copy App Link") { copy(link.url.absoluteString) }
-                Text("Set the web dashboard URL in Settings for links that fall back to the browser.")
-            }
+        Button {
+            if let webBase, let handoff = link.handoffURL(webBase: webBase) { copy(handoff.absoluteString) } else { copy(link.url.absoluteString) }
         } label: {
             Label(copied ? "Copied" : "Copy Link", systemImage: copied ? "checkmark" : "link")
-        } primaryAction: {
-            if let webBase, let handoff = link.handoffURL(webBase: webBase) { copy(handoff.absoluteString) } else { copy(link.url.absoluteString) }
         }
         .help("Copy a link to this exact view (⌘⇧C)")
     }
@@ -166,4 +180,14 @@ struct CopyLinkMenu: View {
         copied = true
         Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
     }
+}
+
+/// The bare ReportMate logo artwork (the clipboard on a laptop), as the web
+/// header shows it, without the app icon's rounded background.
+@MainActor
+enum AppLogo {
+    static let image: NSImage = {
+        if let url = Bundle.main.url(forResource: "reportmate-logo", withExtension: "png"), let image = NSImage(contentsOf: url) { return image }
+        return NSApp.applicationIconImage
+    }()
 }

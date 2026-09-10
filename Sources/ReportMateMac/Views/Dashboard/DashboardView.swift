@@ -159,7 +159,7 @@ struct DashboardView: View {
                 }
             }
         }
-        .navigationTitle("Dashboard")
+        .navigationTitle("ReportMate")
         .task(id: appState.configuration) {
             model.startLive(api: appState.api)
             defer { model.stopLive() }
