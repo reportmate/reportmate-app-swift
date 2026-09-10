@@ -23,7 +23,7 @@ struct ManagementReportView: View {
             if let statusFilter, pair.m.enrollmentStatus != statusFilter { return false }
             if let typeFilter {
                 if typeFilter == "Unmanaged" { if pair.m.enrollmentType != "Unmanaged" { return false } }
-                else if pair.m.bootstrapMethod != typeFilter { return false }
+                else if (pair.m.bootstrapMethod ?? "Not Enrolled") != typeFilter { return false }
             }
             return true
         }.sorted { a, b in
@@ -64,11 +64,13 @@ struct ManagementReportView: View {
         let providers = countLabels(all.map(\.provider)).map { ($0.label, $0.count, providerColor($0.label)) }
         let statuses = countLabels(all.map(\.enrollmentStatus).filter { $0 != "Unknown" && $0 != "N/A" }).map { ($0.label, $0.count) }
         let order = ["Automated", "User Approved", "Manual", "Other"]
-        let types = countLabels(all.compactMap(\.bootstrapMethod)).sorted { (order.firstIndex(of: $0.label) ?? 99) < (order.firstIndex(of: $1.label) ?? 99) }.map { ($0.label, $0.count) }
+        // A device with no bootstrap method is not enrolled; it stays in the donut as its
+        // own slice so the percentages are shares of every device the header counts.
+        let types = countLabels(all.map { $0.bootstrapMethod ?? "Not Enrolled" }).sorted { (order.firstIndex(of: $0.label) ?? 99) < (order.firstIndex(of: $1.label) ?? 99) }.map { ($0.label, $0.count) }
         return HStack(alignment: .top, spacing: 12) {
             SingleCountListWidget(title: "Providers", counts: providers, selected: $providerFilter, emptyText: "No data available").frame(width: 300)
             MiniDonutWidget(title: "Enrollment Status", data: statuses, colors: ["Enrolled": .green, "Pending": .orange, "Unenrolled": .red, "Not Enrolled": .red, "Error": .red], selected: $statusFilter).frame(width: 300)
-            MiniDonutWidget(title: "Enrollment Type", data: types, colors: ["Automated": .green, "User Approved": .cyan, "Manual": .red, "Other": Color.secondary.opacity(0.5)], selected: $typeFilter).frame(width: 300)
+            MiniDonutWidget(title: "Enrollment Type", data: types, colors: ["Automated": .green, "User Approved": .cyan, "Manual": .red, "Not Enrolled": Color.secondary.opacity(0.5), "Other": Color.secondary.opacity(0.5)], selected: $typeFilter).frame(width: 300)
         }
     }
 
