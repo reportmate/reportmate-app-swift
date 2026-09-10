@@ -14,16 +14,9 @@ struct ContentView: View {
             NavigationStack(path: $state.path) {
                 sectionView
                     .navigationDestination(for: Route.self) { route in
-                        switch route {
-                        case .device(let serial, let tab, let filter):
-                            DeviceDetailView(serial: serial, initialTab: tab, initialFilter: filter)
-                        case .applicationUsage(let appName, let days, let usages, let catalogs, let locations):
-                            ApplicationUsageDetailView(appName: appName, initialDays: days, usages: usages, catalogs: catalogs, locations: locations)
-                        case .applicationCoverage:
-                            ApplicationCoverageView()
-                        case .localDevice:
-                            DeviceDetailView(serial: "this-mac", isLocal: true)
-                        }
+                        // Keyed on the route so a link to the same page with another tab
+                        // or filter builds a fresh view instead of reusing the one in place.
+                        destination(for: route).id(route)
                     }
             }
         }
@@ -69,6 +62,20 @@ struct ContentView: View {
             guard appState.isConfigured else { return }
             await appState.loadSettings()
             await appState.loadDevices()
+        }
+    }
+
+    @ViewBuilder
+    private func destination(for route: Route) -> some View {
+        switch route {
+        case .device(let serial, let tab, let filter):
+            DeviceDetailView(serial: serial, initialTab: tab, initialFilter: filter)
+        case .applicationUsage(let appName, let days, let usages, let catalogs, let locations):
+            ApplicationUsageDetailView(appName: appName, initialDays: days, usages: usages, catalogs: catalogs, locations: locations)
+        case .applicationCoverage:
+            ApplicationCoverageView()
+        case .localDevice(let tab, let filter):
+            DeviceDetailView(serial: "this-mac", initialTab: tab, initialFilter: filter, isLocal: true)
         }
     }
 

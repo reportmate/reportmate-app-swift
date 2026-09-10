@@ -95,8 +95,8 @@ final class AppState {
         push(Route.applicationCoverage)
     }
 
-    func openThisMac() {
-        push(Route.localDevice)
+    func openThisMac(tab: DeviceTab? = nil, filter: String? = nil) {
+        push(Route.localDevice(tab: tab, filter: filter))
     }
 
     /// Follow a `reportmate://` link (or a pasted web URL).
@@ -117,7 +117,11 @@ final class AppState {
             openApplicationUsage(app, days: Int(link.query["days"] ?? "") ?? 30, usages: list("usages"), catalogs: list("catalogs"), locations: list("locations"))
         case .applicationCoverage: section = .applications; openApplicationCoverage()
         case .settings: NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        case .thisMac: section = .devices; openThisMac()
+        case .thisMac:
+            // Same treatment as a device link: replace whatever is open and land on the tab.
+            section = .devices
+            path = NavigationPath()
+            openThisMac(tab: link.query["tab"].flatMap(DeviceTab.init(rawValue:)), filter: link.query["filter"])
         }
     }
 
@@ -143,7 +147,11 @@ final class AppState {
                 if !locations.isEmpty { q["locations"] = locations.joined(separator: ",") }
                 return DeepLink(target: .applicationUsage(app: app), query: q)
             case .applicationCoverage: return DeepLink(target: .applicationCoverage)
-            case .localDevice: return DeepLink(target: .thisMac)
+            case .localDevice(let tab, let filter):
+                var q: [String: String] = [:]
+                if let tab { q["tab"] = tab.rawValue }
+                if let filter { q["filter"] = filter }
+                return DeepLink(target: .thisMac, query: q)
             }
         }
         switch section {
