@@ -109,10 +109,13 @@ struct MiniDonutWidget: View {
     let data: [(label: String, value: Int)]
     let colors: [String: Color]
     @Binding var selected: String?
+    /// Names the population when the figure describes only part of the fleet.
+    var subtitle: String? = nil
 
     var body: some View {
         let total = data.reduce(0) { $0 + $1.value }
         ReportWidgetBox(title: title) {
+            if let subtitle { Text(subtitle).appFont(.caption2).foregroundStyle(.secondary).padding(.bottom, 4) }
             if total == 0 {
                 Text("No data").appFont(.caption).foregroundStyle(.tertiary)
             } else {

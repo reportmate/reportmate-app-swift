@@ -383,7 +383,16 @@ public struct SecurityReportRow: Sendable, Hashable {
     public var autoLoginUser: String? { json["autoLoginUser"].nonEmptyString }
 
     public var encryptionLabel: String { encryptionEnabled ? "Encrypted" : "Not Encrypted" }
-    public var protectionLabel: String { antivirusEnabled ? (antivirusUpToDate ? "Current" : "Out of Date") : "Disabled" }
+    /// Antivirus state. The API reports the antivirus fields for Windows only and
+    /// sends false for a Mac, so a Mac that reports nothing is "Not Reported"
+    /// rather than "Disabled"; counting it as disabled turned every Mac into a
+    /// failure on the fleet report.
+    public var protectionLabel: String {
+        if antivirusEnabled { return antivirusUpToDate ? "Current" : "Out of Date" }
+        return isWindows || antivirusName != nil ? "Disabled" : "Not Reported"
+    }
+    /// Whether the row carries antivirus data at all (Windows, or a Mac that named a product).
+    public var reportsProtection: Bool { isWindows || antivirusEnabled || antivirusName != nil }
     public var detectionLabel: String { activeThreatCount > 0 ? "Threats Detected" : "Clean" }
     public var firewallLabel: String { firewallEnabled ? "Enabled" : "Disabled" }
     public var tamperLabel: String {

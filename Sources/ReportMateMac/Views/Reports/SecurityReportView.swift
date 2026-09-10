@@ -109,7 +109,11 @@ struct SecurityReportView: View {
         let green = Color.green, red = Color.red, amber = Color.orange, gray = Color.secondary.opacity(0.5), blue = Color.blue
         return LazyVGrid(columns: Array(repeating: GridItem(.fixed(250), spacing: 12), count: 4), spacing: 12) {
             MiniDonutWidget(title: "Encryption", data: donutData(all, \.encryptionLabel), colors: ["Encrypted": green, "Not Encrypted": red], selected: $encryptionFilter)
-            MiniDonutWidget(title: "Protection", data: donutData(all, \.protectionLabel), colors: ["Current": green, "Out of Date": amber, "Disabled": red], selected: $protectionFilter)
+            // The API carries antivirus fields for Windows only (false on a Mac), so
+            // the Protection figure describes the devices that report it, not the fleet.
+            let protectionRows = all.filter(\.reportsProtection)
+            MiniDonutWidget(title: "Protection", data: donutData(protectionRows, \.protectionLabel), colors: ["Current": green, "Out of Date": amber, "Disabled": red], selected: $protectionFilter,
+                            subtitle: protectionRows.count == all.count ? nil : "\(protectionRows.count) of \(all.count) devices report antivirus")
             MiniDonutWidget(title: "Detection", data: donutData(all, \.detectionLabel), colors: ["Clean": green, "Threats Detected": red], selected: $detectionFilter)
             MiniDonutWidget(title: "Firewall", data: donutData(all, \.firewallLabel), colors: ["Enabled": green, "Disabled": gray], selected: $firewallFilter)
             MiniDonutWidget(title: "Tampering", data: donutData(all, \.tamperLabel), colors: ["Secured": green, "Insecure": red], selected: $tamperingFilter)
@@ -237,7 +241,7 @@ struct SecurityReportView: View {
                 HStack(alignment: .top, spacing: 12) {
                     ReportDeviceCell(row: pair.row, tab: .security).frame(width: 200, alignment: .leading)
                     Pill("\(d.isWindows ? "BitLocker" : "FileVault") \(d.encryptionEnabled ? "On" : "Off")", tone: d.encryptionEnabled ? .green : .red).frame(width: 110, alignment: .leading)
-                    Pill(d.antivirusEnabled ? (d.antivirusUpToDate ? "Current" : "Outdated") : "Disabled", tone: d.antivirusEnabled ? (d.antivirusUpToDate ? .green : .orange) : .red).frame(width: 90, alignment: .leading)
+                    Pill(d.antivirusEnabled ? (d.antivirusUpToDate ? "Current" : "Outdated") : (d.reportsProtection ? "Disabled" : "—"), tone: d.antivirusEnabled ? (d.antivirusUpToDate ? .green : .orange) : (d.reportsProtection ? .red : .gray)).frame(width: 90, alignment: .leading)
                     Pill(d.detectionCount == 0 ? "Clean" : "\(d.detectionCount) threat\(d.detectionCount == 1 ? "" : "s")", tone: d.detectionCount == 0 ? .green : .red).frame(width: 90, alignment: .leading)
                     FlowLayout(spacing: 4) {
                         if d.isWindows {
