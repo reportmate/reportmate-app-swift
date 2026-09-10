@@ -79,17 +79,23 @@ sed -e "s|<string>0.1.0</string>|<string>$VERSION</string>|" Sources/ReportMateM
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 if [ "$CLI" = "1" ]; then
-    ASSET="reportmateutil-universal-apple-darwin.tar.gz"
+    # The tool was renamed from reportmate to reportmateutil; releases on either
+    # side of that rename are accepted (new asset first) and the result is always
+    # staged under the new name, so a build never depends on which one it meets.
     if [ -n "$CLI_VERSION" ]; then
-        CLI_URL="https://github.com/reportmate/reportmate-cli/releases/download/$CLI_VERSION/$ASSET"
+        CLI_BASE="https://github.com/reportmate/reportmate-cli/releases/download/$CLI_VERSION"
     else
-        CLI_URL="https://github.com/reportmate/reportmate-cli/releases/latest/download/$ASSET"
+        CLI_BASE="https://github.com/reportmate/reportmate-cli/releases/latest/download"
     fi
     CLI_TMP="$(mktemp -d)"
-    curl -fsSL --retry 3 -o "$CLI_TMP/$ASSET" "$CLI_URL"
+    ASSET=""
+    for candidate in reportmateutil-universal-apple-darwin.tar.gz reportmate-universal-apple-darwin.tar.gz; do
+        if curl -fsSL --retry 3 -o "$CLI_TMP/$candidate" "$CLI_BASE/$candidate" 2>/dev/null; then ASSET="$candidate"; break; fi
+    done
+    [ -n "$ASSET" ] || { echo "No reportmateutil release asset found under $CLI_BASE"; exit 1; }
     tar -xzf "$CLI_TMP/$ASSET" -C "$CLI_TMP"
-    CLI_BIN="$(find "$CLI_TMP" -type f -name reportmateutil | head -1)"
-    [ -n "$CLI_BIN" ] || { echo "reportmate binary not found in $ASSET"; exit 1; }
+    CLI_BIN="$(find "$CLI_TMP" -type f \( -name reportmateutil -o -name reportmate \) | head -1)"
+    [ -n "$CLI_BIN" ] || { echo "reportmateutil binary not found in $ASSET"; exit 1; }
     mkdir -p "$APP/Contents/Helpers"
     cp "$CLI_BIN" "$APP/Contents/Helpers/reportmateutil"
     chmod 755 "$APP/Contents/Helpers/reportmateutil"
