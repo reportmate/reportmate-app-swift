@@ -15,7 +15,7 @@ Windows dashboard app in `reportmate/reportmate-app-csharp`.
   registers the `reportmate://` scheme; `Resources/AppIcon.icns` is the icon.
 - `Tests/ReportMateKitTests` — Swift Testing suites for the kit.
 - `scripts/build-app.sh` — builds `.build/app/ReportMate.app` (`--dmg`, `--pkg`, `--sign`, `--open`).
-  It bundles the `reportmate` CLI from `reportmate/reportmate-cli` at
+  It bundles the `reportmateutil` CLI from `reportmate/reportmate-cli` at
   `Contents/Helpers/reportmate` (`--no-cli` to skip, `--cli-version=` to pin); the pkg's
   postinstall links it to `/usr/local/bin/reportmate`.
 - `docs/NATIVE-APP.md` — the page-by-page parity matrix against the web app, the

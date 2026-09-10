@@ -11,14 +11,14 @@ set -euo pipefail
 #   scripts/build-app.sh --dmg      also write .build/app/ReportMate-<version>.dmg
 #   scripts/build-app.sh --pkg      also write .build/app/ReportMate-<version>.pkg (installs to /Applications
 #                                   and links the bundled CLI into /usr/local/bin)
-#   scripts/build-app.sh --no-cli   skip bundling the reportmate CLI
+#   scripts/build-app.sh --no-cli   skip bundling reportmateutil
 #   scripts/build-app.sh --cli-version=vYYYY.MM.DD.HHMM  pin the CLI release (default: latest)
 #
-# The reportmate CLI (reportmate/reportmate-cli) rides inside the bundle at
+# The reportmateutil CLI (reportmate/reportmate-cli) rides inside the bundle at
 # Contents/Helpers/reportmate, the way Managed Reports Runner.app carries
 # managedreportsrunner; the pkg postinstall puts it on PATH. It cannot sit in
-# Contents/MacOS: on a case-insensitive volume "reportmate" and the app's own
-# "ReportMate" executable are the same file.
+# Contents/MacOS beside the app's own executable; Contents/Helpers is the
+# place for a bundled tool.
 #
 # The Managed Reports Runner (the per-device client) is built by build.sh;
 # this script only produces the operator app.
@@ -79,7 +79,7 @@ sed -e "s|<string>0.1.0</string>|<string>$VERSION</string>|" Sources/ReportMateM
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 if [ "$CLI" = "1" ]; then
-    ASSET="reportmate-universal-apple-darwin.tar.gz"
+    ASSET="reportmateutil-universal-apple-darwin.tar.gz"
     if [ -n "$CLI_VERSION" ]; then
         CLI_URL="https://github.com/reportmate/reportmate-cli/releases/download/$CLI_VERSION/$ASSET"
     else
@@ -88,13 +88,13 @@ if [ "$CLI" = "1" ]; then
     CLI_TMP="$(mktemp -d)"
     curl -fsSL --retry 3 -o "$CLI_TMP/$ASSET" "$CLI_URL"
     tar -xzf "$CLI_TMP/$ASSET" -C "$CLI_TMP"
-    CLI_BIN="$(find "$CLI_TMP" -type f -name reportmate | head -1)"
+    CLI_BIN="$(find "$CLI_TMP" -type f -name reportmateutil | head -1)"
     [ -n "$CLI_BIN" ] || { echo "reportmate binary not found in $ASSET"; exit 1; }
     mkdir -p "$APP/Contents/Helpers"
     cp "$CLI_BIN" "$APP/Contents/Helpers/reportmate"
     chmod 755 "$APP/Contents/Helpers/reportmate"
     rm -rf "$CLI_TMP"
-    echo "Bundled reportmate CLI: $("$APP/Contents/Helpers/reportmate" --version 2>/dev/null | head -1 || echo unknown)"
+    echo "Bundled reportmateutil: $("$APP/Contents/Helpers/reportmate" --version 2>/dev/null | head -1 || echo unknown)"
 fi
 if [ ! -f "Sources/ReportMateMac/Resources/AppIcon.icns" ] && command -v iconutil >/dev/null; then
     swift scripts/make-app-icon.swift "Sources/ReportMateMac/Resources/AppIcon.icns" >/dev/null || true
@@ -136,7 +136,7 @@ if [ "$PKG" = "1" ]; then
     mkdir -p "$SCRIPTS"
     cat > "$SCRIPTS/postinstall" <<'POSTINSTALL'
 #!/bin/bash
-# Put the bundled reportmate CLI on PATH, the way the runner pkg links managedreportsrunner.
+# Put the bundled reportmateutil CLI on PATH, the way the runner pkg links managedreportsrunner.
 CLI="/Applications/ReportMate.app/Contents/Helpers/reportmate"
 if [ -x "$CLI" ]; then
     mkdir -p /usr/local/bin

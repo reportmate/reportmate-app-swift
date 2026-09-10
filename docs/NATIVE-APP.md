@@ -46,14 +46,13 @@ app into `/Applications` and its postinstall links the bundled command line tool
 make app-pkg
 ```
 
-### The reportmate command line tool
+### The reportmateutil command line tool
 
-Every build fetches the latest `reportmate` release from
+Every build fetches the latest `reportmateutil` release from
 [reportmate-cli](https://github.com/reportmate/reportmate-cli) (the universal
 macOS tarball) and places it at `ReportMate.app/Contents/Helpers/reportmate`, the way
-Managed Reports Runner.app carries `managedreportsrunner`. It cannot share `Contents/MacOS`
-with the app: on a case-insensitive volume `reportmate` and the app's `ReportMate`
-executable are the same file. With `--sign` the tool is
+Managed Reports Runner.app carries `managedreportsrunner`. It lives under `Contents/Helpers`, the
+place for a bundled tool, beside the app's own executable in `Contents/MacOS`. With `--sign` the tool is
 signed with the hardened runtime before the app, so notarization covers it. Pin a
 release with `--cli-version=vYYYY.MM.DD.HHMM` (or `REPORTMATE_CLI_VERSION`), or
 skip the download with `--no-cli`. FleetMate and other tools look for the binary at
