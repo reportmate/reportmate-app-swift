@@ -75,7 +75,7 @@ struct SecurityReportView: View {
 
     var body: some View {
         FleetReportContainer(
-            section: .security, model: model, subtitle: "Security posture across the fleet", searchPlaceholder: "Search devices...",
+            section: .security, model: model, activeFilterCount: widgetFilters.count, clearFilters: clearWidgetFilters, subtitle: "Security posture across the fleet", searchPlaceholder: "Search devices...",
             searchKeys: { row in
                 let d = SecurityReportRow(json: row.json, platform: row.platform)
                 return [row.deviceName, row.serialNumber, d.antivirusName, d.autoLoginUser]

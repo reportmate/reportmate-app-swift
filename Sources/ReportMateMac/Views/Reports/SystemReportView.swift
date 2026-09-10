@@ -110,10 +110,9 @@ struct SystemReportView: View {
 
     var body: some View {
         FleetReportContainer(
-            section: .system, model: model, subtitle: "OS versions, activation status, and system uptime", searchPlaceholder: "Search by device name or serial number...",
+            section: .system, model: model, activeFilterCount: widgetLabels.count, clearFilters: clearWidgetFilters, subtitle: "OS versions, activation status, and system uptime", searchPlaceholder: "Search by device name or serial number...",
             searchKeys: { [$0.deviceName, $0.serialNumber] },
             toolbar: { rows in
-                if !widgetLabels.isEmpty { Button("Clear Selections") { clearWidgetFilters() }.buttonStyle(.bordered).tint(.yellow) }
                 CSVExportButton(filename: "system-report", headers: ["Device Name", "Serial Number", "Asset Tag", "OS", "Version", "Build", "Edition", "Activation", "License Source", "Time Zone", "Locale", "Uptime", "Boot Time", "Last Seen"]) {
                     filtered(rows).map { p in
                         let d = p.s

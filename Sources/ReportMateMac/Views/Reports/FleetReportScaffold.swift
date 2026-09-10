@@ -110,6 +110,9 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
     @Environment(AppState.self) private var appState
     let section: AppSection
     let model: FleetReportModel
+    /// Widget filters the report keeps itself, so the Clear Filters button can count and clear them.
+    var activeFilterCount: Int = 0
+    var clearFilters: (() -> Void)? = nil
     var query: [String: String?] = [:]
     var subtitle: String? = nil
     var searchPlaceholder = "Search…"
@@ -118,13 +121,15 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
     var widgets: (([ReportRow]) -> Widgets)?
     var content: ([ReportRow]) -> Content
 
-    init(section: AppSection, model: FleetReportModel, query: [String: String?] = [:], subtitle: String? = nil, searchPlaceholder: String = "Search…",
+    init(section: AppSection, model: FleetReportModel, activeFilterCount: Int = 0, clearFilters: (() -> Void)? = nil, query: [String: String?] = [:], subtitle: String? = nil, searchPlaceholder: String = "Search…",
          searchKeys: @escaping (ReportRow) -> [String?] = { [$0.deviceName, $0.serialNumber, $0.inventory.assetTag] },
          @ViewBuilder toolbar: @escaping ([ReportRow]) -> Toolbar = { _ in EmptyView() },
          widgets: (([ReportRow]) -> Widgets)?,
          @ViewBuilder content: @escaping ([ReportRow]) -> Content) {
         self.section = section
         self.model = model
+        self.activeFilterCount = activeFilterCount
+        self.clearFilters = clearFilters
         self.query = query
         self.subtitle = subtitle
         self.searchPlaceholder = searchPlaceholder
@@ -170,6 +175,16 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
                 Spacer()
                 if model.loading { ProgressView().controlSize(.small) }
                 toolbar(rows)
+                // One button clears everything narrowing the rows: widget filters, selections and search.
+                let narrowing = activeFilterCount + selections.count + (search.isEmpty ? 0 : 1)
+                if narrowing > 0 {
+                    Button(narrowing == 1 ? "Clear Filter" : "Clear Filters (\(narrowing))") {
+                        search = ""
+                        selections.clear()
+                        clearFilters?()
+                    }
+                    .buttonStyle(.bordered).tint(.orange)
+                }
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     TextField(searchPlaceholder, text: $search).textFieldStyle(.plain)
