@@ -10,15 +10,25 @@ struct TopNavBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 4) {
-                    ForEach(AppSection.fleet) { tab($0) }
-                    Divider().frame(height: 18).padding(.horizontal, 4)
-                    ForEach(AppSection.reports) { tab($0) }
-                }
+            if onDevicePage {
+                // On one device the page's own tabs are the point; the fleet reports
+                // repeat the same module names, so they fold into the menu as on a
+                // narrow window.
                 HStack(spacing: 4) {
                     ForEach(AppSection.fleet) { tab($0) }
                     reportsMenu
+                }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 4) {
+                        ForEach(AppSection.fleet) { tab($0) }
+                        Divider().frame(height: 18).padding(.horizontal, 4)
+                        ForEach(AppSection.reports) { tab($0) }
+                    }
+                    HStack(spacing: 4) {
+                        ForEach(AppSection.fleet) { tab($0) }
+                        reportsMenu
+                    }
                 }
             }
             Spacer(minLength: 8)
@@ -32,6 +42,13 @@ struct TopNavBar: View {
         .padding(.vertical, 7)
         .background(Color.cardBackground)
         .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private var onDevicePage: Bool {
+        switch appState.currentRoute {
+        case .device, .localDevice: return true
+        default: return false
+        }
     }
 
     private func select(_ section: AppSection) {

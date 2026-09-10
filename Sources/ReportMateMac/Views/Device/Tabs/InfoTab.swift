@@ -7,10 +7,9 @@ struct InfoTabView: View {
     @Environment(AppState.self) private var appState
     let device: DeviceDetail
 
-    private var columns: [GridItem] { [GridItem(.adaptive(minimum: 340, maximum: 600), spacing: 16, alignment: .top)] }
-
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
+        // Every card in a row takes the row's height, so the six cards read as two bands.
+        UniformGrid(minColumnWidth: 340, spacing: 16) {
             InventoryWidget(device: device, settings: appState.settings)
             SystemWidget(device: device)
             HardwareWidget(device: device)
