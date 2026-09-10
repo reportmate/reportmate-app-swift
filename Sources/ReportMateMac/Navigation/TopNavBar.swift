@@ -7,6 +7,11 @@ import SwiftUI
 /// appears here only while the connection is failing.
 struct TopNavBar: View {
     @Environment(AppState.self) private var appState
+    /// Inside the window toolbar the bar drops its own padding and background.
+    var inline = false
+    /// When inline, the caller decides from the window width whether every report
+    /// fits as a tab; a fit test inside a toolbar item makes the toolbar overflow.
+    var compact = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -17,6 +22,16 @@ struct TopNavBar: View {
                 HStack(spacing: 4) {
                     ForEach(AppSection.fleet) { tab($0) }
                     reportsMenu
+                }
+            } else if inline {
+                HStack(spacing: 4) {
+                    ForEach(AppSection.fleet) { tab($0) }
+                    if compact {
+                        reportsMenu
+                    } else {
+                        Divider().frame(height: 18).padding(.horizontal, 4)
+                        ForEach(AppSection.reports) { tab($0) }
+                    }
                 }
             } else {
                 ViewThatFits(in: .horizontal) {
@@ -31,17 +46,17 @@ struct TopNavBar: View {
                     }
                 }
             }
-            Spacer(minLength: 8)
+            if !inline { Spacer(minLength: 8) }
             if let problem = appState.authProblem {
                 Circle().fill(Color.red).frame(width: 7, height: 7).help(problem)
             } else if !appState.isConfigured {
                 Circle().fill(Color.gray).frame(width: 7, height: 7).help("Not connected: set the API endpoint in Settings")
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
-        .background(Color.cardBackground)
-        .overlay(alignment: .bottom) { Divider() }
+        .padding(.horizontal, inline ? 0 : 14)
+        .padding(.vertical, inline ? 0 : 7)
+        .background(inline ? Color.clear : Color.cardBackground)
+        .overlay(alignment: .bottom) { if !inline { Divider() } }
     }
 
     private var onDevicePage: Bool {
