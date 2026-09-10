@@ -65,8 +65,10 @@ unsigned `ReportMate.app.zip` and `ReportMate-<version>.pkg` as workflow artifac
 (14 days), so a PR proves the bundle builds.
 
 A version tag (`vYYYY.MM.DD.HHMM`, or the bare version) runs `.github/workflows/release.yml`,
-which builds the app, the pkg and the dmg and publishes them as a GitHub release,
-unsigned, with a checksum file. Signing and notarization happen downstream with the
+which builds the app, the pkg, the dmg and a bare `ReportMate-App-<version>.zip` of the
+unsigned bundle and publishes them as a GitHub release with a checksum file. The Munki
+build-import package `ReportMateApp` sources that zip, signs and notarizes it with the
+organization's Developer ID and ships it to Staff/IT Macs beside FleetMate. Signing and notarization happen downstream with the
 organization's Developer ID, the way the runner pkg from `reportmate-client-mac` is
 signed; the release notes carry the commands. The workflow can also be run by hand
 from the Actions tab with an optional version.

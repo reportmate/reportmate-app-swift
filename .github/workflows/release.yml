@@ -71,8 +71,11 @@ jobs:
         run: |
           set -euo pipefail
           cd .build/app
-          ls -1 "ReportMate-$VERSION.pkg" "ReportMate-$VERSION.dmg"
-          shasum -a 256 "ReportMate-$VERSION.pkg" "ReportMate-$VERSION.dmg" > "ReportMate-$VERSION.sha256"
+          # The unsigned app on its own, for downstream pipelines that sign and
+          # wrap it themselves (the Munki build-import package sources this zip).
+          ditto -c -k --keepParent ReportMate.app "ReportMate-App-$VERSION.zip"
+          ls -1 "ReportMate-$VERSION.pkg" "ReportMate-$VERSION.dmg" "ReportMate-App-$VERSION.zip"
+          shasum -a 256 "ReportMate-$VERSION.pkg" "ReportMate-$VERSION.dmg" "ReportMate-App-$VERSION.zip" > "ReportMate-$VERSION.sha256"
           CLI_VERSION="$(ReportMate.app/Contents/Helpers/reportmate --version 2>/dev/null | head -1 || echo unknown)"
           {
             echo "cli=$CLI_VERSION"
@@ -132,9 +135,9 @@ jobs:
           } > "$NOTES_FILE"
           cd .build/app
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            gh release create "$TAG" "ReportMate-$VERSION.pkg" "ReportMate-$VERSION.dmg" "ReportMate-$VERSION.sha256" \
+            gh release create "$TAG" "ReportMate-$VERSION.pkg" "ReportMate-$VERSION.dmg" "ReportMate-App-$VERSION.zip" "ReportMate-$VERSION.sha256" \
               --target "$GITHUB_SHA" --title "ReportMate for Mac $VERSION" --notes-file "$NOTES_FILE"
           else
-            gh release create "$TAG" "ReportMate-$VERSION.pkg" "ReportMate-$VERSION.dmg" "ReportMate-$VERSION.sha256" \
+            gh release create "$TAG" "ReportMate-$VERSION.pkg" "ReportMate-$VERSION.dmg" "ReportMate-App-$VERSION.zip" "ReportMate-$VERSION.sha256" \
               --title "ReportMate for Mac $VERSION" --notes-file "$NOTES_FILE"
           fi
