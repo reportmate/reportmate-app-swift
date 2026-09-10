@@ -21,7 +21,12 @@ struct ReportMateMacApp: App {
                 .appFontScale(fontScale)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
                 .frame(minWidth: 960, minHeight: 620)
+                // A reportmate:// link lands in the window that is already open.
+                // Without this a WindowGroup answers every external URL with a
+                // new window, so each link opened another copy of the app.
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         }
+        .handlesExternalEvents(matching: ["*"])
         .defaultSize(width: 1380, height: 900)
         .commands {
             AppCommands()
