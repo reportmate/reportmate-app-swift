@@ -1,4 +1,4 @@
-.PHONY: build test app app-open app-dmg clean
+.PHONY: build test app app-open app-dmg app-pkg clean
 
 VERSION ?= $(shell date +%Y.%m.%d.%H%M)
 
@@ -16,6 +16,9 @@ app-open:
 
 app-dmg:
 	@scripts/build-app.sh --version=$(VERSION) --dmg
+
+app-pkg:
+	@scripts/build-app.sh --version=$(VERSION) --pkg
 
 clean:
 	rm -rf .build
