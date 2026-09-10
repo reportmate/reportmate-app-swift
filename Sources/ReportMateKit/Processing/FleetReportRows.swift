@@ -544,26 +544,58 @@ public struct IdentityReportRow: Sendable, Hashable {
     public var authMethod: String?
     public var sessionSummary: SessionSummary?
 
+    /// Reads both shapes: the flat row the web's `/api/v1/identity` route hands its
+    /// page, and the FastAPI row it is built from (`summary`, `directoryServices`,
+    /// `platformSSOUsers`, `secureTokenUsers`, `domainTrust`, `windowsHello`), which
+    /// is what the app receives when it calls the API directly.
     public init(json: JSONValue) {
         self.json = json
         platformText = json["platform"].string ?? ""
-        totalUsers = json["totalUsers"].int ?? 0
-        adminUsers = json["adminUsers"].int ?? 0
-        disabledUsers = json["disabledUsers"].int ?? 0
-        currentlyLoggedIn = json["currentlyLoggedIn"].int ?? 0
-        secureTokenUsers = json["secureTokenUsers"].int ?? 0
-        secureTokenMissing = json["secureTokenMissing"].int ?? 0
+        let summary = json["summary"]
+        totalUsers = json["totalUsers"].int ?? summary["totalUsers"].int ?? 0
+        adminUsers = json["adminUsers"].int ?? summary["adminUsers"].int ?? 0
+        disabledUsers = json["disabledUsers"].int ?? summary["disabledUsers"].int ?? 0
+        currentlyLoggedIn = json["currentlyLoggedIn"].int ?? summary["currentlyLoggedIn"].int ?? 0
+        let tokens = json["secureTokenUsers"]
+        secureTokenUsers = tokens.int ?? tokens["tokenGrantedCount"].int ?? 0
+        secureTokenMissing = json["secureTokenMissing"].int ?? tokens["tokenMissingCount"].int ?? 0
         let bt = json["bootstrapToken"]
         hasBootstrapData = bt.object != nil
         bootstrapEscrowed = bt["escrowed"].boolish
-        adBound = json["adBound"].boolish
-        ldapBound = json["ldapBound"].boolish
+        let ds = json["directoryServices"]
+        let ad = ds["activeDirectory"]
+        let entra = ds["azureAd"]
+        let ssoRegistered = json["platformSSORegistered"].boolish || json["platformSSOUsers"]["deviceRegistered"].boolish
+        let domainJoined = json["domainJoined"].boolish || ad["bound"].boolish || ad["isDomainJoined"].boolish
+        let entraJoined = json["entraJoined"].boolish || entra["joined"].boolish || ssoRegistered
+        adBound = json["adBound"].boolish || ad["bound"].boolish
+        ldapBound = json["ldapBound"].boolish || ds["ldap"]["bound"].boolish
         usernames = json["users"].elements.compactMap { $0["username"].nonEmptyString }
         adminUsernames = json["adminUsernames"].elements.compactMap(\.nonEmptyString)
         loggedInUsernames = json["loggedInUsernames"].elements.compactMap(\.nonEmptyString)
-        enrollmentType = json["enrollmentType"].nonEmptyString
-        trustStatus = json["trustStatus"].nonEmptyString
-        authMethod = json["authMethod"].nonEmptyString
+        if let mapped = json["enrollmentType"].nonEmptyString {
+            enrollmentType = mapped
+        } else if ds.object == nil, json["domainJoined"].isNull, json["entraJoined"].isNull {
+            enrollmentType = nil
+        } else if domainJoined {
+            enrollmentType = "Domain Joined"
+        } else if entraJoined {
+            enrollmentType = "Cloud Joined"
+        } else if ds["workgroup"].nonEmptyString != nil {
+            enrollmentType = "Unjoined"
+        } else {
+            enrollmentType = "Standard"
+        }
+        trustStatus = json["trustStatus"].nonEmptyString ?? json["domainTrust"]["trustStatus"].nonEmptyString
+        if let mapped = json["authMethod"].nonEmptyString {
+            authMethod = mapped
+        } else if ssoRegistered {
+            authMethod = "Platform SSO"
+        } else if let hello = json["windowsHello"]["statusDisplay"].nonEmptyString, !hello.hasPrefix("Disabled") {
+            authMethod = "Hello for Business"
+        } else {
+            authMethod = nil
+        }
         let s = json["sessionSummary"]
         sessionSummary = s.object == nil ? nil : SessionSummary(totalSessions: s["totalSessions"].int ?? 0, uniqueUsers: s["uniqueUsers"].int ?? 0,
                                                                   avgSessionMinutes: s["avgSessionMinutes"].double ?? 0, medianSessionMinutes: s["medianSessionMinutes"].double ?? 0)
