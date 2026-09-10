@@ -120,3 +120,8 @@ enum SearchHighlight {
         return out
     }
 }
+
+extension Notification.Name {
+    /// Posted with the query when a search lands on the Devices list.
+    static let devicesSearch = Notification.Name("ReportMate.devicesSearch")
+}
