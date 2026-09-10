@@ -52,13 +52,21 @@ struct PeripheralsReportView: View {
 
     /// Multi-select type pills; counts ignore the pills themselves so they never collapse to zero.
     private func kindPills(_ rows: [ReportRow]) -> some View {
-        let all = rows.map(p)
+        let pairs = rows.map { (platform: $0.platform, p: p($0)) }
+        let fleetPlatforms = Set(rows.map(\.platform))
         return FlowLayout(spacing: 6) {
             ForEach(PeripheralsReportRow.kinds) { kind in
-                let count = all.filter { $0.count(kind) > 0 }.count
-                FilterPill(text: "\(kind.label) (\(count))", selected: selectedKinds.contains(kind.key), tone: .blue, size: 12) {
+                let with = pairs.filter { $0.p.count(kind) > 0 }
+                let count = with.count
+                // A category that only one platform's client reports (Displays: the Mac
+                // client leaves displayDevices empty) is labelled with its population, so
+                // the count is not read as a fleet figure.
+                let only = Set(with.map(\.platform))
+                let single: Platform? = (count > 0 && only.count == 1 && fleetPlatforms.count > 1) ? only.first : nil
+                FilterPill(text: single.map { "\(kind.label) (\(count), \($0.displayName) only)" } ?? "\(kind.label) (\(count))", selected: selectedKinds.contains(kind.key), tone: .blue, size: 12) {
                     if selectedKinds.contains(kind.key) { selectedKinds.remove(kind.key) } else { selectedKinds.insert(kind.key) }
                 }
+                .help(single.map { "Only \($0.displayName) devices report \(kind.label.lowercased()) in the peripherals module" } ?? "")
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
