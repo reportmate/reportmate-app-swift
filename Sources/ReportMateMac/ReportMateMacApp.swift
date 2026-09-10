@@ -21,6 +21,9 @@ struct ReportMateMacApp: App {
                 .appFontScale(fontScale)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
                 .frame(minWidth: 960, minHeight: 620)
+                // The web app is blue throughout (links are blue-600); pin the accent so
+                // device links and controls do not follow the Mac's accent colour setting.
+                .tint(.blue)
                 // A reportmate:// link lands in the window that is already open.
                 // Without this a WindowGroup answers every external URL with a
                 // new window, so each link opened another copy of the app.
