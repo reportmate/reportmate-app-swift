@@ -278,8 +278,9 @@ struct ApplicationsReportView: View {
                     }
                     ScrollView {
                         FlowLayout(spacing: 4) {
+                            let selectedSet = Set(selected)
                             ForEach(names.prefix(Self.chipLimit), id: \.self) { name in
-                                FilterPill(text: name, selected: selected.contains(name), tone: .blue) { model.toggleApplication(name) }
+                                FilterPill(text: name, selected: selectedSet.contains(name), tone: .blue) { model.toggleApplication(name) }
                             }
                             if names.isEmpty {
                                 Text(model.searchQuery.isEmpty ? (allCount == 0 ? "No applications reported" : "Loading applications...") : "No applications match \"\(model.searchQuery)\"")
