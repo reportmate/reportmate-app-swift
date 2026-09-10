@@ -49,68 +49,30 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     }
 }
 
-/// Fleet-wide options stored on the API and shared with the web dashboard.
-/// Port of `ClientSettingsPage.tsx` and its editors.
-struct FleetSettingsView: View {
-    enum Section: String, CaseIterable, Identifiable {
-        case general = "General", inventory = "Inventory Mapping", rules = "Security Rules", kiosk = "Kiosk Displays", maintenance = "Maintenance"
-        var id: String { rawValue }
-    }
+/// The fleet settings document shared by every fleet tab of the Settings window,
+/// so switching tabs never reloads or drops an unsaved edit.
+@MainActor @Observable
+final class FleetSettingsStore {
+    var settings: SettingsDocument = .defaults
+    var response: SettingsResponse?
+    var status: String?
+    var saving = false
+    private var loadedOnce = false
 
-    @Environment(AppState.self) private var appState
-    @State private var section: Section = .general
-    @State private var settings: SettingsDocument = .defaults
-    @State private var response: SettingsResponse?
-    @State private var status: String?
-    @State private var saving = false
-    @State private var showWizard = false
-
-    private var isFirstTime: Bool {
+    /// The API has no saved document yet, or setup never finished.
+    var isFirstTime: Bool {
         guard let response else { return false }
         return !response.exists || settings.general.onboardingCompletedAt == nil
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Picker("Section", selection: $section) { ForEach(Section.allCases) { Text($0.rawValue).tag($0) } }
-                    .pickerStyle(.segmented).labelsHidden()
-                Spacer()
-                Button("Reload") { Task { await load() } }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            if isFirstTime {
-                HStack {
-                    Image(systemName: "sparkles").foregroundStyle(.blue)
-                    Text("Run the one-time setup to auto-discover your inventory fields and seed security rules.").appFont(.callout)
-                    Spacer()
-                    Button("Run setup") { showWizard = true }.buttonStyle(.borderedProminent)
-                }
-                .padding(.horizontal, 16).padding(.vertical, 8)
-                .background(Color.blue.opacity(0.08))
-            }
-            Group {
-                switch section {
-                case .general: GeneralSettingsSection(settings: $settings, save: save, status: status, saving: saving)
-                case .inventory: InventoryMappingEditor(settings: $settings, save: save, status: status, saving: saving)
-                case .rules: SecurityRulesEditor(settings: $settings, save: save, status: status, saving: saving)
-                case .kiosk: KioskSettingsEditor(settings: $settings, save: save, status: status, saving: saving)
-                case .maintenance: MaintenanceSection()
-                }
-            }
-        }
-        .task { await load() }
-        .sheet(isPresented: $showWizard) {
-            OnboardingWizardView(settings: settings) { doc in
-                settings = doc
-                await save()
-            }
-            .environment(appState)
-        }
+    func loadIfNeeded(_ appState: AppState) async {
+        guard !loadedOnce else { return }
+        await load(appState)
     }
 
-    private func load() async {
+    func load(_ appState: AppState) async {
         guard appState.isConfigured else { return }
+        loadedOnce = true
         do {
             let r = try await appState.api.settings()
             response = r
@@ -123,18 +85,77 @@ struct FleetSettingsView: View {
         }
     }
 
-    private func save() async {
+    func save(_ appState: AppState) async {
         saving = true
         defer { saving = false }
         do {
             _ = try await appState.api.saveSettings(settings)
             appState.settings = settings
             status = "Saved"
-            await load()
+            await load(appState)
         } catch {
             status = error.localizedDescription
         }
     }
+}
+
+/// Fleet-wide options stored on the API and shared with the web dashboard.
+/// Port of `ClientSettingsPage.tsx` and its editors; each section is its own
+/// Settings tab.
+struct FleetSettingsView: View {
+    enum Section: String, CaseIterable, Identifiable {
+        case general = "General", inventory = "Inventory Mapping", rules = "Security Rules", kiosk = "Kiosk Displays", maintenance = "Maintenance"
+        var id: String { rawValue }
+        var systemImage: String {
+            switch self {
+            case .general: return "gearshape"
+            case .inventory: return "tag"
+            case .rules: return "lock.shield"
+            case .kiosk: return "display"
+            case .maintenance: return "wrench.and.screwdriver"
+            }
+        }
+    }
+
+    let section: Section
+    @Bindable var store: FleetSettingsStore
+    @Environment(AppState.self) private var appState
+    @State private var showWizard = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if store.isFirstTime {
+                HStack {
+                    Image(systemName: "sparkles").foregroundStyle(.blue)
+                    Text("Run the one-time setup to auto-discover your inventory fields and seed security rules.").appFont(.callout)
+                    Spacer()
+                    Button("Run setup") { showWizard = true }.buttonStyle(.borderedProminent)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .background(Color.blue.opacity(0.08))
+            }
+            Group {
+                switch section {
+                case .general: GeneralSettingsSection(settings: $store.settings, save: save, reload: reload, status: store.status, saving: store.saving)
+                case .inventory: InventoryMappingEditor(settings: $store.settings, save: save, reload: reload, status: store.status, saving: store.saving)
+                case .rules: SecurityRulesEditor(settings: $store.settings, save: save, reload: reload, status: store.status, saving: store.saving)
+                case .kiosk: KioskSettingsEditor(settings: $store.settings, save: save, reload: reload, status: store.status, saving: store.saving)
+                case .maintenance: MaintenanceSection()
+                }
+            }
+        }
+        .task { await store.loadIfNeeded(appState) }
+        .sheet(isPresented: $showWizard) {
+            OnboardingWizardView(settings: store.settings) { doc in
+                store.settings = doc
+                await save()
+            }
+            .environment(appState)
+        }
+    }
+
+    private func reload() async { await store.load(appState) }
+    private func save() async { await store.save(appState) }
 }
 
 /// Save row shared by the editors.
@@ -143,10 +164,12 @@ private struct SaveBar: View {
     let status: String?
     let saving: Bool
     let save: () async -> Void
+    let reload: () async -> Void
     var body: some View {
         HStack {
             if let status { Text(status).appFont(.caption).foregroundStyle(.secondary).lineLimit(1) }
             Spacer()
+            Button("Reload") { Task { await reload() } }.disabled(saving)
             Button(saving ? "Saving…" : title) { Task { await save() } }.buttonStyle(.borderedProminent).disabled(saving)
         }
     }
@@ -156,6 +179,7 @@ struct GeneralSettingsSection: View {
     @Environment(AppState.self) private var appState
     @Binding var settings: SettingsDocument
     let save: () async -> Void
+    let reload: () async -> Void
     let status: String?
     let saving: Bool
 
@@ -181,7 +205,7 @@ struct GeneralSettingsSection: View {
             } header: {
                 Text("Fleet (shared with the web dashboard)")
             }
-            Section { SaveBar(title: "Save to API", status: status, saving: saving, save: save) }
+            Section { SaveBar(title: "Save to API", status: status, saving: saving, save: save, reload: reload) }
         }
         .formStyle(.grouped)
     }
@@ -191,6 +215,7 @@ struct GeneralSettingsSection: View {
 struct InventoryMappingEditor: View {
     @Binding var settings: SettingsDocument
     let save: () async -> Void
+    let reload: () async -> Void
     let status: String?
     let saving: Bool
 
@@ -224,7 +249,7 @@ struct InventoryMappingEditor: View {
                 }
             }
             Spacer()
-            SaveBar(title: "Save Mapping", status: status, saving: saving, save: save)
+            SaveBar(title: "Save Mapping", status: status, saving: saving, save: save, reload: reload)
         }
         .padding(16)
     }
@@ -255,6 +280,7 @@ struct InventoryMappingEditor: View {
 struct SecurityRulesEditor: View {
     @Binding var settings: SettingsDocument
     let save: () async -> Void
+    let reload: () async -> Void
     let status: String?
     let saving: Bool
 
@@ -298,7 +324,7 @@ struct SecurityRulesEditor: View {
                     }
                     ForEach(settings.security.rules) { rule in ruleRow(rule) }
                 }
-                SaveBar(title: "Save Rules", status: status, saving: saving, save: save)
+                SaveBar(title: "Save Rules", status: status, saving: saving, save: save, reload: reload)
             }
             .padding(16)
         }
@@ -367,6 +393,7 @@ struct SecurityRulesEditor: View {
 struct KioskSettingsEditor: View {
     @Binding var settings: SettingsDocument
     let save: () async -> Void
+    let reload: () async -> Void
     let status: String?
     let saving: Bool
 
@@ -399,7 +426,7 @@ struct KioskSettingsEditor: View {
                 Text("These apply only to kiosk sessions, the read-only sessions a wall display opens through its kiosk token. Signed-in people are not affected.")
                     .appFont(.caption).foregroundStyle(.secondary)
             }
-            Section { SaveBar(title: "Save kiosk settings", status: status, saving: saving, save: save) }
+            Section { SaveBar(title: "Save kiosk settings", status: status, saving: saving, save: save, reload: reload) }
         }
         .formStyle(.grouped)
     }

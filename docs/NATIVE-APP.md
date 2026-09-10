@@ -155,7 +155,7 @@ where the native counterpart lives.
 | `/peripherals` (kind and printer widgets) | `Views/Reports/PeripheralsReportView.swift` | Complete. |
 | `/security` (eight status donuts, certificate search) | `Views/Reports/SecurityReportView.swift` | Complete.  The Protection figure counts only devices that report antivirus (Windows, or a Mac that names a product) and says so; the API sends `false` for a Mac otherwise, which would count every Mac as Disabled. |
 | `/network` (wireless state, networks, speed and signal widgets) | `Views/Reports/NetworkReportView.swift` | Complete. |
-| `/settings` (General, Inventory Mapping, Security Rules, Kiosk Displays, Maintenance) and `/settings/onboarding` | `Views/Settings/SettingsView.swift`, `FleetSettingsView.swift` | Complete. Theme and text size live under Appearance. |
+| `/settings` (General, Inventory Mapping, Security Rules, Kiosk Displays, Maintenance) and `/settings/onboarding` | `Views/Settings/SettingsView.swift`, `FleetSettingsView.swift` | Complete. Each web settings tab is its own tab of the Settings window (⌘,), after Connection and Appearance; the fleet tabs share one loaded document, and every save bar has Reload. |
 | `/live-installs` | — | Not ported: the page reads a Next.js route that no longer exists. |
 
 Shared behaviour: every report has the platform toggle, the Selections
