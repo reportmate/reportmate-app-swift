@@ -22,8 +22,8 @@ Produces `.build/app/ReportMate.app`. `make app-dmg` also writes a disk image, a
 
 The bundle carries the `reportmateutil` command line tool from
 [reportmate-cli](https://github.com/reportmate/reportmate-cli) at
-`ReportMate.app/Contents/Helpers/reportmate`. `make app-pkg` writes an installer that
-puts the app in `/Applications` and links the tool to `/usr/local/bin/reportmate`, so
+`ReportMate.app/Contents/Helpers/reportmateutil`. `make app-pkg` writes an installer that
+puts the app in `/Applications` and links the tool to `/usr/local/bin/reportmateutil`, so
 it is on PATH in every shell.
 
 ## Configure

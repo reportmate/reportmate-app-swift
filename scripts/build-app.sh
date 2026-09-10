@@ -15,7 +15,7 @@ set -euo pipefail
 #   scripts/build-app.sh --cli-version=vYYYY.MM.DD.HHMM  pin the CLI release (default: latest)
 #
 # The reportmateutil CLI (reportmate/reportmate-cli) rides inside the bundle at
-# Contents/Helpers/reportmate, the way Managed Reports Runner.app carries
+# Contents/Helpers/reportmateutil, the way Managed Reports Runner.app carries
 # managedreportsrunner; the pkg postinstall puts it on PATH. It cannot sit in
 # Contents/MacOS beside the app's own executable; Contents/Helpers is the
 # place for a bundled tool.
@@ -91,10 +91,10 @@ if [ "$CLI" = "1" ]; then
     CLI_BIN="$(find "$CLI_TMP" -type f -name reportmateutil | head -1)"
     [ -n "$CLI_BIN" ] || { echo "reportmate binary not found in $ASSET"; exit 1; }
     mkdir -p "$APP/Contents/Helpers"
-    cp "$CLI_BIN" "$APP/Contents/Helpers/reportmate"
-    chmod 755 "$APP/Contents/Helpers/reportmate"
+    cp "$CLI_BIN" "$APP/Contents/Helpers/reportmateutil"
+    chmod 755 "$APP/Contents/Helpers/reportmateutil"
     rm -rf "$CLI_TMP"
-    echo "Bundled reportmateutil: $("$APP/Contents/Helpers/reportmate" --version 2>/dev/null | head -1 || echo unknown)"
+    echo "Bundled reportmateutil: $("$APP/Contents/Helpers/reportmateutil" --version 2>/dev/null | head -1 || echo unknown)"
 fi
 if [ ! -f "Sources/ReportMateMac/Resources/AppIcon.icns" ] && command -v iconutil >/dev/null; then
     swift scripts/make-app-icon.swift "Sources/ReportMateMac/Resources/AppIcon.icns" >/dev/null || true
@@ -108,8 +108,8 @@ if [ "$SIGN" = "1" ]; then
         set -a; . ./.env; set +a
     fi
     : "${SIGNING_IDENTITY_APP:?SIGNING_IDENTITY_APP is not set (put it in .env)}"
-    if [ -f "$APP/Contents/Helpers/reportmate" ]; then
-        codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY_APP" "$APP/Contents/Helpers/reportmate"
+    if [ -f "$APP/Contents/Helpers/reportmateutil" ]; then
+        codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY_APP" "$APP/Contents/Helpers/reportmateutil"
     fi
     codesign --force --deep --options runtime --timestamp --sign "$SIGNING_IDENTITY_APP" "$APP"
     codesign --verify --verbose=2 "$APP"
@@ -137,10 +137,10 @@ if [ "$PKG" = "1" ]; then
     cat > "$SCRIPTS/postinstall" <<'POSTINSTALL'
 #!/bin/bash
 # Put the bundled reportmateutil CLI on PATH, the way the runner pkg links managedreportsrunner.
-CLI="/Applications/ReportMate.app/Contents/Helpers/reportmate"
+CLI="/Applications/ReportMate.app/Contents/Helpers/reportmateutil"
 if [ -x "$CLI" ]; then
     mkdir -p /usr/local/bin
-    ln -sf "$CLI" /usr/local/bin/reportmate
+    ln -sf "$CLI" /usr/local/bin/reportmateutil
 fi
 exit 0
 POSTINSTALL
