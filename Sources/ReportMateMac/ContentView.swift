@@ -6,11 +6,14 @@ import ReportMateKit
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.openSettings) private var openSettings
+    @State private var searchQuery = ""
+    @State private var searchIndex = 0
+    @FocusState private var searchFocused: Bool
+    @State private var windowWidth: CGFloat = 1400
 
     var body: some View {
         @Bindable var state = appState
-        VStack(spacing: 0) {
-            TopNavBar()
+        ZStack(alignment: .top) {
             NavigationStack(path: $state.path) {
                 sectionView
                     .navigationDestination(for: Route.self) { route in
@@ -19,6 +22,12 @@ struct ContentView: View {
                         destination(for: route).id(route)
                     }
             }
+            // The search results drop down under the toolbar field, like the web header.
+            if searchFocused, !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+                ToolbarSearchResults(query: $searchQuery, selectedIndex: $searchIndex, focused: $searchFocused)
+                    .padding(.top, 6)
+                    .zIndex(10)
+            }
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
@@ -26,15 +35,18 @@ struct ContentView: View {
                     .help("Back (⌘[)")
                     .disabled(!appState.canGoBack)
             }
-            ToolbarItem(placement: .principal) {
+            // One row, like the web header: platform toggle on the left, search dead
+            // centre, the sections on the right. Fixed items only: a fit-to-width
+            // view inside a toolbar item makes the whole toolbar overflow.
+            ToolbarItem(placement: .navigation) {
                 PlatformToggle()
             }
+            ToolbarItem(placement: .principal) {
+                ToolbarSearchField(query: $searchQuery, selectedIndex: $searchIndex, focused: $searchFocused)
+            }
             ToolbarItemGroup(placement: .primaryAction) {
+                TopNavBar(inline: true, compact: windowWidth < 1900)
                 CopyLinkMenu()
-                Button { appState.showSearch = true } label: {
-                    Label("Search", systemImage: "magnifyingglass")
-                }
-                .help("Find a device by name, serial, asset tag or hostname (⌘K)")
                 Button { appState.refreshRequested += 1 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
@@ -50,13 +62,14 @@ struct ContentView: View {
                     .help("Settings (⌘,)")
             }
         }
+        .background(GeometryReader { geo in Color.clear.onAppear { windowWidth = geo.size.width }.onChange(of: geo.size.width) { _, w in windowWidth = w } })
         .focusedSceneValue(\.appState, appState)
         .onOpenURL { url in
             if let link = DeepLink(url: url) { appState.open(deepLink: link) }
         }
-        .sheet(isPresented: $state.showSearch) {
-            GlobalSearchView()
-                .environment(appState)
+        // ⌘K (and the Find Device menu item) puts the cursor in the toolbar search.
+        .onChange(of: appState.showSearch) { _, wants in
+            if wants { searchFocused = true; appState.showSearch = false }
         }
         .task(id: appState.configuration) {
             guard appState.isConfigured else { return }
