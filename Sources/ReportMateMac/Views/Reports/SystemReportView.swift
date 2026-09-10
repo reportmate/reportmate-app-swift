@@ -42,7 +42,16 @@ struct SystemReportView: View {
 
     private var isWindowsOnly: Bool { appState.platformFilter == .windows }
     private var widgetLabels: [String] {
-        (osVersionFilter.map { ["OS \($0)"] } ?? []) + Array(editions) + Array(activations) + Array(licenseSources) + Array(uptimeBuckets) + Array(pendingBuckets)
+        // Built up step by step: the one-line chain of array sums timed out the
+        // type checker on the CI toolchain.
+        var labels: [String] = []
+        if let v = osVersionFilter { labels.append("OS \(v)") }
+        labels.append(contentsOf: editions)
+        labels.append(contentsOf: activations)
+        labels.append(contentsOf: licenseSources)
+        labels.append(contentsOf: uptimeBuckets)
+        labels.append(contentsOf: pendingBuckets)
+        return labels
     }
 
     private func clearWidgetFilters() {
