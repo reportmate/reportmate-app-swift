@@ -364,6 +364,17 @@ struct InstallsReportView: View {
             .padding(.horizontal, 10).padding(.vertical, 6)
             .background(Color.subtleBackground, in: RoundedRectangle(cornerRadius: 8))
             .frame(maxWidth: 320)
+            let narrowing = (model.searchQuery.isEmpty ? 0 : 1) + (model.itemsStatusFilter == nil ? 0 : 1) + (model.deviceStatusFilter == nil ? 0 : 1) + (model.installStatusFilter == nil ? 0 : 1) + model.selections.count
+            if narrowing > 0 {
+                Button(narrowing == 1 ? "Clear Filter" : "Clear Filters (\(narrowing))") {
+                    model.searchQuery = ""
+                    model.itemsStatusFilter = nil
+                    model.deviceStatusFilter = nil
+                    model.installStatusFilter = nil
+                    model.selections.clear()
+                }
+                .buttonStyle(.bordered).tint(.orange)
+            }
             if showPills {
                 ScrollView(.horizontal) {
                     HStack(spacing: 6) {

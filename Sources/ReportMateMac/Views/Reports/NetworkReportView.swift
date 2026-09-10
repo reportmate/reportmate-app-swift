@@ -38,7 +38,7 @@ struct NetworkReportView: View {
 
     var body: some View {
         FleetReportContainer(
-            section: .network, model: model, subtitle: "IP addresses, MAC addresses, and connectivity status", searchPlaceholder: "Search devices, IPs, MACs...",
+            section: .network, model: model, activeFilterCount: (connection == nil ? 0 : 1) + (speedFilter == nil ? 0 : 1), clearFilters: { connection = nil; speedFilter = nil }, subtitle: "IP addresses, MAC addresses, and connectivity status", searchPlaceholder: "Search devices, IPs, MACs...",
             searchKeys: { row in
                 let q = NetworkReportRow(json: row.json)
                 return [row.deviceName, row.serialNumber, row.inventory.assetTag, q.info.ipAddress, q.info.macAddress, q.info.ssid, q.info.connectionType, q.info.dnsAddress, q.info.hostname]

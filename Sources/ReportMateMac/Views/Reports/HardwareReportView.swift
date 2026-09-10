@@ -60,13 +60,12 @@ struct HardwareReportView: View {
 
     var body: some View {
         FleetReportContainer(
-            section: .hardware, model: model, subtitle: "Processor, memory, storage, and architecture details", searchPlaceholder: "Search devices...",
+            section: .hardware, model: model, activeFilterCount: activeCount, clearFilters: clearWidgetFilters, subtitle: "Processor, memory, storage, and architecture details", searchPlaceholder: "Search devices...",
             searchKeys: { row in
                 let h = HardwareReportRow(json: row.json)
                 return [row.deviceName, row.serialNumber, row.inventory.assetTag, h.processorName, h.model]
             },
             toolbar: { rows in
-                if activeCount > 0 { Button("Clear Selection") { clearWidgetFilters() }.buttonStyle(.bordered).tint(.yellow) }
                 CSVExportButton(filename: "hardware-report", headers: ["Device Name", "Serial Number", "Asset Tag", "Model", "Processor", "Memory", "Storage", "Architecture"]) {
                     sorted(applyWidgetFilters(rows)).map { p in [p.row.deviceName, p.row.serialNumber, p.row.inventory.assetTag ?? "", p.hw.model, p.hw.processorGroup, p.hw.memoryText, p.hw.storageText.total, p.hw.architecture] }
                 }
