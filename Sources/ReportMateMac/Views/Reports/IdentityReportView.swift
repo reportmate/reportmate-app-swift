@@ -70,7 +70,7 @@ struct IdentityReportView: View {
 
     var body: some View {
         FleetReportContainer(
-            section: .identity, model: model, subtitle: "User accounts, sessions, and identity management", searchPlaceholder: "Search devices or users...",
+            section: .identity, model: model, activeFilterCount: widgetLabels.count, clearFilters: clearWidgetFilters, subtitle: "User accounts, sessions, and identity management", searchPlaceholder: "Search devices or users...",
             searchKeys: { row in
                 let d = IdentityReportRow(json: row.json)
                 return [row.deviceName, row.serialNumber] + d.usernames + d.loggedInUsernames

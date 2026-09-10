@@ -38,7 +38,7 @@ struct PeripheralsReportView: View {
 
     var body: some View {
         FleetReportContainer(
-            section: .peripherals, model: model, subtitle: "USB, Bluetooth, and other connected devices", searchPlaceholder: "Search peripherals...",
+            section: .peripherals, model: model, activeFilterCount: selectedKinds.count + (printerFilter == nil ? 0 : 1) + (usbTypeFilter == nil ? 0 : 1), clearFilters: { selectedKinds = []; printerFilter = nil; usbTypeFilter = nil }, subtitle: "USB, Bluetooth, and other connected devices", searchPlaceholder: "Search peripherals...",
             searchKeys: { row in [row.deviceName, row.serialNumber, PeripheralsReportRow(json: row.json).searchableText] },
             toolbar: { _ in EmptyView() },
             widgets: { rows in widgets(base(rows).map(\.p)) }
