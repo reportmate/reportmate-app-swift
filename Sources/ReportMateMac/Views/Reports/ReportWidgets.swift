@@ -209,10 +209,12 @@ struct ReportSortHeader<Column: Equatable>: View {
     @Binding var ascending: Bool
     var width: CGFloat? = nil
     var alignment: Alignment = .leading
+    /// Dates and counts read best largest-first, so picking such a column starts descending.
+    var descendingFirst = false
 
     var body: some View {
         Button {
-            if sortColumn == column { ascending.toggle() } else { sortColumn = column; ascending = true }
+            if sortColumn == column { ascending.toggle() } else { sortColumn = column; ascending = !descendingFirst }
         } label: {
             HStack(spacing: 4) {
                 Text(title.uppercased()).appFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
