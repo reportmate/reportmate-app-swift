@@ -102,11 +102,22 @@ if [ "$CLI" = "1" ]; then
     rm -rf "$CLI_TMP"
     echo "Bundled reportmateutil: $("$APP/Contents/Helpers/reportmateutil" --version 2>/dev/null | head -1 || echo unknown)"
 fi
-if [ ! -f "Sources/ReportMateMac/Resources/AppIcon.icns" ] && command -v iconutil >/dev/null; then
-    swift scripts/make-app-icon.swift "Sources/ReportMateMac/Resources/AppIcon.icns" >/dev/null || true
-fi
-if [ -f "Sources/ReportMateMac/Resources/AppIcon.icns" ]; then
-    cp "Sources/ReportMateMac/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+# The app icon is the Icon Composer bundle (Liquid Glass on macOS 26, composited
+# icns for earlier releases), compiled by actool the way the runner's build does.
+# The generated placeholder is only a fallback for a machine without actool.
+ICON_SOURCE="Sources/ReportMateMac/Resources/ReportMate.icon"
+ICON_OUT=".build/app/actool-out"
+rm -rf "$ICON_OUT"; mkdir -p "$ICON_OUT"
+if [ -d "$ICON_SOURCE" ] && xcrun actool --compile "$ICON_OUT" --platform macosx --minimum-deployment-target 14.0 \
+        --app-icon "ReportMate" --output-partial-info-plist "$ICON_OUT/partial-info.plist" --warnings --errors "$ICON_SOURCE" >/dev/null 2>&1 \
+   && [ -f "$ICON_OUT/Assets.car" ]; then
+    cp "$ICON_OUT/Assets.car" "$APP/Contents/Resources/Assets.car"
+    [ -f "$ICON_OUT/ReportMate.icns" ] && cp "$ICON_OUT/ReportMate.icns" "$APP/Contents/Resources/ReportMate.icns"
+    echo "Icon compiled from $ICON_SOURCE"
+    cp "$ICON_SOURCE/Assets/reportmate-logo.png" "$APP/Contents/Resources/reportmate-logo.png"
+else
+    echo "actool could not compile $ICON_SOURCE; using the generated placeholder icon" >&2
+    swift scripts/make-app-icon.swift "$ICON_OUT/ReportMate.icns" >/dev/null && cp "$ICON_OUT/ReportMate.icns" "$APP/Contents/Resources/ReportMate.icns" || true
 fi
 
 if [ "$SIGN" = "1" ]; then
