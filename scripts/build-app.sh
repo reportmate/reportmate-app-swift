@@ -114,6 +114,7 @@ if [ -d "$ICON_SOURCE" ] && xcrun actool --compile "$ICON_OUT" --platform macosx
     cp "$ICON_OUT/Assets.car" "$APP/Contents/Resources/Assets.car"
     [ -f "$ICON_OUT/ReportMate.icns" ] && cp "$ICON_OUT/ReportMate.icns" "$APP/Contents/Resources/ReportMate.icns"
     echo "Icon compiled from $ICON_SOURCE"
+    cp "$ICON_SOURCE/Assets/reportmate-logo.png" "$APP/Contents/Resources/reportmate-logo.png"
 else
     echo "actool could not compile $ICON_SOURCE; using the generated placeholder icon" >&2
     swift scripts/make-app-icon.swift "$ICON_OUT/ReportMate.icns" >/dev/null && cp "$ICON_OUT/ReportMate.icns" "$APP/Contents/Resources/ReportMate.icns" || true

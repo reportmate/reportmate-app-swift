@@ -42,7 +42,7 @@ struct ContentView: View {
             // where the web shows its logo and wordmark.
             if appState.section == .dashboard, appState.path.isEmpty {
                 ToolbarItem(placement: .navigation) {
-                    Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 22, height: 22)
+                    Image(nsImage: AppLogo.image).resizable().aspectRatio(contentMode: .fit).frame(height: 24)
                 }
             }
             ToolbarItem(placement: .principal) {
@@ -180,4 +180,14 @@ struct CopyLinkMenu: View {
         copied = true
         Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
     }
+}
+
+/// The bare ReportMate logo artwork (the clipboard on a laptop), as the web
+/// header shows it, without the app icon's rounded background.
+@MainActor
+enum AppLogo {
+    static let image: NSImage = {
+        if let url = Bundle.main.url(forResource: "reportmate-logo", withExtension: "png"), let image = NSImage(contentsOf: url) { return image }
+        return NSApp.applicationIconImage
+    }()
 }
