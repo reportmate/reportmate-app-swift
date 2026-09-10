@@ -592,3 +592,16 @@ import Foundation
         #expect(Platform.detect(device: ["serialNumber": "SAMPLE1"]) == .unknown)
     }
 }
+
+@Suite struct SecurityScopeTests {
+    @Test func macWithoutAntivirusIsNotDisabled() {
+        let mac = SecurityReportRow(json: ["antivirusEnabled": false, "sipEnabled": true], platform: .macOS)
+        #expect(mac.protectionLabel == "Not Reported")
+        #expect(!mac.reportsProtection)
+        let win = SecurityReportRow(json: ["antivirusEnabled": false, "antivirusName": "Defender"], platform: .windows)
+        #expect(win.protectionLabel == "Disabled")
+        #expect(win.reportsProtection)
+        let macDefender = SecurityReportRow(json: ["antivirusEnabled": true, "antivirusUpToDate": true, "antivirusName": "Defender"], platform: .macOS)
+        #expect(macDefender.protectionLabel == "Current")
+    }
+}
