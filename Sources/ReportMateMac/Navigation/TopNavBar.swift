@@ -1,14 +1,15 @@
 import SwiftUI
 
-/// The web app's header navigation: Dashboard, Devices, Events, then the
-/// reports. Wide windows show every report as its own tab; narrow ones
-/// collapse the reports into a menu, like the web's Reports dropdown.
+/// The web app's header navigation: Dashboard, Devices, Events, then every
+/// report as its own tab. Only when the window is too narrow for all of them
+/// do the reports collapse into a menu, like the web's Reports dropdown. The
+/// bar carries nothing else: the API endpoint lives in Settings, and a red dot
+/// appears here only while the connection is failing.
 struct TopNavBar: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
         HStack(spacing: 12) {
-            brand
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 4) {
                     ForEach(AppSection.fleet) { tab($0) }
@@ -21,23 +22,16 @@ struct TopNavBar: View {
                 }
             }
             Spacer(minLength: 8)
-            connection
+            if let problem = appState.authProblem {
+                Circle().fill(Color.red).frame(width: 7, height: 7).help(problem)
+            } else if !appState.isConfigured {
+                Circle().fill(Color.gray).frame(width: 7, height: 7).help("Not connected: set the API endpoint in Settings")
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
         .background(Color.cardBackground)
         .overlay(alignment: .bottom) { Divider() }
-    }
-
-    private var brand: some View {
-        Button { select(.dashboard) } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "chart.bar.doc.horizontal.fill").foregroundStyle(.blue)
-                Text("ReportMate").appFont(.callout, weight: .semibold)
-            }
-        }
-        .buttonStyle(.plain)
-        .help("Dashboard")
     }
 
     private func select(_ section: AppSection) {
@@ -81,18 +75,5 @@ struct TopNavBar: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-    }
-
-    private var connection: some View {
-        HStack(spacing: 6) {
-            Circle().fill(appState.isConfigured ? (appState.authProblem == nil ? Color.green : Color.red) : Color.gray).frame(width: 7, height: 7)
-            Text(appState.isConfigured ? hostLabel : "Not connected")
-                .appFont(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-        }
-        .help(appState.authProblem ?? appState.configuration.normalizedBaseURL)
-    }
-
-    private var hostLabel: String {
-        URL(string: appState.configuration.normalizedBaseURL)?.host ?? appState.configuration.normalizedBaseURL
     }
 }
