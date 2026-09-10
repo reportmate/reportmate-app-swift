@@ -41,7 +41,7 @@ struct ManagementReportView: View {
 
     var body: some View {
         FleetReportContainer(
-            section: .management, model: model, subtitle: "Enrollment status and type, providers, and configurations", searchPlaceholder: "Search devices",
+            section: .management, model: model, activeFilterCount: [providerFilter, statusFilter, typeFilter].compactMap { $0 }.count, clearFilters: { providerFilter = nil; statusFilter = nil; typeFilter = nil }, subtitle: "Enrollment status and type, providers, and configurations", searchPlaceholder: "Search devices",
             searchKeys: { row in
                 let d = ManagementReportRow(json: row.json)
                 return [row.deviceName, row.serialNumber, d.intuneId, d.provider, row.inventory.usage, row.inventory.catalog, row.inventory.assetTag, row.inventory.location, row.inventory.department]
