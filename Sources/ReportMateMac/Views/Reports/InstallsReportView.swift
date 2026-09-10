@@ -479,7 +479,7 @@ struct InstallsReportView: View {
             ReportSortHeader(title: "Install", column: .name, sortColumn: $installSort, ascending: $installAscending)
             ReportSortHeader(title: "Version", column: .version, sortColumn: $installSort, ascending: $installAscending, width: 120)
             ReportSortHeader(title: "Status", column: .status, sortColumn: $installSort, ascending: $installAscending, width: 110)
-            ReportSortHeader(title: "Last Seen", column: .lastSeen, sortColumn: $installSort, ascending: $installAscending, width: 110)
+            ReportSortHeader(title: "Last Seen", column: .lastSeen, sortColumn: $installSort, ascending: $installAscending, width: 110, descendingFirst: true)
         } rows: {
             if rows.isEmpty { ReportEmptyRows(title: "No install records match", systemImage: "arrow.down.circle") }
             ForEach(rows) { r in
@@ -543,14 +543,14 @@ struct InstallsReportView: View {
         let rows = sortedConfigRows
         return StickyTable {
             ReportSortHeader(title: "Device", column: .device, sortColumn: $configSort, ascending: $configAscending, width: 240)
-            ReportSortHeader(title: "#", column: .total, sortColumn: $configSort, ascending: $configAscending, width: 50, alignment: .center)
-            ReportSortHeader(title: "Inst", column: .installed, sortColumn: $configSort, ascending: $configAscending, width: 62, alignment: .center).help("Installed")
-            ReportSortHeader(title: "Pend", column: .pending, sortColumn: $configSort, ascending: $configAscending, width: 62, alignment: .center).help("Pending")
-            ReportSortHeader(title: "Err", column: .errors, sortColumn: $configSort, ascending: $configAscending, width: 62, alignment: .center).help("Errors")
-            ReportSortHeader(title: "Warn", column: .warnings, sortColumn: $configSort, ascending: $configAscending, width: 62, alignment: .center).help("Warnings")
-            ReportSortHeader(title: "Rem", column: .removed, sortColumn: $configSort, ascending: $configAscending, width: 62, alignment: .center).help("Removed")
+            ReportSortHeader(title: "#", column: .total, sortColumn: $configSort, ascending: $configAscending, width: 50, alignment: .center, descendingFirst: true)
+            ReportSortHeader(title: "Inst", column: .installed, sortColumn: $configSort, ascending: $configAscending, width: 62, alignment: .center, descendingFirst: true).help("Installed")
+            ReportSortHeader(title: "Pend", column: .pending, sortColumn: $configSort, ascending: $configAscending, width: 62, alignment: .center, descendingFirst: true).help("Pending")
+            ReportSortHeader(title: "Err", column: .errors, sortColumn: $configSort, ascending: $configAscending, width: 62, alignment: .center, descendingFirst: true).help("Errors")
+            ReportSortHeader(title: "Warn", column: .warnings, sortColumn: $configSort, ascending: $configAscending, width: 62, alignment: .center, descendingFirst: true).help("Warnings")
+            ReportSortHeader(title: "Rem", column: .removed, sortColumn: $configSort, ascending: $configAscending, width: 62, alignment: .center, descendingFirst: true).help("Removed")
             ReportSortHeader(title: "Manifest / Repo", column: .manifest, sortColumn: $configSort, ascending: $configAscending)
-            ReportSortHeader(title: "Last Seen", column: .lastSeen, sortColumn: $configSort, ascending: $configAscending, width: 110)
+            ReportSortHeader(title: "Last Seen", column: .lastSeen, sortColumn: $configSort, ascending: $configAscending, width: 110, descendingFirst: true)
             ReportSortHeader(title: "Version", column: .version, sortColumn: $configSort, ascending: $configAscending, width: 90)
         } rows: {
             if rows.isEmpty { ReportEmptyRows(title: "No devices match", message: "Adjust the search, status pills, widget selections or selections.", systemImage: "arrow.down.circle") }
@@ -724,9 +724,9 @@ struct InstallsReportView: View {
         }
         return StickyTable {
             ReportSortHeader(title: "Device", column: .device, sortColumn: $statusSort, ascending: $statusAscending, width: 240)
-            ReportSortHeader(title: copy.packagesColumn, column: .packages, sortColumn: $statusSort, ascending: $statusAscending)
+            ReportSortHeader(title: copy.packagesColumn, column: .packages, sortColumn: $statusSort, ascending: $statusAscending, descendingFirst: true)
             ReportSortHeader(title: "Manifest / Repo", column: .manifest, sortColumn: $statusSort, ascending: $statusAscending, width: 200)
-            ReportSortHeader(title: "Last Seen", column: .lastSeen, sortColumn: $statusSort, ascending: $statusAscending, width: 110)
+            ReportSortHeader(title: "Last Seen", column: .lastSeen, sortColumn: $statusSort, ascending: $statusAscending, width: 110, descendingFirst: true)
             ReportHeaderLabel(title: "Actions", width: 100)
         } rows: {
             ForEach(sorted) { device in
