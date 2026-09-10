@@ -36,5 +36,20 @@ jobs:
       - name: Test the kit
         run: swift test
 
-      - name: Build the app bundle
+      - name: Build the app bundle and installer
         run: scripts/build-app.sh --pkg
+
+      # Unsigned artifacts on every push and pull request, so a PR proves the
+      # bundle (app plus reportmateutil) builds; the private pipelines sign them.
+      - name: Zip the app
+        run: cd .build/app && ditto -c -k --keepParent ReportMate.app ReportMate.app.zip
+
+      - name: Upload unsigned artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReportMate-unsigned-${{ github.sha }}
+          path: |
+            .build/app/ReportMate.app.zip
+            .build/app/ReportMate-*.pkg
+          if-no-files-found: error
+          retention-days: 14
