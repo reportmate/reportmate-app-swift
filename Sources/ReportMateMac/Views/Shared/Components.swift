@@ -77,13 +77,27 @@ extension Color {
 // MARK: - Cards
 
 /// The rounded card every widget and report sits in.
+/// Set by `UniformGrid` so every card in a row stretches to the row's height.
+private struct CardFillsHeightKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var cardFillsHeight: Bool {
+        get { self[CardFillsHeightKey.self] }
+        set { self[CardFillsHeightKey.self] = newValue }
+    }
+}
+
 struct Card<Content: View>: View {
     var padding: CGFloat = 0
     @ViewBuilder var content: Content
+    @Environment(\.cardFillsHeight) private var fillsHeight
 
     var body: some View {
         content
             .padding(padding)
+            .frame(maxWidth: .infinity, maxHeight: fillsHeight ? .infinity : nil, alignment: .top)
             .background(Color.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.cardBorder, lineWidth: 1))
@@ -392,6 +406,69 @@ struct BarRow: View {
             }
             .frame(height: 8)
             Text("\(count)").appFont(.caption).monospacedDigit().foregroundStyle(.secondary).frame(width: 34, alignment: .trailing)
+        }
+    }
+}
+
+/// A grid of equal-width columns whose cards all take the height of the
+/// tallest card in their row, so a row of cards reads as one band. The column
+/// count comes from the width on offer and `minColumnWidth`; cards inside
+/// stretch because the grid sets `cardFillsHeight` for its content.
+struct UniformGrid<Content: View>: View {
+    var minColumnWidth: CGFloat = 340
+    var maxColumns: Int = 3
+    var spacing: CGFloat = 16
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        UniformGridLayout(minColumnWidth: minColumnWidth, maxColumns: maxColumns, spacing: spacing) {
+            content
+        }
+        .environment(\.cardFillsHeight, true)
+    }
+}
+
+struct UniformGridLayout: Layout {
+    var minColumnWidth: CGFloat
+    var maxColumns: Int
+    var spacing: CGFloat
+
+    private func columns(for width: CGFloat) -> Int {
+        min(maxColumns, max(1, Int((width + spacing) / (minColumnWidth + spacing))))
+    }
+
+    private func rows(subviews: Subviews, width: CGFloat) -> (columnWidth: CGFloat, heights: [CGFloat]) {
+        let cols = columns(for: width)
+        let colW = (width - spacing * CGFloat(cols - 1)) / CGFloat(cols)
+        var heights: [CGFloat] = []
+        var i = 0
+        while i < subviews.count {
+            let row = subviews[i..<min(i + cols, subviews.count)]
+            heights.append(row.map { $0.sizeThatFits(ProposedViewSize(width: colW, height: nil)).height }.max() ?? 0)
+            i += cols
+        }
+        return (colW, heights)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 1000
+        let r = rows(subviews: subviews, width: width)
+        let height = r.heights.reduce(0, +) + spacing * CGFloat(max(0, r.heights.count - 1))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let cols = columns(for: bounds.width)
+        let r = rows(subviews: subviews, width: bounds.width)
+        var y = bounds.minY
+        for (rowIndex, rowHeight) in r.heights.enumerated() {
+            for c in 0..<cols {
+                let index = rowIndex * cols + c
+                guard index < subviews.count else { break }
+                let x = bounds.minX + CGFloat(c) * (r.columnWidth + spacing)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: r.columnWidth, height: rowHeight))
+            }
+            y += rowHeight + spacing
         }
     }
 }

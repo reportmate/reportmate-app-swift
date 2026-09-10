@@ -79,18 +79,18 @@ struct HardwareReportView: View {
 
     private func widgets(_ all: [HardwareReportRow]) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            CountListWidget(title: "Hardware Type", counts: countLabels(all.map(\.model)), selected: $models, tone: .orange).frame(width: 300)
+            CountListWidget(title: "Hardware Type", counts: countLabels(all.map(\.model)), selected: $models, tone: .orange).frame(maxWidth: .infinity)
             if isMacOnly {
-                CountListWidget(title: "Chip Configuration", counts: countLabels(all.compactMap(\.chipSku)), selected: $chipConfigs, tone: .purple).frame(width: 340)
+                CountListWidget(title: "Chip Configuration", counts: countLabels(all.compactMap(\.chipSku)), selected: $chipConfigs, tone: .purple).frame(maxWidth: .infinity)
             } else {
-                CountListWidget(title: "Processors", counts: countLabels(all.map(\.processorGroup)), selected: $processors, tone: .blue).frame(width: 260)
-                CountListWidget(title: "Graphics", counts: countLabels(all.map(\.graphicsGroup)), selected: $graphics, tone: .green).frame(width: 260)
+                CountListWidget(title: "Processors", counts: countLabels(all.map(\.processorGroup)), selected: $processors, tone: .blue).frame(maxWidth: .infinity)
+                CountListWidget(title: "Graphics", counts: countLabels(all.map(\.graphicsGroup)), selected: $graphics, tone: .green).frame(maxWidth: .infinity)
             }
             VStack(spacing: 12) {
                 CountListWidget(title: "Memory", counts: countLabels(all.map(\.memoryRange)).sorted { memorySort($0.label, $1.label) }, selected: $memoryRanges, tone: .indigo, showBars: false)
                 CountListWidget(title: "Storage", counts: countLabels(all.map(\.storageRange)), selected: $storageRanges, tone: .teal, showBars: false)
             }
-            .frame(width: 220)
+            .frame(maxWidth: .infinity)
             VStack(spacing: 12) {
                 DonutToggleWidget(title: "Device Type", data: countLabels(all.map(\.deviceType)), selected: $deviceTypes)
                 DonutToggleWidget(title: "Architecture", data: countLabels(all.map(\.architecture)), selected: $architectures, palette: [.blue, .orange, .purple, .gray])
