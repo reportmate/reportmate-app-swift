@@ -101,6 +101,15 @@ final class AppState {
 
     /// Follow a `reportmate://` link (or a pasted web URL).
     func open(deepLink link: DeepLink) {
+        // The web header carries the global platform toggle as ?platform=mac|win on
+        // every page, and leaves it off for All; a link without it keeps the current
+        // choice, as the web does.
+        switch link.query["platform"]?.lowercased() {
+        case "mac", "macos": platformFilter = .macOS
+        case "win", "windows": platformFilter = .windows
+        case "all": platformFilter = .all
+        default: break
+        }
         switch link.target {
         case .dashboard: section = .dashboard
         case .devices: section = .devices; pendingDeepLink = link
@@ -134,6 +143,17 @@ final class AppState {
 
     /// A link to what is on screen: the pushed route, else the section with its filters.
     var currentDeepLink: DeepLink {
+        var link = pageDeepLink
+        switch platformFilter {
+        case .macOS: link.query["platform"] = "mac"
+        case .windows: link.query["platform"] = "win"
+        case .all: break
+        }
+        return link
+    }
+
+    /// The page on screen without the global platform toggle.
+    private var pageDeepLink: DeepLink {
         if let route = currentRoute {
             switch route {
             case .device(let serial, let tab, let filter):
