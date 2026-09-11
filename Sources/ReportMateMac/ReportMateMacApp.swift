@@ -4,6 +4,7 @@ import ReportMateKit
 @main
 struct ReportMateMacApp: App {
     @State private var appState = AppState()
+    @State private var kiosk = KioskController()
     @AppStorage(AppFontScale.storageKey) private var fontScale: Double = AppFontScale.default
     @AppStorage(AppAppearance.storageKey) private var appearance: String = AppAppearance.system.rawValue
 
@@ -18,8 +19,9 @@ struct ReportMateMacApp: App {
         WindowGroup {
             ContentView()
                 .environment(appState)
-                .appFontScale(fontScale)
-                .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
+                .environment(kiosk)
+                .appFontScale(kiosk.fontScale ?? fontScale)
+                .preferredColorScheme(kiosk.enabled ? kiosk.colorScheme : AppAppearance(rawValue: appearance)?.colorScheme)
                 .frame(minWidth: 960, minHeight: 620)
                 // The web app is blue throughout (links are blue-600); pin the accent so
                 // device links and controls do not follow the Mac's accent colour setting.
@@ -32,12 +34,13 @@ struct ReportMateMacApp: App {
         .handlesExternalEvents(matching: ["*"])
         .defaultSize(width: 1380, height: 900)
         .commands {
-            AppCommands()
+            AppCommands(kiosk: kiosk)
         }
 
         Settings {
             SettingsView()
                 .environment(appState)
+                .environment(kiosk)
                 .appFontScale(fontScale)
                 .preferredColorScheme(AppAppearance(rawValue: appearance)?.colorScheme)
         }
@@ -47,6 +50,7 @@ struct ReportMateMacApp: App {
 /// Menu bar commands: section switching, search, refresh, back/forward.
 struct AppCommands: Commands {
     @FocusedValue(\.appState) private var appState
+    @Bindable var kiosk: KioskController
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {}
@@ -80,6 +84,9 @@ struct AppCommands: Commands {
                 .keyboardShortcut("m", modifiers: [.command, .shift])
             Button("Show Windows Only") { appState?.platformFilter = .windows }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
+            Divider()
+            Toggle("Kiosk Mode", isOn: Binding(get: { kiosk.enabled }, set: { kiosk.setEnabled($0) }))
+                .keyboardShortcut("k", modifiers: [.command, .control])
         }
     }
 }
