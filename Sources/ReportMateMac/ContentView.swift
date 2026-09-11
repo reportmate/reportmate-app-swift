@@ -6,6 +6,7 @@ import ReportMateKit
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.openSettings) private var openSettings
+    @Environment(KioskController.self) private var kiosk
     @State private var searchQuery = ""
     @State private var searchIndex = 0
     @FocusState private var searchFocused: Bool
@@ -71,6 +72,7 @@ struct ContentView: View {
         }
         .background(GeometryReader { geo in Color.clear.onAppear { windowWidth = geo.size.width }.onChange(of: geo.size.width) { _, w in windowWidth = w } })
         .focusedSceneValue(\.appState, appState)
+        .task { kiosk.attach(appState) }
         .onOpenURL { url in
             if let link = DeepLink(url: url) { appState.open(deepLink: link) }
         }

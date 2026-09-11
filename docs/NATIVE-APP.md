@@ -155,7 +155,7 @@ where the native counterpart lives.
 | `/peripherals` (kind and printer widgets) | `Views/Reports/PeripheralsReportView.swift` | Complete. |
 | `/security` (eight status donuts, certificate search) | `Views/Reports/SecurityReportView.swift` | Complete.  The Protection figure counts only devices that report antivirus (Windows, or a Mac that names a product) and says so; the API sends `false` for a Mac otherwise, which would count every Mac as Disabled. |
 | `/network` (wireless state, networks, speed and signal widgets) | `Views/Reports/NetworkReportView.swift` | Complete. |
-| `/settings` (General, Inventory Mapping, Security Rules, Kiosk Displays, Maintenance) and `/settings/onboarding` | `Views/Settings/SettingsView.swift`, `FleetSettingsView.swift` | Complete. Each web settings tab is its own tab of the Settings window (⌘,), after Connection and Appearance; the fleet tabs share one loaded document, and every save bar has Reload. |
+| `/settings` (General, Inventory Mapping, Security Rules, Kiosk Displays, Maintenance) and `/settings/onboarding` | `Views/Settings/SettingsView.swift`, `FleetSettingsView.swift` | Complete. The fleet tabs are read-only in the app with an Open in Web button: the API accepts settings writes only from the web dashboard's admin session. Each web settings tab is its own tab of the Settings window (⌘,), after Connection and Appearance. Maintenance runs in the app behind confirmation alerts. |
 | `/live-installs` | — | Not ported: the page reads a Next.js route that no longer exists. |
 
 Shared behaviour: every report has the platform toggle, the Selections
@@ -226,3 +226,19 @@ Sources/ReportMateMac/          the SwiftUI app
 └── Views/                      Dashboard, Devices, Events, Device tabs,
                                 Reports, Settings, Shared components
 ```
+
+## Kiosk mode
+
+View → Kiosk Mode (⌃⌘K), or the toggle under Settings → Kiosk Displays, runs
+this Mac as a wall display the way the web treats a kiosk session: the window
+goes full screen, the zoom and theme come from the fleet's Kiosk Displays
+settings, and after the idle timeout the app returns to the kiosk home page.
+The flag persists in the app's defaults, so a managed display can be switched
+on without touching the menu:
+
+```bash
+defaults write com.github.reportmate.mac kiosk.enabled -bool true
+```
+
+The app still needs a read credential; the web's kiosk token is a web session
+mechanism and does not apply here.
