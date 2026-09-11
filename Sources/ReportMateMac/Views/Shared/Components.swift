@@ -12,7 +12,7 @@ enum Tone: Hashable {
         switch self {
         case .blue: return .blue
         case .green, .emerald: return .green
-        case .yellow: return .yellow
+        case .yellow: return Tone.amber(light: (0.79, 0.54, 0.02), dark: (0.98, 0.80, 0.08))
         case .red: return .red
         case .purple: return .purple
         case .indigo: return .indigo
@@ -23,6 +23,20 @@ enum Tone: Hashable {
         case .gray: return .secondary
         case .violet: return Color(red: 0.55, green: 0.36, blue: 0.96)
         }
+    }
+
+    /// Text in a yellow chip: the web pairs yellow-100 with yellow-800, and pure
+    /// SwiftUI yellow on white was unreadable. Dynamic so dark mode lightens it.
+    var textColor: Color {
+        self == .yellow ? Tone.amber(light: (0.63, 0.38, 0.03), dark: (0.99, 0.88, 0.28)) : color
+    }
+
+    static func amber(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let c = isDark ? dark : light
+            return NSColor(red: c.0, green: c.1, blue: c.2, alpha: 1)
+        })
     }
 
     static func forSeverity(_ severity: Severity) -> Tone {
@@ -213,7 +227,7 @@ struct Pill: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 3)
             .background(filled ? tone.color : tone.color.opacity(0.15), in: Capsule())
-            .foregroundStyle(filled ? Color.white : (tone == .gray ? Color.primary : tone.color))
+            .foregroundStyle(filled ? Color.white : (tone == .gray ? Color.primary : tone.textColor))
             .lineLimit(1)
     }
 }

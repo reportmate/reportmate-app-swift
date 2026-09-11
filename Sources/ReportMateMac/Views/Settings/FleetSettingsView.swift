@@ -662,7 +662,13 @@ struct OnboardingWizardView: View {
 
     private func discover() async {
         do {
-            let keys = try await appState.api.discoverInventoryKeys()
+            let keys: [DiscoveredInventoryKey]
+            do {
+                keys = try await appState.api.discoverInventoryKeys()
+            } catch APIError.forbidden {
+                // The endpoint is proxy-only; the device list carries the same fields.
+                keys = InventoryDiscovery.discover(from: try await appState.api.allDevices())
+            }
             discovered = keys
             fields = SettingsDocument.defaultInventoryFields.map { f in
                 guard let match = keys.first(where: { Self.norm($0.key) == Self.norm(f.sourceKey) || Self.norm($0.key) == Self.norm(f.key.rawValue) }) else { return f }
