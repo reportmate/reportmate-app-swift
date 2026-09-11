@@ -587,10 +587,10 @@ public struct IdentityReportRow: Sendable, Hashable {
         usernames = json["users"].elements.compactMap { $0["username"].nonEmptyString }
         adminUsernames = json["adminUsernames"].elements.compactMap(\.nonEmptyString)
         loggedInUsernames = json["loggedInUsernames"].elements.compactMap(\.nonEmptyString)
+        // The web route classifies every row: with no directory data at all a device is
+        // simply a standard, unjoined-to-nothing Mac or PC, not an unknown.
         if let mapped = json["enrollmentType"].nonEmptyString {
             enrollmentType = mapped
-        } else if ds.object == nil, json["domainJoined"].isNull, json["entraJoined"].isNull {
-            enrollmentType = nil
         } else if domainJoined {
             enrollmentType = "Domain Joined"
         } else if entraJoined {
