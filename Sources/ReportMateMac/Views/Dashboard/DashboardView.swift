@@ -122,6 +122,7 @@ final class DashboardModel {
 struct DashboardView: View {
     @Environment(AppState.self) private var appState
     @State private var model = DashboardModel()
+    @State private var insights = DashboardInsightsModel()
 
     private var devices: [DeviceSummary] {
         guard let all = model.data?.devices else { return [] }
@@ -164,10 +165,12 @@ struct DashboardView: View {
             model.startLive(api: appState.api)
             defer { model.stopLive() }
             await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: true)
+            Task { await insights.load(api: appState.api) }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { break }
                 await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: false)
+                await insights.load(api: appState.api)
             }
         }
         .task {
@@ -178,6 +181,7 @@ struct DashboardView: View {
         }
         .onChange(of: appState.refreshRequested) { _, _ in
             Task { await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: model.data == nil) }
+            Task { await insights.load(api: appState.api, force: true) }
         }
     }
 
@@ -189,7 +193,12 @@ struct DashboardView: View {
                 InstallStatWidget(kind: .warning, stats: model.data?.installStats, filter: appState.platformFilter)
             }
             NewClientsWidget(devices: devices)
+            SystemInsightWidget(rows: filtered(insights.system), loading: insights.loading.contains("system"), error: insights.errors["system"])
         }
+    }
+
+    private func filtered(_ rows: [ReportRow]) -> [ReportRow] {
+        appState.platformFilter == .all ? rows : rows.filter { appState.platformFilter.includes($0.platform) }
     }
 
     private var rightColumn: some View {
@@ -197,6 +206,15 @@ struct DashboardView: View {
             RecentEventsWidget(events: events, connectionStatus: model.connectionStatus, lastUpdate: model.lastUpdate)
             PlatformDistributionWidget(devices: devices)
             osVersionRow
+            insightRow
+        }
+    }
+
+    private var insightRow: some View {
+        UniformGrid(minColumnWidth: 300, maxColumns: 3, spacing: 16) {
+            SecurityPostureWidget(rows: filtered(insights.security), loading: insights.loading.contains("security"), error: insights.errors["security"])
+            ManagementInsightWidget(rows: filtered(insights.management), loading: insights.loading.contains("management"), error: insights.errors["management"])
+            HardwareInsightWidget(rows: filtered(insights.hardware), loading: insights.loading.contains("hardware"), error: insights.errors["hardware"])
         }
     }
 
