@@ -704,3 +704,15 @@ final class ScriptedURLProtocol: URLProtocol, @unchecked Sendable {
         #expect(ScriptedURLProtocol.requests.count == 1, "requests: \(ScriptedURLProtocol.requests)")
     }
 }
+
+@Suite struct IdentityClassificationTests {
+    @Test func noDirectoryDataIsStandardLikeTheWeb() throws {
+        let json = try JSONValue.parse(Data(#"{"serialNumber":"SAMPLE1","platform":"macOS","summary":{"totalUsers":2}}"#.utf8))
+        #expect(IdentityReportRow(json: json).enrollmentType == "Standard")
+    }
+
+    @Test func entraJoinIsCloudJoined() throws {
+        let json = try JSONValue.parse(Data(#"{"serialNumber":"SAMPLE2","directoryServices":{"azureAd":{"joined":true}}}"#.utf8))
+        #expect(IdentityReportRow(json: json).enrollmentType == "Cloud Joined")
+    }
+}
