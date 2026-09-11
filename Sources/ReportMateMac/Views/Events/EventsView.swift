@@ -289,8 +289,18 @@ struct IngestFailuresView: View {
     @State private var error: String?
     @State private var outcome = "rejected"
     @State private var hours = 168
-    @State private var serial = ""
+    @State private var query = ""
     @State private var reason: String?
+
+    /// The web page searches the loaded rows by serial, device name, client IP
+    /// and reason; the API takes only a serial filter, so this stays client-side.
+    private func filtered(_ failures: [IngestFailure]) -> [IngestFailure] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return failures }
+        return failures.filter { f in
+            [f.serialNumber, f.deviceName, f.clientIp, f.reason].contains { ($0 ?? "").lowercased().contains(q) }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -303,7 +313,7 @@ struct IngestFailuresView: View {
                     Text("24 hours").tag(24); Text("7 days").tag(168); Text("30 days").tag(720); Text("90 days").tag(2160)
                 }
                 .fixedSize()
-                TextField("Serial contains…", text: $serial).textFieldStyle(.roundedBorder).frame(width: 180)
+                TextField("Search serial, name, IP…", text: $query).textFieldStyle(.roundedBorder).frame(width: 220)
                 if let reason { Pill(reason, tone: .red); Button("Clear") { self.reason = nil }.appFont(.caption) }
                 Spacer()
                 if let p = page {
@@ -350,11 +360,11 @@ struct IngestFailuresView: View {
                         }
                         Card {
                             VStack(spacing: 0) {
-                                CardHeader("Check-ins", subtitle: "\(page.failures.count) of \(page.total) in the last \(hours) hours", systemImage: "exclamationmark.octagon", tone: .orange)
-                                if page.failures.isEmpty {
+                                CardHeader("Check-ins", subtitle: "\(filtered(page.failures).count) of \(page.total) in the last \(hours) hours", systemImage: "exclamationmark.octagon", tone: .orange)
+                                if filtered(page.failures).isEmpty {
                                     EmptyStateView(title: "Nothing recorded", message: "No device check-ins matched this window.", systemImage: "checkmark.circle")
                                 } else {
-                                    Table(page.failures) {
+                                    Table(filtered(page.failures)) {
                                         TableColumn("Time") { f in Text(TimeFormatting.exact(f.ts)).appFont(.caption, design: .monospaced) }.width(140)
                                         TableColumn("Outcome") { f in Pill(f.outcome, tone: f.outcome == "rejected" ? .red : f.outcome == "retried" ? .yellow : .green) }.width(90)
                                         TableColumn("Reason") { f in Text(f.reason).appFont(.caption, design: .monospaced) }.width(min: 140, ideal: 180)
@@ -369,7 +379,7 @@ struct IngestFailuresView: View {
                                         TableColumn("Detail") { f in Text(f.detail ?? "").appFont(.caption).foregroundStyle(.secondary).lineLimit(2).help(f.detail ?? "") }
                                         TableColumn("From") { f in Text(f.clientIp ?? "").appFont(.caption, design: .monospaced).foregroundStyle(.secondary) }.width(110)
                                     }
-                                    .frame(minHeight: 300, idealHeight: CGFloat(page.failures.count) * 30 + 40)
+                                    .frame(minHeight: 300, idealHeight: CGFloat(filtered(page.failures).count) * 30 + 40)
                                 }
                             }
                         }
@@ -378,7 +388,7 @@ struct IngestFailuresView: View {
                 }
             }
         }
-        .task(id: "\(outcome)|\(hours)|\(serial)|\(reason ?? "")") { await load() }
+        .task(id: "\(outcome)|\(hours)|\(reason ?? "")") { await load() }
         .onChange(of: appState.refreshRequested) { _, _ in Task { await load() } }
     }
 
@@ -394,7 +404,7 @@ struct IngestFailuresView: View {
         loading = true
         error = nil
         do {
-            page = try await appState.api.ingestFailures(limit: 200, serial: serial.isEmpty ? nil : serial, reason: reason, hours: hours, outcome: outcome)
+            page = try await appState.api.ingestFailures(limit: 200, serial: nil, reason: reason, hours: hours, outcome: outcome)
         } catch {
             self.error = error.localizedDescription
             appState.note(error)
