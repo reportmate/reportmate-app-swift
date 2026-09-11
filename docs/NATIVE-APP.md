@@ -199,6 +199,8 @@ and the raw `reportmate://` link as alternatives. Every page contributes its
 filters, so a copied link reopens the exact view: the device tab and filter,
 the report's selections, the events kinds and date-independent filters, the
 system OS version, and the applications report type, apps, period and mode.
+The platform toggle travels as `?platform=mac` or `?platform=win` on every
+link, as in the web header, and a link without it keeps the current choice.
 
 ## This Mac
 
