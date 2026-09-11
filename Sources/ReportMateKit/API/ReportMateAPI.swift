@@ -104,22 +104,37 @@ public final class ReportMateAPI: Sendable {
         guard isConfigured else { throw APIError.notConfigured }
         let u = try url(path, query: query)
         let req = try await authorizedRequest(u, method: method, body: body)
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await session.data(for: req)
-        } catch {
-            throw APIError.transport(error.localizedDescription)
+        // The API's single replica intermittently refuses a connection under the heavy
+        // report queries and the gateway answers 502/503/504. A read is safe to repeat,
+        // so idempotent GETs get one more try after a short pause before the page
+        // shows an error; writes never do.
+        let canRetry = method == "GET"
+        for attempt in 0..<2 {
+            let (data, response): (Data, URLResponse)
+            do {
+                (data, response) = try await session.data(for: req)
+            } catch {
+                if canRetry, attempt == 0 { try? await Task.sleep(for: .seconds(2)); continue }
+                throw APIError.transport(error.localizedDescription)
+            }
+            guard let http = response as? HTTPURLResponse else { throw APIError.transport("No HTTP response") }
+            switch http.statusCode {
+            case 200..<300: return data
+            case 401: throw APIError.unauthorized(path: path)
+            case 403: throw APIError.forbidden(path: path)
+            case 404: return nil
+            case 502...504:
+                // A where clause on a multi-pattern case binds to the last pattern only,
+                // so the retry condition lives in the body.
+                if canRetry, attempt == 0 { try? await Task.sleep(for: .seconds(2)); continue }
+                let detail = (try? JSONValue.parse(data))?["detail"].string ?? String(data: data.prefix(300), encoding: .utf8) ?? ""
+                throw APIError.http(status: http.statusCode, message: detail, path: path)
+            default:
+                let detail = (try? JSONValue.parse(data))?["detail"].string ?? String(data: data.prefix(300), encoding: .utf8) ?? ""
+                throw APIError.http(status: http.statusCode, message: detail, path: path)
+            }
         }
-        guard let http = response as? HTTPURLResponse else { throw APIError.transport("No HTTP response") }
-        switch http.statusCode {
-        case 200..<300: return data
-        case 401: throw APIError.unauthorized(path: path)
-        case 403: throw APIError.forbidden(path: path)
-        case 404: return nil
-        default:
-            let detail = (try? JSONValue.parse(data))?["detail"].string ?? String(data: data.prefix(300), encoding: .utf8) ?? ""
-            throw APIError.http(status: http.statusCode, message: detail, path: path)
-        }
+        throw APIError.transport("The request could not be completed.")
     }
 
     /// GET a JSON tree. Missing resources are `.null`.
