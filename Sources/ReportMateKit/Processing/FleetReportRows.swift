@@ -195,9 +195,13 @@ public struct HardwareReportRow: Sendable, Hashable {
     }
 
     public var storageDrives: [JSONValue] { json["storage"].elements }
-    public var storageTotalBytes: Double { storageDrives.reduce(0) { $0 + ($1.first("size", "capacity").double ?? 0) } }
+    /// The drives that count as the machine's own storage: a plugged-in 4 TB disk is
+    /// not 4 TB of headroom. `isInternal` is null on every Mac entry (the runner
+    /// writes the key without a value), so only an explicit false excludes a drive.
+    public var internalDrives: [JSONValue] { storageDrives.filter { $0["isInternal"].bool != false } }
+    public var storageTotalBytes: Double { internalDrives.reduce(0) { $0 + ($1.first("size", "capacity").double ?? 0) } }
     /// The runners write `freeSpace`; older payloads used `free` or `available`.
-    public var storageFreeBytes: Double { storageDrives.reduce(0) { $0 + ($1.first("freeSpace", "free", "available", "freeBytes").double ?? 0) } }
+    public var storageFreeBytes: Double { internalDrives.reduce(0) { $0 + ($1.first("freeSpace", "free", "available", "freeBytes").double ?? 0) } }
 
     public var storageRange: String {
         guard json["storage"].array != nil else { return "Unknown" }
