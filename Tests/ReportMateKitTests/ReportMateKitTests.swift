@@ -641,3 +641,19 @@ import Foundation
         #expect(SystemReportRow(json: json).uptime == 600)
     }
 }
+
+@Suite struct InternalDriveTests {
+    @Test func externalDrivesDoNotCountAsHeadroom() throws {
+        let json = try JSONValue.parse(Data(#"{"serialNumber":"SAMPLE3","storage":[{"capacity":500,"freeSpace":50,"isInternal":true},{"capacity":4000,"freeSpace":3900,"isInternal":false}]}"#.utf8))
+        let row = HardwareReportRow(json: json)
+        #expect(row.storageTotalBytes == 500)
+        #expect(row.storageFreeBytes == 50)
+    }
+
+    @Test func nullIsInternalCountsAsInternal() throws {
+        let json = try JSONValue.parse(Data(#"{"serialNumber":"SAMPLE4","storage":[{"capacity":1000,"freeSpace":100,"isInternal":null}]}"#.utf8))
+        let row = HardwareReportRow(json: json)
+        #expect(row.storageTotalBytes == 1000)
+        #expect(row.storageFreeBytes == 100)
+    }
+}
