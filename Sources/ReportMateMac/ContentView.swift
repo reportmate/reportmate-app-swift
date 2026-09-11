@@ -53,7 +53,9 @@ struct ContentView: View {
                 }
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                TopNavBar(inline: true, compact: windowWidth < 1900)
+                // Just under 1960 pt the full row no longer fits once the labels are sized for
+                // their bold form, and the toolbar then drops every label to icons.
+                TopNavBar(inline: true, compact: windowWidth < 1960)
                 CopyLinkMenu()
                 Button { appState.refreshRequested += 1 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
