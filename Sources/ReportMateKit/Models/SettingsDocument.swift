@@ -240,10 +240,33 @@ public struct DiscoveredInventoryKey: Sendable, Hashable, Identifiable {
     public var distinctCount: Int
     public var sampleValues: [String]
 
+    public init(key: String, deviceCount: Int, distinctCount: Int, sampleValues: [String]) {
+        self.key = key; self.deviceCount = deviceCount; self.distinctCount = distinctCount; self.sampleValues = sampleValues
+    }
+
     public init(json: JSONValue) {
         key = json["key"].string ?? ""
         deviceCount = json["deviceCount"].int ?? 0
         distinctCount = json["distinctCount"].int ?? 0
         sampleValues = json["sampleValues"].elements.compactMap(\.string)
+    }
+}
+
+/// The discover endpoint is reserved for the web proxy (it answers 403 to every
+/// client credential), so the app derives the same shape from the device list:
+/// which inventory fields are populated, on how many devices, with sample values.
+public enum InventoryDiscovery {
+    public static func discover(from devices: [DeviceSummary]) -> [DiscoveredInventoryKey] {
+        let fields: [(String, (InventorySummary) -> String?)] = [
+            ("usage", \.usage), ("catalog", \.catalog), ("location", \.location), ("department", \.department),
+            ("area", \.area), ("fleet", \.fleet), ("owner", \.owner), ("assetTag", \.assetTag), ("deviceName", \.deviceName),
+        ]
+        return fields.compactMap { key, read in
+            var counts: [String: Int] = [:]
+            for d in devices { if let v = read(d.inventory)?.trimmingCharacters(in: .whitespaces), !v.isEmpty { counts[v, default: 0] += 1 } }
+            guard !counts.isEmpty else { return nil }
+            let samples = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.prefix(8).map(\.key)
+            return DiscoveredInventoryKey(key: key, deviceCount: counts.values.reduce(0, +), distinctCount: counts.count, sampleValues: samples)
+        }
     }
 }

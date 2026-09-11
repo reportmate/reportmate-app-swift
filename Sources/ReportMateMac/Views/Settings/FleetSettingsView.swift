@@ -120,16 +120,31 @@ struct FleetSettingsView: View {
     let section: Section
     @Bindable var store: FleetSettingsStore
     @Environment(AppState.self) private var appState
+    @Environment(KioskController.self) private var kiosk
     @State private var showWizard = false
+
+    /// The API accepts settings writes only from the web dashboard's admin session
+    /// (`PUT /settings` is gated on the proxy's internal secret), so the fleet tabs
+    /// read here and edit there.
+    private var readOnly: Bool { section != .maintenance }
+
+    private var webSettingsURL: URL? {
+        appState.configuration.normalizedWebURL.flatMap { URL(string: "/settings", relativeTo: $0)?.absoluteURL }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            if store.isFirstTime {
+            if readOnly {
                 HStack {
-                    Image(systemName: "sparkles").foregroundStyle(.blue)
-                    Text("Run the one-time setup to auto-discover your inventory fields and seed security rules.").appFont(.callout)
+                    Image(systemName: "eye").foregroundStyle(.blue)
+                    Text(store.isFirstTime
+                         ? "Read-only here. Run the one-time setup in the web dashboard to discover inventory fields and seed security rules."
+                         : "Read-only here: the API accepts settings changes only from the web dashboard's admin session.")
+                        .appFont(.callout)
                     Spacer()
-                    Button("Run setup") { showWizard = true }.buttonStyle(.borderedProminent)
+                    if let webSettingsURL {
+                        Button("Open in Web") { NSWorkspace.shared.open(webSettingsURL) }.buttonStyle(.borderedProminent)
+                    }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 8)
                 .background(Color.blue.opacity(0.08))
@@ -143,6 +158,7 @@ struct FleetSettingsView: View {
                 case .maintenance: MaintenanceSection()
                 }
             }
+            .disabled(readOnly && section != .kiosk)
         }
         .task { await store.loadIfNeeded(appState) }
         .sheet(isPresented: $showWizard) {
@@ -155,7 +171,7 @@ struct FleetSettingsView: View {
     }
 
     private func reload() async { await store.load(appState) }
-    private func save() async { await store.save(appState) }
+    private func save() async { await store.save(appState) ; kiosk.apply(store.settings) }
 }
 
 /// Save row shared by the editors.
@@ -392,6 +408,7 @@ struct SecurityRulesEditor: View {
 /// Settings for the read-only wall-display sessions.
 struct KioskSettingsEditor: View {
     @Binding var settings: SettingsDocument
+    @Environment(KioskController.self) private var kiosk
     let save: () async -> Void
     let reload: () async -> Void
     let status: String?
@@ -424,6 +441,14 @@ struct KioskSettingsEditor: View {
                 Text("Kiosk displays")
             } footer: {
                 Text("These apply only to kiosk sessions, the read-only sessions a wall display opens through its kiosk token. Signed-in people are not affected.")
+                    .appFont(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("Run this Mac as a kiosk display", isOn: Binding(get: { kiosk.enabled }, set: { kiosk.setEnabled($0) }))
+            } header: {
+                Text("This Mac")
+            } footer: {
+                Text("Full screen, the zoom and theme above, and a return to the home page after the idle timeout. Also View → Kiosk Mode (⌃⌘K); a managed display can set it with `defaults write com.github.reportmate.mac kiosk.enabled -bool true`.")
                     .appFont(.caption).foregroundStyle(.secondary)
             }
             Section { SaveBar(title: "Save kiosk settings", status: status, saving: saving, save: save, reload: reload) }
@@ -662,7 +687,13 @@ struct OnboardingWizardView: View {
 
     private func discover() async {
         do {
-            let keys = try await appState.api.discoverInventoryKeys()
+            let keys: [DiscoveredInventoryKey]
+            do {
+                keys = try await appState.api.discoverInventoryKeys()
+            } catch APIError.forbidden {
+                // The endpoint is proxy-only; the device list carries the same fields.
+                keys = InventoryDiscovery.discover(from: try await appState.api.allDevices())
+            }
             discovered = keys
             fields = SettingsDocument.defaultInventoryFields.map { f in
                 guard let match = keys.first(where: { Self.norm($0.key) == Self.norm(f.sourceKey) || Self.norm($0.key) == Self.norm(f.key.rawValue) }) else { return f }

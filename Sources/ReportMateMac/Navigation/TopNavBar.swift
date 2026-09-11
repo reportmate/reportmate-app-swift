@@ -76,7 +76,13 @@ struct TopNavBar: View {
         return Button { select(section) } label: {
             HStack(spacing: 5) {
                 Image(systemName: section.systemImage).appFont(fixed: 11)
-                Text(section.title).appFont(.callout, weight: active ? .semibold : .regular)
+                // Sized for the bold form so the active tab neither truncates nor
+                // shifts its neighbours when the weight changes.
+                ZStack {
+                    Text(section.title).appFont(.callout, weight: .semibold).hidden()
+                    Text(section.title).appFont(.callout, weight: active ? .semibold : .regular)
+                }
+                .fixedSize()
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
