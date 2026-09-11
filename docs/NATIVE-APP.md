@@ -48,6 +48,16 @@ make app-pkg
 
 ### The reportmateutil command line tool
 
+The CLI configures itself from the app: on Save, and at every launch, the
+app writes its non-secret connection (endpoint, auth method, Entra audience)
+to `~/Library/Application Support/ReportMate/connection.json`, and
+`reportmateutil` reads it when no `REPORTMATE_*` variables are set. An API
+key or passphrase is read from the app's Keychain item on first use (macOS
+asks once to allow it); an Entra sign-in needs no secret at all, the CLI mints
+its token with `az`. `reportmateutil config` shows what it resolved and from
+where.
+
+
 Every build fetches the latest `reportmateutil` release from
 [reportmate-cli](https://github.com/reportmate/reportmate-cli) (the universal
 macOS tarball) and places it at `ReportMate.app/Contents/Helpers/reportmateutil`, the way

@@ -148,5 +148,40 @@ public struct AppConfiguration: Sendable, Equatable {
         try keychain.set(oidcAudience, for: .oidcAudience)
         try keychain.set(authMethod.rawValue, for: .authMethod)
         UserDefaults.standard.set(webBaseURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: AppConfiguration.webBaseURLDefaultsKey)
+        exportConnection()
+    }
+}
+
+// MARK: - Shared connection for reportmateutil
+
+extension AppConfiguration {
+    /// Where the app leaves its non-secret connection for `reportmateutil`, so the
+    /// CLI configures itself from the app: the endpoint, the auth method and the
+    /// Entra audience. Secrets stay in the Keychain; the CLI reads the one item it
+    /// needs through `security`, or mints an Entra token with `az`.
+    public static var sharedConnectionURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("ReportMate/connection.json")
+    }
+
+    /// The document `reportmateutil` reads. Nothing secret is in it.
+    public var sharedConnectionDocument: [String: String] {
+        var doc: [String: String] = [:]
+        if !normalizedBaseURL.isEmpty { doc["apiUrl"] = normalizedBaseURL }
+        doc["authMethod"] = authMethod.rawValue
+        if !oidcAudience.isEmpty { doc["oidcAudience"] = oidcAudience }
+        if let web = normalizedWebURL?.absoluteString { doc["webUrl"] = web }
+        return doc
+    }
+
+    /// Write the shared connection; a failure here never affects the app.
+    public func exportConnection(to url: URL = AppConfiguration.sharedConnectionURL) {
+        guard isConfigured else { return }
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: sharedConnectionDocument, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: url, options: .atomic)
+        } catch {
+        }
     }
 }

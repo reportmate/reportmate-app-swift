@@ -716,3 +716,26 @@ final class ScriptedURLProtocol: URLProtocol, @unchecked Sendable {
         #expect(IdentityReportRow(json: json).enrollmentType == "Cloud Joined")
     }
 }
+
+@Suite struct SharedConnectionTests {
+    @Test func documentCarriesNoSecrets() {
+        let config = AppConfiguration(baseURL: "https://api.example.org/", authMethod: .apiKey, apiKey: "rm_SAMPLE_secret", passphrase: "", oidcAudience: "api://00000000-0000-0000-0000-000000000000", webBaseURL: "https://fleet.example.org")
+        let doc = config.sharedConnectionDocument
+        #expect(doc["apiUrl"] == config.normalizedBaseURL)
+        #expect(doc["authMethod"] == "apiKey")
+        #expect(doc["oidcAudience"] == "api://00000000-0000-0000-0000-000000000000")
+        #expect(doc.values.allSatisfy { !$0.contains("rm_SAMPLE_secret") })
+    }
+
+    @Test func exportWritesJSONWhereTheCLIReadsIt() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("reportmate-test-\(UUID().uuidString)")
+        let url = dir.appendingPathComponent("ReportMate/connection.json")
+        let config = AppConfiguration(baseURL: "https://api.example.org", authMethod: .entraBearer, oidcAudience: "api://sample")
+        config.exportConnection(to: url)
+        let data = try Data(contentsOf: url)
+        let parsed = try JSONSerialization.jsonObject(with: data) as? [String: String]
+        #expect(parsed?["authMethod"] == "entraBearer")
+        #expect(parsed?["apiUrl"] == "https://api.example.org")
+        try? FileManager.default.removeItem(at: dir)
+    }
+}
