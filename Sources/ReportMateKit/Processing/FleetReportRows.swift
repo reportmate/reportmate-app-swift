@@ -665,13 +665,28 @@ public struct SystemReportRow: Sendable, Hashable {
         architecture = json["architecture"].nonEmptyString
         timeZone = json["timeZone"].nonEmptyString
         locale = json["locale"].nonEmptyString
-        uptime = json["uptime"].double
+        // The Windows runner leaves uptime null on many devices but always writes
+        // uptimeString ("3d 4h", "5h, 12m", "45m"); read that back to seconds.
+        uptime = json["uptime"].double ?? SystemReportRow.seconds(fromUptimeString: json["uptimeString"].string)
         bootTime = json["bootTime"].nonEmptyString
         activationStatus = json["activationStatus"].boolishIfPresent
         licenseSource = json["licenseSource"].nonEmptyString
         hasFirmwareLicense = json["hasFirmwareLicense"].boolishIfPresent
         pendingUpdatesCount = json["pendingUpdatesCount"].int ?? 0
         deferredUpdatesCount = json["deferredUpdatesCount"].int ?? 0
+    }
+
+    static func seconds(fromUptimeString text: String?) -> Double? {
+        guard let text, !text.isEmpty else { return nil }
+        let units: [(String, Double)] = [("d", 86400), ("h", 3600), ("m", 60), ("s", 1)]
+        var total: Double = 0, matched = false
+        for (unit, factor) in units {
+            if let r = text.range(of: "(\\d+)\\s*\(unit)\\b", options: .regularExpression) {
+                let digits = text[r].filter(\.isNumber)
+                if let n = Double(digits) { total += n * factor; matched = true }
+            }
+        }
+        return matched ? total : nil
     }
 
     public var isMac: Bool {

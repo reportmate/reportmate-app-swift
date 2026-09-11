@@ -625,3 +625,19 @@ import Foundation
         #expect(row.storageFreeBytes == 100_000_000_000)
     }
 }
+
+@Suite struct SystemUptimeTests {
+    @Test func readsUptimeStringWhenUptimeIsNull() throws {
+        let json = try JSONValue.parse(Data(#"{"serialNumber":"SAMPLE1","uptime":null,"uptimeString":"3d 4h, 12m"}"#.utf8))
+        let row = SystemReportRow(json: json)
+        #expect(row.uptime == 274320, "got \(String(describing: row.uptime)) from \(String(describing: json["uptimeString"].string))")
+        #expect(SystemReportRow.seconds(fromUptimeString: "45m") == 2700)
+        #expect(SystemReportRow.seconds(fromUptimeString: "2h") == 7200)
+        #expect(SystemReportRow.seconds(fromUptimeString: "Unknown") == nil)
+    }
+
+    @Test func prefersNumericUptime() throws {
+        let json = try JSONValue.parse(Data(#"{"serialNumber":"SAMPLE2","uptime":600,"uptimeString":"3d"}"#.utf8))
+        #expect(SystemReportRow(json: json).uptime == 600)
+    }
+}
