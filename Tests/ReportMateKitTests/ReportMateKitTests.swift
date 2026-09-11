@@ -657,3 +657,50 @@ import Foundation
         #expect(row.storageFreeBytes == 100)
     }
 }
+
+/// Serves scripted responses so the request layer can be exercised without a network.
+final class ScriptedURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var statuses: [Int] = []
+    nonisolated(unsafe) static var requests: [String] = []
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let status = Self.statuses.isEmpty ? 200 : Self.statuses.removeFirst()
+        Self.requests.append("\(request.httpMethod ?? "") \(status)")
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("{\"ok\":true}".utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+@Suite(.serialized) struct GetRetryTests {
+    private func api() -> ReportMateAPI {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [ScriptedURLProtocol.self]
+        return ReportMateAPI(configuration: AppConfiguration(baseURL: "https://example.invalid", authMethod: .passphrase, passphrase: "SAMPLE"), session: URLSession(configuration: cfg))
+    }
+
+    @Test func retriesAGetOnceAfter503() async throws {
+        ScriptedURLProtocol.statuses = [503, 200]
+        ScriptedURLProtocol.requests = []
+        let json = try await api().getJSON("/health")
+        #expect(json["ok"].bool == true)
+        #expect(ScriptedURLProtocol.requests == ["GET 503", "GET 200"])
+    }
+
+    @Test func givesUpAfterTheSecond503() async throws {
+        ScriptedURLProtocol.statuses = [503, 503]
+        ScriptedURLProtocol.requests = []
+        await #expect(throws: APIError.self) { _ = try await api().getJSON("/health") }
+        #expect(ScriptedURLProtocol.requests.count == 2)
+    }
+
+    @Test func neverRetriesAWrite() async throws {
+        ScriptedURLProtocol.statuses = [503]
+        ScriptedURLProtocol.requests = []
+        await #expect(throws: APIError.self) { try await api().deleteDevice("SAMPLE1") }
+        #expect(ScriptedURLProtocol.requests.count == 1, "requests: \(ScriptedURLProtocol.requests)")
+    }
+}
