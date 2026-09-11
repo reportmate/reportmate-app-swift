@@ -46,10 +46,21 @@ struct ApplicationsReportView: View {
     /// Hydrate the report from a link the way the web page hydrates from its URL.
     private func applyDeepLink(_ link: DeepLink) {
         func list(_ key: String) -> [String] { (link.query[key] ?? "").split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
+        // Older links still use the single-value ?application=, ?usage=, ?catalog=,
+        // ?room= and ?search=; the web merges them into the list form on hydration.
+        func legacy(_ key: String, allowed: [String]? = nil) -> [String] {
+            guard let v = link.query[key]?.trimmingCharacters(in: .whitespaces), !v.isEmpty else { return [] }
+            if let allowed { return allowed.contains(v.lowercased()) ? [v.lowercased()] : [] }
+            return [v]
+        }
         model.reset()
-        model.searchQuery = link.query["q"] ?? ""
-        model.selectedApplications = list("apps")
-        model.selections.usages = Set(list("usages")); model.selections.catalogs = Set(list("catalogs")); model.selections.locations = Set(list("rooms") + list("locations"))
+        model.searchQuery = link.query["q"] ?? link.query["search"] ?? ""
+        var apps = list("apps")
+        for a in legacy("application") where !apps.contains(a) { apps.append(a) }
+        model.selectedApplications = apps
+        model.selections.usages = Set(list("usages") + legacy("usage", allowed: ["assigned", "shared"]))
+        model.selections.catalogs = Set(list("catalogs") + legacy("catalog", allowed: ["curriculum", "staff", "faculty", "kiosk"]))
+        model.selections.locations = Set(list("rooms") + list("locations") + legacy("room"))
         model.selections.fleets = Set(list("fleets")); model.selections.areas = Set(list("areas"))
         model.selectedVersions = list("versions")
         if let p = Int(link.query["period"] ?? "") { model.utilizationDays = p }
