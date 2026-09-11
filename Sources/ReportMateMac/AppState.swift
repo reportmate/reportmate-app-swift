@@ -53,6 +53,9 @@ final class AppState {
 
     init() {
         let config = AppConfiguration.load()
+        // Leave the non-secret connection where reportmateutil finds it, including one
+        // inherited from the runner that was never saved by hand.
+        config.exportConnection()
         configuration = config
         api = ReportMateAPI(configuration: config)
         platformFilter = PlatformFilter(rawValue: UserDefaults.standard.string(forKey: "platformFilter") ?? "") ?? .all
