@@ -605,3 +605,23 @@ import Foundation
         #expect(macDefender.protectionLabel == "Current")
     }
 }
+
+@Suite struct HardwareStorageTests {
+    @Test func readsFreeSpaceAsTheRunnersWriteIt() throws {
+        let json = try JSONValue.parse(Data("""
+        {"serialNumber":"SAMPLE1","storage":[{"name":"Macintosh HD","capacity":1000000000000,"freeSpace":50000000000,"isInternal":true}]}
+        """.utf8))
+        let row = HardwareReportRow(json: json)
+        #expect(row.storageTotalBytes == 1_000_000_000_000)
+        #expect(row.storageFreeBytes == 50_000_000_000)
+        #expect(row.storageText.free == "47 GB")
+    }
+
+    @Test func stillReadsOlderFreeKeys() throws {
+        let json = try JSONValue.parse(Data("""
+        {"serialNumber":"SAMPLE2","storage":[{"size":500000000000,"free":100000000000}]}
+        """.utf8))
+        let row = HardwareReportRow(json: json)
+        #expect(row.storageFreeBytes == 100_000_000_000)
+    }
+}

@@ -204,7 +204,7 @@ struct SecurityPostureWidget: View {
                 }
                 HStack(spacing: 8) {
                     StatChip(value: s.filter { $0.activeThreatCount > 0 }.count, label: "with threats", tone: .red)
-                    StatChip(value: s.filter { $0.expiredCertCount > 0 }.count, label: "expired certs", tone: .yellow)
+                    StatChip(value: s.filter { $0.certLabel == "Has Expired" }.count, label: "expired certs", tone: .yellow)
                     StatChip(value: s.filter { $0.criticalCveCount > 0 }.count, label: "critical CVEs", tone: .orange)
                 }
                 .padding(.top, 2)
@@ -280,7 +280,7 @@ struct HardwareInsightWidget: View {
         let data = families.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.map { (label: $0.key, count: $0.value, color: palette[$0.key] ?? .gray) }
         return Stats(
             count: pairs.count, data: data,
-            lowStorage: pairs.filter { $0.1.storageTotalBytes > 0 && $0.1.storageFreeBytes / $0.1.storageTotalBytes < 0.1 }.count,
+            lowStorage: pairs.filter { $0.1.storageTotalBytes > 0 && $0.1.storageFreeBytes > 0 && $0.1.storageFreeBytes / $0.1.storageTotalBytes < 0.1 }.count,
             lowMemory: pairs.filter { $0.1.memoryBytes > 0 && $0.1.memoryBytes <= 8 * 1024 * 1024 * 1024 }.count,
             laptops: pairs.filter { $0.1.deviceType.lowercased().contains("laptop") || $0.1.deviceType.lowercased().contains("notebook") }.count)
     }
