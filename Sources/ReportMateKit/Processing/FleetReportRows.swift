@@ -196,7 +196,8 @@ public struct HardwareReportRow: Sendable, Hashable {
 
     public var storageDrives: [JSONValue] { json["storage"].elements }
     public var storageTotalBytes: Double { storageDrives.reduce(0) { $0 + ($1.first("size", "capacity").double ?? 0) } }
-    public var storageFreeBytes: Double { storageDrives.reduce(0) { $0 + ($1.first("free", "available").double ?? 0) } }
+    /// The runners write `freeSpace`; older payloads used `free` or `available`.
+    public var storageFreeBytes: Double { storageDrives.reduce(0) { $0 + ($1.first("freeSpace", "free", "available", "freeBytes").double ?? 0) } }
 
     public var storageRange: String {
         guard json["storage"].array != nil else { return "Unknown" }
