@@ -62,6 +62,15 @@ final class AppState {
         includeArchived = UserDefaults.standard.bool(forKey: "includeArchived")
     }
 
+    /// An admin Mac that only inherited the runner's endpoint and passphrase moves
+    /// to Entra sign-in when the API advertises it and az can mint a token: no
+    /// shared secret in the app, and reportmateutil follows through connection.json.
+    func preferEntraIfAvailable() async {
+        let upgraded = await configuration.preferringEntra()
+        guard upgraded != configuration else { return }
+        try? update(configuration: upgraded)
+    }
+
     var isConfigured: Bool { configuration.isConfigured }
 
     func update(configuration: AppConfiguration) throws {

@@ -75,6 +75,7 @@ struct ContentView: View {
         .background(GeometryReader { geo in Color.clear.onAppear { windowWidth = geo.size.width }.onChange(of: geo.size.width) { _, w in windowWidth = w } })
         .focusedSceneValue(\.appState, appState)
         .task { kiosk.attach(appState) }
+        .task { await appState.preferEntraIfAvailable() }
         .onOpenURL { url in
             if let link = DeepLink(url: url) { appState.open(deepLink: link) }
         }

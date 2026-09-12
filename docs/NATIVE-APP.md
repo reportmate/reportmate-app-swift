@@ -126,6 +126,13 @@ URL filled in and Settings asking for a read credential. The Settings sheet says
 where the values came from, Save keeps a copy in the app's Keychain, and
 environment variables and the Keychain always win over the inherited values.
 
+Admin Macs sign in with Entra rather than a stored secret: when the app only
+inherited the runner's endpoint and passphrase, it asks the API's
+`/api/v1/auth/config` whether OIDC is on and, if `az login` can mint a token
+for the advertised audience, switches itself to Entra sign-in and drops the
+passphrase. Settings → Connection also has a Discover button that fills the
+audience from the same endpoint.
+
 ## Navigation
 
 The header mirrors the web app: **Dashboard | Devices | Events** and then the

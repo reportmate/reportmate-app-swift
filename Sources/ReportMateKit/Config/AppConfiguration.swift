@@ -185,3 +185,54 @@ extension AppConfiguration {
         }
     }
 }
+
+// MARK: - Auth discovery
+
+/// What `/api/v1/auth/config` says a deployment accepts. Public, no secrets.
+public struct AuthConfig: Sendable, Equatable {
+    public var oidcEnabled: Bool
+    public var audience: String?
+    public var issuers: [String]
+
+    public init(oidcEnabled: Bool, audience: String?, issuers: [String]) {
+        self.oidcEnabled = oidcEnabled; self.audience = audience; self.issuers = issuers
+    }
+
+    public init(json: JSONValue) {
+        let oidc = json["oidc"]
+        oidcEnabled = oidc["enabled"].boolish
+        audience = oidc["audience"].nonEmptyString
+        issuers = oidc["issuers"].elements.compactMap(\.string)
+    }
+
+    /// Fetch the deployment's auth description with no credential.
+    public static func discover(baseURL: String, session: URLSession = .shared) async throws -> AuthConfig {
+        let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let path = trimmed.hasSuffix("/api/v1") ? "\(trimmed)/auth/config" : "\(trimmed)/api/v1/auth/config"
+        guard let url = URL(string: path) else { throw APIError.transport("Not a valid API URL") }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 8
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw APIError.transport("The API did not answer /auth/config")
+        }
+        return AuthConfig(json: try JSONValue.parse(data))
+    }
+}
+
+extension AppConfiguration {
+    /// Rod's rule for admin machines: sign in with Entra, never a stored secret.
+    /// A configuration that only inherited the runner's endpoint and passphrase
+    /// switches to Entra when the API advertises OIDC and `az` can mint a token;
+    /// otherwise it is returned unchanged.
+    public func preferringEntra(tokenSource: AzTokenSource = .shared) async -> AppConfiguration {
+        guard inheritedFromRunner, authMethod == .passphrase, !baseURL.isEmpty else { return self }
+        guard let auth = try? await AuthConfig.discover(baseURL: baseURL), auth.oidcEnabled, let audience = auth.audience else { return self }
+        guard (try? await tokenSource.token(forResource: audience)) != nil else { return self }
+        var out = self
+        out.authMethod = .entraBearer
+        out.oidcAudience = audience
+        out.passphrase = ""
+        return out
+    }
+}
