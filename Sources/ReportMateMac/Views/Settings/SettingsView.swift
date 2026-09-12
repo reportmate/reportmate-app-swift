@@ -52,8 +52,14 @@ struct ConnectionSettingsView: View {
                     Text("The legacy shared client passphrase. Prefer an API key or Entra sign-in.")
                         .appFont(.caption).foregroundStyle(.secondary)
                 case .entraBearer:
-                    TextField("Entra audience (app id or api:// URI)", text: $draft.oidcAudience)
-                        .autocorrectionDisabled()
+                    HStack {
+                        TextField("Entra audience (app id or api:// URI)", text: $draft.oidcAudience)
+                            .autocorrectionDisabled()
+                        Button("Discover") { Task { await discoverAudience() } }
+                            .disabled(draft.baseURL.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .help("Ask the API which Entra audience it accepts")
+                    }
+                    .task(id: draft.baseURL) { if draft.oidcAudience.isEmpty { await discoverAudience() } }
                     Text("Tokens are minted from your local `az login` session; nothing is stored on this Mac.")
                         .appFont(.caption).foregroundStyle(.secondary)
                 }
@@ -100,6 +106,16 @@ struct ConnectionSettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear { draft = appState.configuration }
+    }
+
+    /// Fill the audience from the deployment's /auth/config.
+    private func discoverAudience() async {
+        guard let auth = try? await AuthConfig.discover(baseURL: draft.baseURL), auth.oidcEnabled, let audience = auth.audience else {
+            if draft.oidcAudience.isEmpty { testResult = "This API does not advertise Entra sign-in"; testFailed = true }
+            return
+        }
+        draft.oidcAudience = audience
+        testResult = nil
     }
 
     private func test() async {
