@@ -739,3 +739,20 @@ final class ScriptedURLProtocol: URLProtocol, @unchecked Sendable {
         try? FileManager.default.removeItem(at: dir)
     }
 }
+
+@Suite struct AuthDiscoveryTests {
+    @Test func readsTheAudienceOnlyWhenOIDCIsOn() throws {
+        let on = AuthConfig(json: try JSONValue.parse(Data(#"{"oidc":{"enabled":true,"audience":"api://sample","issuers":["https://login.example.test/t/v2.0"]}}"#.utf8)))
+        #expect(on.oidcEnabled && on.audience == "api://sample" && on.issuers.count == 1)
+        let off = AuthConfig(json: try JSONValue.parse(Data(#"{"oidc":{"enabled":false}}"#.utf8)))
+        #expect(!off.oidcEnabled && off.audience == nil)
+    }
+
+    @Test func onlyInheritedPassphraseConfigsAreUpgraded() async {
+        var saved = AppConfiguration(baseURL: "https://api.example.invalid", authMethod: .passphrase, passphrase: "SAMPLE")
+        saved.inheritedFromRunner = false
+        #expect(await saved.preferringEntra() == saved)
+        let keyed = AppConfiguration(baseURL: "https://api.example.invalid", authMethod: .apiKey, apiKey: "rm_SAMPLE")
+        #expect(await keyed.preferringEntra() == keyed)
+    }
+}
