@@ -32,7 +32,7 @@ jobs:
   release:
     runs-on: macos-15
     # Notarization for a young team can sit in Apple's queue for over an hour.
-    timeout-minutes: 240
+    timeout-minutes: 330
     env:
       NOTARIZATION_PROFILE: notary
 
@@ -123,7 +123,7 @@ jobs:
           pkg="ReportMate-$VERSION.pkg"; dmg="ReportMate-$VERSION.dmg"
           pkg_id=$(nt submit "$pkg" --output-format json | jq -r .id); echo "Submitted $pkg as $pkg_id"
           dmg_id=$(nt submit "$dmg" --output-format json | jq -r .id); echo "Submitted $dmg as $dmg_id"
-          deadline=$((SECONDS + 3 * 3600))
+          deadline=$((SECONDS + 5 * 3600))
           while :; do
             pending=0
             for pair in "$pkg:$pkg_id" "$dmg:$dmg_id"; do
@@ -138,7 +138,7 @@ jobs:
             done
             [ "$pending" = 0 ] && break
             if [ "$SECONDS" -gt "$deadline" ]; then
-              echo "::error::Notarization still pending after 3 hours: pkg $pkg_id, dmg $dmg_id"
+              echo "::error::Notarization still pending after 5 hours: pkg $pkg_id, dmg $dmg_id"
               exit 1
             fi
             sleep 30
