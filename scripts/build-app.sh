@@ -167,7 +167,7 @@ POSTINSTALL
     pkgbuild --component "$APP" --install-location /Applications --scripts "$SCRIPTS" \
         --identifier com.github.reportmate.app --version "$VERSION" "$PKG_PATH.unsigned" >/dev/null
     if [ "$SIGN" = "1" ] && [ -n "${SIGNING_IDENTITY_INSTALLER:-}" ]; then
-        productsign --sign "$SIGNING_IDENTITY_INSTALLER" "$PKG_PATH.unsigned" "$PKG_PATH" >/dev/null
+        productsign --timestamp --sign "$SIGNING_IDENTITY_INSTALLER" "$PKG_PATH.unsigned" "$PKG_PATH" >/dev/null
         rm -f "$PKG_PATH.unsigned"
     else
         mv "$PKG_PATH.unsigned" "$PKG_PATH"
