@@ -51,11 +51,26 @@ final class AppState {
     private(set) var devicesLoadedAt: Date?
     private var devicesTask: Task<Void, Never>?
 
-    init() {
-        let config = AppConfiguration.load()
+    // MARK: Presentation
+
+    /// True when the dashboard is hosted inside another app's window rather than its own.
+    let embedded: Bool
+    /// Settings as a sheet, used when embedded: the host app owns the Settings window.
+    var settingsSheetShown = false
+
+    /// Show Settings: the app's Settings window standalone, a sheet when embedded.
+    func presentSettings(_ openSettings: OpenSettingsAction) {
+        if embedded { settingsSheetShown = true } else { openSettings() }
+    }
+
+    /// `configuration` replaces the saved connection for this session; nil loads it
+    /// from the Keychain, the environment and the runner as the app always has.
+    init(configuration supplied: AppConfiguration? = nil, embedded: Bool = false) {
+        self.embedded = embedded
+        let config = supplied ?? AppConfiguration.load()
         // Leave the non-secret connection where reportmateutil finds it, including one
         // inherited from the runner that was never saved by hand.
-        config.exportConnection()
+        if supplied == nil { config.exportConnection() }
         configuration = config
         api = ReportMateAPI(configuration: config)
         platformFilter = PlatformFilter(rawValue: UserDefaults.standard.string(forKey: "platformFilter") ?? "") ?? .all
@@ -137,7 +152,8 @@ final class AppState {
             let list: (String) -> [String] = { link.query[$0]?.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) } ?? [] }
             openApplicationUsage(app, days: Int(link.query["days"] ?? "") ?? 30, usages: list("usages"), catalogs: list("catalogs"), locations: list("locations"))
         case .applicationCoverage: section = .applications; openApplicationCoverage()
-        case .settings: NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        case .settings:
+            if embedded { settingsSheetShown = true } else { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) }
         case .thisMac:
             // Same treatment as a device link: replace whatever is open and land on the tab.
             section = .devices

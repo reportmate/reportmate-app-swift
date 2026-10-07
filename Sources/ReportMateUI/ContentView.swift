@@ -13,8 +13,17 @@ struct ContentView: View {
     @State private var windowWidth: CGFloat = 1400
 
     var body: some View {
+        if appState.embedded {
+            embeddedBody
+        } else {
+            windowBody
+        }
+    }
+
+    /// The navigation stack with search results dropping down over it.
+    private var stack: some View {
         @Bindable var state = appState
-        ZStack(alignment: .top) {
+        return ZStack(alignment: .top) {
             NavigationStack(path: $state.path) {
                 sectionView
                     .navigationDestination(for: Route.self) { route in
@@ -30,6 +39,11 @@ struct ContentView: View {
                     .zIndex(10)
             }
         }
+    }
+
+    /// Standalone: the controls live in the window toolbar.
+    private var windowBody: some View {
+        stack
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 Button { appState.goBack() } label: { Image(systemName: "chevron.left") }
@@ -56,38 +70,73 @@ struct ContentView: View {
                 // Just under 1960 pt the full row no longer fits once the labels are sized for
                 // their bold form, and the toolbar then drops every label to icons.
                 TopNavBar(inline: true, compact: windowWidth < 1960)
-                CopyLinkMenu()
-                Button { appState.refreshRequested += 1 } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .help("Refresh (⌘R)")
-                if let problem = appState.authProblem {
-                    Button { openSettings() } label: {
-                        Label("Authentication", systemImage: "lock.trianglebadge.exclamationmark")
-                            .foregroundStyle(.red)
-                    }
-                    .help(problem)
-                }
-                Button { openSettings() } label: { Label("Settings", systemImage: "gearshape") }
-                    .help("Settings (⌘,)")
+                trailingButtons
             }
         }
         .background(GeometryReader { geo in Color.clear.onAppear { windowWidth = geo.size.width }.onChange(of: geo.size.width) { _, w in windowWidth = w } })
         .focusedSceneValue(\.appState, appState)
-        .task { kiosk.attach(appState) }
-        .task { await appState.preferEntraIfAvailable() }
         .onOpenURL { url in
             if let link = DeepLink(url: url) { appState.open(deepLink: link) }
         }
-        // ⌘K (and the Find Device menu item) puts the cursor in the toolbar search.
-        .onChange(of: appState.showSearch) { _, wants in
-            if wants { searchFocused = true; appState.showSearch = false }
+        .modifier(SharedTasks(searchFocused: $searchFocused))
+    }
+
+    /// Embedded in another app's window: the window toolbar belongs to the host,
+    /// so the same controls sit in a header row above the sections, and links
+    /// arrive through `ReportMateSession.open(_:)` rather than `onOpenURL`.
+    private var embeddedBody: some View {
+        @Bindable var state = appState
+        return VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Button { appState.goBack() } label: { Image(systemName: "chevron.left") }
+                    .help("Back")
+                    .disabled(!appState.canGoBack)
+                PlatformToggle()
+                ToolbarSearchField(query: $searchQuery, selectedIndex: $searchIndex, focused: $searchFocused)
+                Spacer(minLength: 8)
+                trailingButtons
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            TopNavBar()
+            stack
         }
-        .task(id: appState.configuration) {
-            guard appState.isConfigured else { return }
-            await appState.loadSettings()
-            await appState.loadDevices()
+        .sheet(isPresented: $state.settingsSheetShown) {
+            VStack(spacing: 0) {
+                SettingsView()
+                Divider()
+                HStack {
+                    Spacer()
+                    Button("Done") { appState.settingsSheetShown = false }
+                        .keyboardShortcut(.defaultAction)
+                }
+                .padding(12)
+            }
+            .frame(minWidth: 720, minHeight: 560)
+            .environment(appState)
+            .environment(kiosk)
         }
+        .modifier(SharedTasks(searchFocused: $searchFocused))
+    }
+
+    @ViewBuilder
+    private var trailingButtons: some View {
+        CopyLinkMenu()
+        Button { appState.refreshRequested += 1 } label: {
+            Label("Refresh", systemImage: "arrow.clockwise")
+        }
+        .help("Refresh (⌘R)")
+        if let problem = appState.authProblem {
+            Button { appState.presentSettings(openSettings) } label: {
+                Label("Authentication", systemImage: "lock.trianglebadge.exclamationmark")
+                    .foregroundStyle(.red)
+            }
+            .help(problem)
+        }
+        Button { appState.presentSettings(openSettings) } label: { Label("Settings", systemImage: "gearshape") }
+            .help("Settings (⌘,)")
     }
 
     @ViewBuilder
@@ -195,4 +244,26 @@ enum AppLogo {
         if let url = Bundle.main.url(forResource: "reportmate-logo", withExtension: "png"), let image = NSImage(contentsOf: url) { return image }
         return NSApp.applicationIconImage
     }()
+}
+
+/// Work every presentation does: kiosk wiring, Entra upgrade, ⌘K focus and loading.
+private struct SharedTasks: ViewModifier {
+    @Environment(AppState.self) private var appState
+    @Environment(KioskController.self) private var kiosk
+    var searchFocused: FocusState<Bool>.Binding
+
+    func body(content: Content) -> some View {
+        content
+            .task { kiosk.attach(appState) }
+            .task { await appState.preferEntraIfAvailable() }
+            // ⌘K (and the Find Device menu item) puts the cursor in the toolbar search.
+            .onChange(of: appState.showSearch) { _, wants in
+                if wants { searchFocused.wrappedValue = true; appState.showSearch = false }
+            }
+            .task(id: appState.configuration) {
+                guard appState.isConfigured else { return }
+                await appState.loadSettings()
+                await appState.loadDevices()
+            }
+    }
 }
