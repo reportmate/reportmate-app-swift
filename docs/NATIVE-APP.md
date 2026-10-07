@@ -10,9 +10,10 @@ app polls the API.
 
 ## Building and running
 
-The app is the `ReportMateMac` product in `Package.swift`, built from
-`Sources/ReportMateMac` on top of the `ReportMateKit` library (API client,
-JSON model, per-module readers, report aggregations).
+The app is the `ReportMateMac` product in `Package.swift`: a thin `@main` in
+`Sources/ReportMateMac` over the `ReportMateUI` library (every view and the
+app's scenes), which sits on the `ReportMateKit` library (API client, JSON
+model, per-module readers, report aggregations).
 
 Build the app bundle into `.build/app/ReportMate.app`:
 
@@ -239,12 +240,33 @@ Sources/ReportMateKit/          shared library, no UI
 ├── Models/                     devices, events, settings document
 ├── Events/                     bundling, inline details, last-run summary
 └── Processing/                 per-module readers and report aggregations
-Sources/ReportMateMac/          the SwiftUI app
+Sources/ReportMateUI/           the SwiftUI views, as a library
+├── ReportMateScenes.swift      the app's window, menus and Settings
+├── Embedding.swift             the dashboard as a view for another app
 ├── AppState.swift              navigation, devices cache, platform filter
 ├── Navigation/                 sections, routes, top bar
 └── Views/                      Dashboard, Devices, Events, Device tabs,
                                 Reports, Settings, Shared components
+Sources/ReportMateMac/          the app target: @main, Info.plist, icon
 ```
+
+## Embedding the dashboard
+
+The `ReportMateUI` product carries the whole dashboard, so another SwiftUI app
+can show it in one of its own windows. The host owns a session for as long as it
+shows the dashboard, and can hand it a connection it already holds:
+
+```swift
+@State private var reports = ReportMateSession(configuration: AppConfiguration(
+    baseURL: apiURL, authMethod: .entraBearer, oidcAudience: audience))
+
+ReportMateDashboard(session: reports)
+```
+
+Embedded, the dashboard leaves the window toolbar to the host: its back button,
+platform toggle, search and section tabs sit in a header row, and Settings opens
+as a sheet. `onOpenURL` is the host's too, so links arrive through
+`session.open(url:)`, `session.open(_:)` or `session.openDevice(serial:)`.
 
 ## Kiosk mode
 

@@ -357,7 +357,7 @@ struct NotConfiguredView: View {
             Text("Connect to ReportMate").appFont(.title2, weight: .semibold)
             Text("Enter the API URL and a credential in Settings to load the fleet.")
                 .appFont(.callout).foregroundStyle(.secondary)
-            Button("Open Settings…") { openSettings() }.keyboardShortcut(",", modifiers: .command)
+            Button("Open Settings…") { appState.presentSettings(openSettings) }.keyboardShortcut(",", modifiers: .command)
             if LocalReportStore.isAvailable() {
                 Button("Open This Mac's Report") { appState.openThisMac() }
                     .help("Read the runner cache on this Mac without an API connection")
