@@ -11,8 +11,11 @@ Windows dashboard app in `reportmate/reportmate-app-csharp`.
 
 - `Sources/ReportMateKit` — the library: API client, JSON readers, report
   aggregations, deep links, the This Mac local report store. Everything testable.
-- `Sources/ReportMateMac` — the app: views, navigation, settings. `Info.plist`
-  registers the `reportmate://` scheme; `Resources/AppIcon.icns` is the icon.
+- `Sources/ReportMateUI` — the views, navigation, settings and the app's scenes, as a
+  library so the dashboard can also be embedded in another SwiftUI app
+  (`ReportMateSession` + `ReportMateDashboard` in `Embedding.swift`).
+- `Sources/ReportMateMac` — the app target: `@main`, `Info.plist` (registers the
+  `reportmate://` scheme) and `Resources` (the icon). Keep it this thin.
 - `Tests/ReportMateKitTests` — Swift Testing suites for the kit.
 - `scripts/build-app.sh` — builds `.build/app/ReportMate.app` (`--dmg`, `--pkg`, `--sign`, `--open`).
   It bundles the `reportmateutil` CLI from `reportmate/reportmate-cli` at
@@ -39,7 +42,8 @@ Command Line Tools SDK that carries it; the build script does this on its own.
 
 - Keep the app page-for-page with the web app. New views the web does not have are
   a decision for Rod, not a default.
-- Kit code goes in `ReportMateKit` with tests; views go in `ReportMateMac`.
+- Kit code goes in `ReportMateKit` with tests; views go in `ReportMateUI`. Keep `Embedding.swift` working: the
+  embedded dashboard draws its controls in a header row instead of the window toolbar.
 - Never commit real device identifiers in fixtures or sample text; use `SAMPLE1`-style
   values. Scratch probes against the live API print kinds and counts only.
 - No Python. Swift, bash and jq only.
