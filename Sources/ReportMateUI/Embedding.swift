@@ -48,6 +48,20 @@ public final class ReportMateSession {
         appState.open(device: serial)
     }
 
+    /// The fleet device list as last loaded, empty until the first load.
+    public var devices: [DeviceSummary] { appState.devices }
+
+    /// When the device list was last loaded, nil before the first load.
+    public var devicesLoadedAt: Date? { appState.devicesLoadedAt }
+
+    /// Load the device list, reusing a copy under five minutes old unless
+    /// `force` is set. The dashboard shares the same list, so a host that loads
+    /// it early (to search it, say) saves the Devices page a fetch.
+    public func loadDevices(force: Bool = false) async {
+        guard isConfigured else { return }
+        await appState.loadDevices(force: force)
+    }
+
     /// Reload the page on screen.
     public func refresh() {
         appState.refreshRequested += 1
