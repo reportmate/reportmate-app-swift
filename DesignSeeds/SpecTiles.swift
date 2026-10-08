@@ -1,15 +1,13 @@
 // SpecTiles.swift — design seed for the ReportMate native macOS app.
 //
-// Extracted from FleetMate's Inventory asset sidebar (2026-07-31), where this
-// layout debuted before being simplified back to plain rows there. It mirrors
-// reportmate-app-web's hardware page: an Apple Silicon "chip capsule" — a
+// It mirrors reportmate-app-web's hardware page: an Apple Silicon "chip capsule" — a
 // dashed rounded enclosure grouping the SoC members (CPU red, Memory yellow,
 // GPU green, NPU pink) under a "<Chip> Chip · Unified Memory Architecture"
 // headline — followed by peripheral tiles (Storage purple, Display blue, and
 // Battery green on laptops; desktops show 7 tiles, laptops 8).
 //
-// Self-contained except for `appFont`, FleetMate's Dynamic-Type-scaling font
-// helper — swap for .font(.system(size:weight:)) or the ReportMate equivalent.
+// Self-contained except for `appFont`, a Dynamic-Type-scaling font helper —
+// swap for .font(.system(size:weight:)) or the ReportMate equivalent.
 
 import SwiftUI
 
