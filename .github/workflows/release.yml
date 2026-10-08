@@ -72,7 +72,7 @@ jobs:
           set -euo pipefail
           cd .build/app
           # The unsigned app on its own, for downstream pipelines that sign and
-          # wrap it themselves (the Munki build-import package sources this zip).
+          # wrap it themselves.
           ditto -c -k --keepParent ReportMate.app "ReportMate-App-$VERSION.zip"
           ls -1 "ReportMate-$VERSION.pkg" "ReportMate-$VERSION.dmg" "ReportMate-App-$VERSION.zip"
           shasum -a 256 "ReportMate-$VERSION.pkg" "ReportMate-$VERSION.dmg" "ReportMate-App-$VERSION.zip" > "ReportMate-$VERSION.sha256"
