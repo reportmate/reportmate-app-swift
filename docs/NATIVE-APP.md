@@ -66,7 +66,7 @@ Managed Reports Runner.app carries `managedreportsrunner`. It lives under `Conte
 place for a bundled tool, beside the app's own executable in `Contents/MacOS`. With `--sign` the tool is
 signed with the hardened runtime before the app, so notarization covers it. Pin a
 release with `--cli-version=vYYYY.MM.DD.HHMM` (or `REPORTMATE_CLI_VERSION`), or
-skip the download with `--no-cli`. Embedding apps and other tools look for the binary at
+skip the download with `--no-cli`. Other tools look for the binary at
 that bundle path and at `/usr/local/bin/reportmateutil`.
 
 ## Releases
@@ -77,10 +77,8 @@ unsigned `ReportMate.app.zip` and `ReportMate-<version>.pkg` as workflow artifac
 
 A version tag (`vYYYY.MM.DD.HHMM`, or the bare version) runs `.github/workflows/release.yml`,
 which builds the app, the pkg, the dmg and a bare `ReportMate-App-<version>.zip` of the
-unsigned bundle and publishes them as a GitHub release with a checksum file. The Munki
-packaging package `ReportMateApp` sources that zip, signs and notarizes it with the
-organization's Developer ID and ships it to managed Macs. Signing and notarization happen downstream with the
-organization's Developer ID, the way the runner pkg from `reportmate-client-mac` is
+unsigned bundle and publishes them as a GitHub release with a checksum file. A deploying
+organization signs and notarizes that zip downstream with its own Developer ID, the way the runner pkg from `reportmate-client-mac` is
 signed; the release notes carry the commands. The workflow can also be run by hand
 from the Actions tab with an optional version.
 
