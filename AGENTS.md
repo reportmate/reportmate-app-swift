@@ -41,7 +41,7 @@ Command Line Tools SDK that carries it; the build script does this on its own.
 ## Rules
 
 - Keep the app page-for-page with the web app. New views the web does not have are
-  a decision for Rod, not a default.
+  a maintainer decision, not a default.
 - Kit code goes in `ReportMateKit` with tests; views go in `ReportMateUI`. Keep `Embedding.swift` working: the
   embedded dashboard draws its controls in a header row instead of the window toolbar.
 - Never commit real device identifiers in fixtures or sample text; use `SAMPLE1`-style

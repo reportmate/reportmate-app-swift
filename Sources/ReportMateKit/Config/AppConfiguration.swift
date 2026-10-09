@@ -221,7 +221,7 @@ public struct AuthConfig: Sendable, Equatable {
 }
 
 extension AppConfiguration {
-    /// Rod's rule for admin machines: sign in with Entra, never a stored secret.
+    /// The rule for admin machines: sign in with Entra, never a stored secret.
     /// A configuration that only inherited the runner's endpoint and passphrase
     /// switches to Entra when the API advertises OIDC and `az` can mint a token;
     /// otherwise it is returned unchanged.

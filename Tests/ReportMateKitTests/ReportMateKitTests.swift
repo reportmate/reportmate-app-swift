@@ -83,16 +83,16 @@ import Foundation
         let row: JSONValue = [
             "serialNumber": "SAMPLE1", "deviceId": "uuid-1", "name": "Studio 12", "lastSeen": "2026-09-09T10:00:00+00:00",
             "createdAt": "2026-09-01T10:00:00+00:00", "platform": "macOS",
-            "modules": ["inventory": ["deviceName": "Studio 12", "asset_tag": "ECU-1234", "usage": "Shared", "catalog": "Curriculum"],
+            "modules": ["inventory": ["deviceName": "Studio 12", "asset_tag": "AT-1234", "usage": "Shared", "catalog": "Curriculum"],
                         "system": ["operatingSystem": ["name": "macOS", "version": "26.1.0"]]],
         ]
         let now = try #require(FlexibleDate.parse("2026-09-09T12:00:00+00:00"))
         let d = DeviceSummary(json: row, now: now)
         #expect(d.name == "Studio 12")
-        #expect(d.inventory.assetTag == "ECU-1234")
+        #expect(d.inventory.assetTag == "AT-1234")
         #expect(d.platform == .macOS)
         #expect(d.status == .active)
-        #expect(d.identifierLine == "ECU-1234 | SAMPLE1")
+        #expect(d.identifierLine == "AT-1234 | SAMPLE1")
         #expect(d.osVersion == "26.1.0")
     }
 }
