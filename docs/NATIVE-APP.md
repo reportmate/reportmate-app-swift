@@ -266,6 +266,25 @@ platform toggle, search and section tabs sit in a header row, and Settings opens
 as a sheet. `onOpenURL` is the host's too, so links arrive through
 `session.open(url:)`, `session.open(_:)` or `session.openDevice(serial:)`.
 
+A host whose window already has a search field, or that wants the least
+vertical space, passes `chrome: .hostProvided`. The dashboard then draws one
+row (back, platform toggle, section tabs, Copy Link, Refresh and Settings) with
+no search field of its own; the section tabs fold into the Reports menu only
+when that row is too narrow for them. The host feeds its field into the
+Devices list and opens the best match on Return:
+
+```swift
+reports.deviceSearch = query
+```
+
+```swift
+reports.openBestDeviceMatch()
+```
+
+`session.showSettings()` opens the dashboard's Settings sheet from a host menu
+item as well as from the row's gear button. `ReportMateChrome(showsSearchField:singleRow:)`
+sets the two independently.
+
 ## Kiosk mode
 
 View → Kiosk Mode (⌃⌘K), or the toggle under Settings → Kiosk Displays, runs

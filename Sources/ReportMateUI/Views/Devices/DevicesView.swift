@@ -50,6 +50,12 @@ struct DevicesView: View {
         .onReceive(NotificationCenter.default.publisher(for: .devicesSearch)) { note in
             if let q = note.object as? String { search = q }
         }
+        // The host's search field, when it stands in for the dashboard's. On first
+        // appearance only a query already typed applies, so a link's filter survives.
+        .onChange(of: appState.hostSearchQuery, initial: true) { old, new in
+            guard !appState.showsOwnSearch, old != new || !new.isEmpty else { return }
+            search = new
+        }
         .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
             guard let link = appState.consumeDeepLink(for: .devices) else { return }
             search = link.query["search"] ?? ""
@@ -95,16 +101,19 @@ struct DevicesView: View {
                 Button { appState.openThisMac() } label: { Label("This Mac", systemImage: "desktopcomputer") }
                     .help("This Mac's own report, read from the runner cache")
             }
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search devices…", text: $search).textFieldStyle(.plain)
-                if !search.isEmpty {
-                    Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain)
+            // A host that supplies search filters this list from its own field.
+            if appState.showsOwnSearch {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Search devices…", text: $search).textFieldStyle(.plain)
+                    if !search.isEmpty {
+                        Button { search = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain)
+                    }
                 }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(Color.subtleBackground, in: RoundedRectangle(cornerRadius: 8))
+                .frame(width: 260)
             }
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(Color.subtleBackground, in: RoundedRectangle(cornerRadius: 8))
-            .frame(width: 260)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
