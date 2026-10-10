@@ -12,6 +12,10 @@ struct TopNavBar: View {
     /// When inline, the caller decides from the window width whether every report
     /// fits as a tab; a fit test inside a toolbar item makes the toolbar overflow.
     var compact = false
+    /// Sharing one row with other controls (an embedded single-row header): no
+    /// padding, background or status dot of its own, and the reports fold into
+    /// the menu only when the width the row leaves cannot hold them.
+    var fitsRow = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -23,7 +27,7 @@ struct TopNavBar: View {
                     ForEach(AppSection.fleet) { tab($0) }
                     reportsMenu
                 }
-            } else if inline {
+            } else if inline, !fitsRow {
                 HStack(spacing: 4) {
                     ForEach(AppSection.fleet) { tab($0) }
                     if compact {
@@ -46,17 +50,18 @@ struct TopNavBar: View {
                     }
                 }
             }
-            if !inline { Spacer(minLength: 8) }
-            if let problem = appState.authProblem {
+            if !inline, !fitsRow { Spacer(minLength: 8) }
+            // Sharing a row, the row's own buttons and the page carry these states.
+            if !fitsRow, let problem = appState.authProblem {
                 Circle().fill(Color.red).frame(width: 7, height: 7).help(problem)
-            } else if !appState.isConfigured {
+            } else if !fitsRow, !appState.isConfigured {
                 Circle().fill(Color.gray).frame(width: 7, height: 7).help("Not connected: set the API endpoint in Settings")
             }
         }
-        .padding(.horizontal, inline ? 0 : 14)
-        .padding(.vertical, inline ? 0 : 7)
-        .background(inline ? Color.clear : Color.cardBackground)
-        .overlay(alignment: .bottom) { if !inline { Divider() } }
+        .padding(.horizontal, inline || fitsRow ? 0 : 14)
+        .padding(.vertical, inline || fitsRow ? 0 : 7)
+        .background(inline || fitsRow ? Color.clear : Color.cardBackground)
+        .overlay(alignment: .bottom) { if !inline, !fitsRow { Divider() } }
     }
 
     private var onDevicePage: Bool {

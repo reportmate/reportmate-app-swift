@@ -11,6 +11,8 @@ import ReportMateKit
 ///
 /// The window toolbar stays the host's: the dashboard draws its own controls in
 /// a header row, and Settings opens as a sheet. Links reach it through `open`.
+/// A host whose window already has a search field passes `.hostProvided`
+/// chrome and feeds its field into `deviceSearch`.
 @MainActor
 @Observable
 public final class ReportMateSession {
@@ -20,8 +22,35 @@ public final class ReportMateSession {
     /// `configuration` replaces the saved connection for this session (an API URL
     /// and credential the host already holds); nil uses the dashboard's own
     /// saved settings, exactly as the standalone app does.
-    public init(configuration: AppConfiguration? = nil) {
+    public init(configuration: AppConfiguration? = nil, chrome: ReportMateChrome = .standard) {
         appState = AppState(configuration: configuration, embedded: true)
+        appState.chrome = chrome
+    }
+
+    /// Which of its own controls the dashboard draws.
+    public var chrome: ReportMateChrome {
+        get { appState.chrome }
+        set { appState.chrome = newValue }
+    }
+
+    /// The device query from the host's own search field, for a host that hides
+    /// the dashboard's field. Any text shows the Devices list filtered by it;
+    /// an empty string clears the filter and leaves the page where it is.
+    public var deviceSearch: String {
+        get { appState.hostSearchQuery }
+        set { appState.searchDevices(newValue) }
+    }
+
+    /// Open the device that best matches `deviceSearch` (the host's Return key).
+    /// Returns false, leaving the filtered list on screen, when nothing matches.
+    @discardableResult
+    public func openBestDeviceMatch() -> Bool {
+        appState.openBestDeviceMatch()
+    }
+
+    /// Show the dashboard's Settings, as a sheet over it.
+    public func showSettings() {
+        appState.settingsSheetShown = true
     }
 
     /// The connection in use.
@@ -66,6 +95,31 @@ public final class ReportMateSession {
     public func refresh() {
         appState.refreshRequested += 1
     }
+}
+
+/// The controls an embedded dashboard draws above its pages. The standalone
+/// app always draws everything in its window toolbar and ignores this.
+public struct ReportMateChrome: Equatable, Sendable {
+    /// The dashboard's own device search field. Off when the host window already
+    /// has one and routes its text in through `ReportMateSession.deviceSearch`;
+    /// the Devices page then drops its list filter field as well.
+    public var showsSearchField: Bool
+    /// Back, platform filter, section tabs and the link, refresh and Settings
+    /// buttons on one row, the tabs folding into a Reports menu only when the
+    /// row is too narrow for them. Off draws the controls and the tabs as two rows.
+    public var singleRow: Bool
+
+    public init(showsSearchField: Bool = true, singleRow: Bool = false) {
+        self.showsSearchField = showsSearchField
+        self.singleRow = singleRow
+    }
+
+    /// The dashboard's full header: search field, controls, then a row of tabs.
+    public static let standard = ReportMateChrome()
+
+    /// For a host that supplies search and wants the least vertical space: one
+    /// row, no search field of the dashboard's own.
+    public static let hostProvided = ReportMateChrome(showsSearchField: false, singleRow: true)
 }
 
 /// The whole dashboard as a view, for embedding in another app's window.

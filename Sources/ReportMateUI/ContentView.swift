@@ -33,7 +33,7 @@ struct ContentView: View {
                     }
             }
             // The search results drop down under the toolbar field, like the web header.
-            if searchFocused, !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+            if appState.showsOwnSearch, searchFocused, !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
                 ToolbarSearchResults(query: $searchQuery, selectedIndex: $searchIndex, focused: $searchFocused)
                     .padding(.top, 6)
                     .zIndex(10)
@@ -82,25 +82,39 @@ struct ContentView: View {
     }
 
     /// Embedded in another app's window: the window toolbar belongs to the host,
-    /// so the same controls sit in a header row above the sections, and links
+    /// so the same controls sit in a header above the sections, and links
     /// arrive through `ReportMateSession.open(_:)` rather than `onOpenURL`.
+    /// `ReportMateChrome` decides whether that header is one row or two, and
+    /// whether it carries a search field or the host's field stands in for it.
     private var embeddedBody: some View {
         @Bindable var state = appState
         return VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Button { appState.goBack() } label: { Image(systemName: "chevron.left") }
-                    .help("Back")
-                    .disabled(!appState.canGoBack)
-                PlatformToggle()
-                ToolbarSearchField(query: $searchQuery, selectedIndex: $searchIndex, focused: $searchFocused)
-                Spacer(minLength: 8)
-                trailingButtons
+            if appState.chrome.singleRow {
+                HStack(spacing: 10) {
+                    leadingControls
+                    TopNavBar(fitsRow: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(-1)
+                    trailingButtons
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(Color.cardBackground)
+                .overlay(alignment: .bottom) { Divider() }
+            } else {
+                HStack(spacing: 10) {
+                    leadingControls
+                    Spacer(minLength: 8)
+                    trailingButtons
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                TopNavBar()
             }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            TopNavBar()
             stack
         }
         .sheet(isPresented: $state.settingsSheetShown) {
@@ -119,6 +133,18 @@ struct ContentView: View {
             .environment(kiosk)
         }
         .modifier(SharedTasks(searchFocused: $searchFocused))
+    }
+
+    /// Back, the platform filter and, unless the host supplies search, the search field.
+    @ViewBuilder
+    private var leadingControls: some View {
+        Button { appState.goBack() } label: { Image(systemName: "chevron.left") }
+            .help("Back")
+            .disabled(!appState.canGoBack)
+        PlatformToggle()
+        if appState.chrome.showsSearchField {
+            ToolbarSearchField(query: $searchQuery, selectedIndex: $searchIndex, focused: $searchFocused)
+        }
     }
 
     @ViewBuilder

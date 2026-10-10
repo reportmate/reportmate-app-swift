@@ -21,7 +21,12 @@ final class AppState {
     var section: AppSection = .dashboard {
         didSet { if section != oldValue { path = NavigationPath(); history.append(.section(oldValue)); linkQuery = [:] } }
     }
-    var path = NavigationPath()
+    var path = NavigationPath() {
+        // Every way back (the Back button, a section change, the stack's own pop)
+        // shortens the path; drop the routes it no longer holds so the page on
+        // screen, and anything laid out for it, follows.
+        didSet { syncRoutes() }
+    }
     var showSearch = false
     var refreshRequested = 0
     /// Query from the last `reportmate://` link, consumed by the page it targets.
@@ -57,6 +62,36 @@ final class AppState {
     let embedded: Bool
     /// Settings as a sheet, used when embedded: the host app owns the Settings window.
     var settingsSheetShown = false
+    /// Which of its own controls the dashboard draws when embedded.
+    var chrome: ReportMateChrome = .standard
+
+    /// Whether the dashboard draws its own device search field.
+    var showsOwnSearch: Bool { !embedded || chrome.showsSearchField }
+
+    // MARK: Host search
+
+    /// The device query typed into the host's search field, when the host draws
+    /// the search field instead of the dashboard. It filters the Devices list.
+    private(set) var hostSearchQuery = ""
+
+    /// Take the host's query: any text brings the Devices list forward, filtered
+    /// by it, the way the dashboard's own search lands there; clearing it only
+    /// clears the filter.
+    func searchDevices(_ query: String) {
+        guard query != hostSearchQuery else { return }
+        hostSearchQuery = query
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        if section != .devices { section = .devices }
+        if !path.isEmpty { path = NavigationPath() }
+    }
+
+    /// Open the device that best matches the host's query; false when none does.
+    @discardableResult
+    func openBestDeviceMatch() -> Bool {
+        guard let match = DeviceSearch.search(devices, query: hostSearchQuery, limit: 1).first else { return false }
+        open(device: match.serialNumber)
+        return true
+    }
 
     /// Show Settings: the app's Settings window standalone, a sheet when embedded.
     func presentSettings(_ openSettings: OpenSettingsAction) {
@@ -216,8 +251,12 @@ final class AppState {
 
     private func push(_ route: Route) {
         routeStack.append(route)
-        currentRoute = route
         path.append(route)
+    }
+
+    private func syncRoutes() {
+        if routeStack.count > path.count { routeStack.removeLast(routeStack.count - path.count) }
+        if currentRoute != routeStack.last { currentRoute = routeStack.last }
     }
 
     func goBack() {
