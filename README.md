@@ -36,6 +36,8 @@ shared passphrase, when the runner uses one) is inherited from the runner's
 
 ## Docs
 
+Development guide: [wiki](wiki/README.md)
+
 `docs/NATIVE-APP.md` carries the page-by-page parity matrix against the web app,
 the deep-link scheme, the credential options and the build notes.
 
