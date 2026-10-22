@@ -432,13 +432,15 @@ struct UniformGrid<Content: View>: View {
     var minColumnWidth: CGFloat = 340
     var maxColumns: Int = 3
     var spacing: CGFloat = 16
+    /// False lets each card keep its own height instead of matching its row.
+    var fillsHeight = true
     @ViewBuilder var content: Content
 
     var body: some View {
         UniformGridLayout(minColumnWidth: minColumnWidth, maxColumns: maxColumns, spacing: spacing) {
             content
         }
-        .environment(\.cardFillsHeight, true)
+        .environment(\.cardFillsHeight, fillsHeight)
     }
 }
 
