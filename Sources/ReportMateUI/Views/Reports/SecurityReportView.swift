@@ -34,6 +34,20 @@ struct SecurityReportView: View {
         tamperingFilter = nil; remoteFilter = nil; certFilter = nil; cveFilter = nil
     }
 
+    /// System-managed and trust-store certificates are hidden unless asked for (View menu or the panel checkbox).
+    private var showSystemManaged: Bool { appState.showSystemManagedCertificates }
+
+    /// The page state Copy Link carries, in the web page's parameters.
+    private var linkQuery: [String: String] {
+        var q: [String: String] = [:]
+        if certFilter == "Has Expired" { q["certs"] = "expired" } else if certFilter == "Expiring Soon" { q["certs"] = "expiring" }
+        let search = certQuery.trimmingCharacters(in: .whitespaces)
+        if certSearched, !search.isEmpty { q["certSearch"] = search }
+        if certSearched, certStatus != "all" { q["certStatus"] = certStatus }
+        if showSystemManaged { q["certClass"] = "all" }
+        return q
+    }
+
     private func s(_ row: ReportRow) -> SecurityReportRow { SecurityReportRow(json: row.json, platform: row.platform) }
 
     private var certSerials: Set<String>? {
@@ -51,7 +65,7 @@ struct SecurityReportView: View {
             if let f = firewallFilter, d.firewallLabel != f { return false }
             if let f = tamperingFilter, d.tamperLabel != f { return false }
             if let f = remoteFilter, d.remoteLabel != f { return false }
-            if let f = certFilter, d.certLabel != f { return false }
+            if let f = certFilter, d.certLabel(includingSystemManaged: showSystemManaged) != f { return false }
             if let f = cveFilter, d.cveLabel != f { return false }
             if let serials, !serials.contains(pair.row.serialNumber) { return false }
             return true
@@ -99,6 +113,33 @@ struct SecurityReportView: View {
                 table(filtered(rows))
             }
         }
+        .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
+            guard let link = appState.consumeDeepLink(for: .security) else { return }
+            applyDeepLink(link.query)
+        }
+        .onChange(of: linkQuery, initial: true) { _, q in appState.linkQuery = q }
+        .onChange(of: appState.showSystemManagedCertificates) { _, _ in
+            if certSearched { Task { await searchCertificates(select: selectedCertName) } }
+        }
+    }
+
+    /// The web page's parameters: `certs=expired|expiring` picks a slice of the
+    /// Certificates donut, `certSearch` and `certStatus` run a search, and
+    /// `certClass=all` shows system-managed certificates.
+    private func applyDeepLink(_ query: [String: String]) {
+        switch query["certs"]?.lowercased() {
+        case "expired": certFilter = "Has Expired"
+        case "expiring": certFilter = "Expiring Soon"
+        default: break
+        }
+        if query["certClass"]?.lowercased() == "all" { appState.showSystemManagedCertificates = true }
+        let status = query["certStatus"]?.lowercased()
+        if let status, ["all", "valid", "expiring", "expired"].contains(status) { certStatus = status }
+        if let search = query["certSearch"] { certQuery = search }
+        if query["certSearch"] != nil || (status != nil && status != "all") {
+            certSearchExpanded = true
+            Task { await searchCertificates(select: query["certSearch"]) }
+        }
     }
 
     private func donutData(_ all: [SecurityReportRow], _ label: (SecurityReportRow) -> String) -> [(label: String, value: Int)] {
@@ -118,7 +159,7 @@ struct SecurityReportView: View {
             MiniDonutWidget(title: "Firewall", data: donutData(all, \.firewallLabel), colors: ["Enabled": green, "Disabled": gray], selected: $firewallFilter)
             MiniDonutWidget(title: "Tampering", data: donutData(all, \.tamperLabel), colors: ["Secured": green, "Insecure": red], selected: $tamperingFilter)
             MiniDonutWidget(title: "Access", data: donutData(all, \.remoteLabel), colors: ["SSH + RDP": blue, "SSH Only": green, "RDP Only": amber, "SSH Enabled": green, "Disabled": gray], selected: $remoteFilter)
-            MiniDonutWidget(title: "Certificates", data: donutData(all, \.certLabel), colors: ["Valid": green, "Expiring Soon": amber, "Has Expired": red], selected: $certFilter)
+            MiniDonutWidget(title: "Certificates", data: donutData(all) { $0.certLabel(includingSystemManaged: showSystemManaged) }, colors: ["Valid": green, "Expiring Soon": amber, "Has Expired": red], selected: $certFilter)
             MiniDonutWidget(title: "Vulnerabilities", data: donutData(all, \.cveLabel), colors: ["None": green, "Has CVEs": amber, "Critical": red], selected: $cveFilter)
         }
     }
@@ -127,17 +168,24 @@ struct SecurityReportView: View {
 
     private var certificateSearch: some View {
         VStack(spacing: 0) {
-            Button { withAnimation { certSearchExpanded.toggle() } } label: {
-                HStack(spacing: 8) {
-                    Text("Certificates").appFont(.callout, weight: .medium)
-                    if let name = selectedCertName { Pill("Filtering: \(name)", tone: .blue) }
-                    Spacer()
-                    Image(systemName: "chevron.down").rotationEffect(.degrees(certSearchExpanded ? 180 : 0)).foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                Button { withAnimation { certSearchExpanded.toggle() } } label: {
+                    HStack(spacing: 8) {
+                        Text("Certificates").appFont(.callout, weight: .medium)
+                        if let name = selectedCertName { Pill("Filtering: \(name)", tone: .blue) }
+                        Spacer()
+                        Image(systemName: "chevron.down").rotationEffect(.degrees(certSearchExpanded ? 180 : 0)).foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 16).padding(.vertical, 8)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityLabel(certSearchExpanded ? "Hide certificate search" : "Show certificate search")
+                Toggle("Show System-Managed", isOn: Binding(get: { appState.showSystemManagedCertificates }, set: { appState.showSystemManagedCertificates = $0 }))
+                    .toggleStyle(.checkbox)
+                    .appFont(.caption)
+                    .help("Include certificates the OS or an agent renews on its own, and OS trust-store roots (⇧⌘.)")
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 16).padding(.vertical, 8)
             if certSearchExpanded {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 8) {
@@ -161,6 +209,7 @@ struct SecurityReportView: View {
                                             VStack(alignment: .leading, spacing: 3) {
                                                 HStack(spacing: 6) {
                                                     Text(group.commonName).appFont(.callout, weight: .medium).lineLimit(1)
+                                                    if group.certClass != .actionable { Pill(group.certClass.label, tone: group.certClass == .trustStore ? .indigo : .gray).help(group.certClass == .trustStore ? "An OS root or intermediate; the OS keeps it current." : "Issued and rotated by the OS or an agent; nobody has to renew it.") }
                                                     if on { Image(systemName: "checkmark").foregroundStyle(.blue).appFont(.caption) }
                                                 }
                                                 if let issuer = group.issuer { Text("Issuer: \(issuer)").appFont(.caption2).foregroundStyle(.secondary).lineLimit(1) }
@@ -205,16 +254,17 @@ struct SecurityReportView: View {
         .overlay(alignment: .bottom) { Divider() }
     }
 
-    private func searchCertificates() async {
+    /// Run the search; `select` picks the group with that name, as a dashboard link to one certificate expects.
+    private func searchCertificates(select: String? = nil) async {
         let q = certQuery.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty || certStatus != "all" else { return }
         certSearching = true
         certSearched = true
         defer { certSearching = false }
         do {
-            let json = try await appState.api.fleetReport("/security/certificates", query: ["search": q.isEmpty ? nil : q, "status": certStatus == "all" ? nil : certStatus])
+            let json = try await appState.api.fleetReport("/security/certificates", query: CertificateSearchGroup.query(search: q, status: certStatus, showSystemManaged: showSystemManaged))
             certGroups = CertificateSearchGroup.group(json.array ?? json["data"].elements)
-            selectedCertName = nil
+            selectedCertName = select.flatMap { name in certGroups.first { $0.commonName.caseInsensitiveCompare(name) == .orderedSame }?.commonName }
         } catch {
             certGroups = []
             appState.note(error)

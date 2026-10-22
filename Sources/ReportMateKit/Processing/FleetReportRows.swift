@@ -382,7 +382,15 @@ public struct SecurityReportRow: Sendable, Hashable {
     public var rdpEnabled: Bool { json["rdpEnabled"].boolish }
     public var expiredCertCount: Int { json["expiredCertCount"].int ?? 0 }
     public var userExpiredCertCount: Int { json["userExpiredCertCount"].int ?? expiredCertCount }
+    /// Like `expiredCertCount`, actionable certificates only; older APIs counted every class.
     public var expiringSoonCertCount: Int { json["expiringSoonCertCount"].int ?? 0 }
+    // Per-class totals. Optional, so a response from an API without them still reads.
+    public var actionableCertCount: Int? { json["actionableCertCount"].int }
+    public var systemManagedCertCount: Int? { json["systemManagedCertCount"].int }
+    public var trustStoreCertCount: Int? { json["trustStoreCertCount"].int }
+    public var systemManagedExpiredCertCount: Int? { json["systemManagedExpiredCertCount"].int }
+    public var osRootExpiredCertCount: Int? { json["osRootExpiredCertCount"].int }
+    public var certificateCount: Int? { json["certificateCount"].int }
     public var cveCount: Int { json["cveCount"].int ?? 0 }
     public var criticalCveCount: Int { json["criticalCveCount"].int ?? 0 }
     public var autoLoginUser: String? { json["autoLoginUser"].nonEmptyString }
@@ -413,8 +421,11 @@ public struct SecurityReportRow: Sendable, Hashable {
         }
         return sshRunning ? "SSH Enabled" : "Disabled"
     }
-    public var certLabel: String {
-        if userExpiredCertCount > 0 { return "Has Expired" }
+    public var certLabel: String { certLabel(includingSystemManaged: false) }
+    /// The Certificates donut label. Actionable only by default; with system-managed
+    /// shown, an expired system-managed certificate also counts as expired.
+    public func certLabel(includingSystemManaged: Bool) -> String {
+        if userExpiredCertCount > 0 || (includingSystemManaged && (systemManagedExpiredCertCount ?? 0) > 0) { return "Has Expired" }
         if expiringSoonCertCount > 0 { return "Expiring Soon" }
         return "Valid"
     }
@@ -435,7 +446,7 @@ public struct SecurityReportRow: Sendable, Hashable {
     }
 }
 
-/// One certificate hit from `/security/certificates`, grouped by common name for the search panel.
+/// One certificate hit from `/security/certificates`, grouped by readable name for the search panel.
 public struct CertificateSearchGroup: Sendable, Hashable, Identifiable {
     public struct DeviceHit: Sendable, Hashable, Identifiable {
         public var id: String { serialNumber }
@@ -446,20 +457,33 @@ public struct CertificateSearchGroup: Sendable, Hashable, Identifiable {
         public var isExpiringSoon: Bool
     }
     public var id: String { commonName }
+    /// The readable name: the API's `displayName`, else `commonName`.
     public var commonName: String
+    /// The issuer's readable name: `issuerName`, else the raw `issuer`.
     public var issuer: String?
+    /// The group's class; rows from an API without classes read as actionable.
+    public var certClass: CertificateClass
     public var devices: [DeviceHit]
     public var expiredCount: Int
     public var expiringCount: Int
     public var validCount: Int
 
+    /// The `/security/certificates` query for a search. The API defaults to
+    /// actionable certificates; showing system-managed asks for every class.
+    public static func query(search: String, status: String, showSystemManaged: Bool) -> [String: String?] {
+        let q = search.trimmingCharacters(in: .whitespaces)
+        return ["search": q.isEmpty ? nil : q, "status": status == "all" ? nil : status,
+                "class": CertificateClass.queryValue(showSystemManaged: showSystemManaged)]
+    }
+
     public static func group(_ results: [JSONValue]) -> [CertificateSearchGroup] {
         var order: [String] = []
         var groups: [String: CertificateSearchGroup] = [:]
         for cert in results {
-            let key = cert["commonName"].nonEmptyString ?? "Unknown"
+            let key = cert["displayName"].nonEmptyString ?? cert["commonName"].nonEmptyString ?? "Unknown"
             if groups[key] == nil {
-                groups[key] = CertificateSearchGroup(commonName: key, issuer: cert["issuer"].nonEmptyString, devices: [], expiredCount: 0, expiringCount: 0, validCount: 0)
+                groups[key] = CertificateSearchGroup(commonName: key, issuer: cert["issuerName"].nonEmptyString ?? cert["issuer"].nonEmptyString,
+                                                     certClass: CertificateClass(cert["class"]), devices: [], expiredCount: 0, expiringCount: 0, validCount: 0)
                 order.append(key)
             }
             let serial = cert["serialNumber"].string ?? ""

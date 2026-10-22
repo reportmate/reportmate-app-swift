@@ -61,6 +61,20 @@ public struct SecurityInfo: Sendable, Hashable {
 
     public enum CertStatus: String, Sendable, Hashable { case valid = "Valid", expiringSoon = "ExpiringSoon", expired = "Expired" }
 
+    /// Days before `notAfter` that a certificate counts as expiring soon; the API uses the same window.
+    public static let expiringWindowDays = 30
+
+    /// Status from the expiry date against `now`: expired once `notAfter` has
+    /// passed, expiring within the window. The stored status is frozen at
+    /// collection time, so it is only the fallback when there is no date.
+    public static func liveStatus(notAfter: Date?, stored: CertStatus, now: Date) -> CertStatus {
+        guard let notAfter else { return stored }
+        let seconds = notAfter.timeIntervalSince(now)
+        if seconds < 0 { return .expired }
+        if seconds <= Double(expiringWindowDays) * 86_400 { return .expiringSoon }
+        return .valid
+    }
+
     public struct Certificate: Sendable, Hashable, Identifiable {
         public var id: String { thumbprint.isEmpty ? commonName + subject + notAfter : thumbprint }
         public var commonName: String
@@ -68,13 +82,22 @@ public struct SecurityInfo: Sendable, Hashable {
         public var issuer: String
         public var notBefore: String
         public var notAfter: String
-        public var status: CertStatus
-        public var daysUntilExpiry: Int?
+        /// The expiry as a date: `notAfterEpoch` when the API stamped it, else `notAfter` parsed.
+        public var notAfterDate: Date?
+        /// The status the client recorded at collection time.
+        public var storedStatus: CertStatus
+        public var storedDaysUntilExpiry: Int?
         public var thumbprint: String
         public var isSelfSigned: Bool
         public var path: String
         public var store: String
         public var isOsTrustedRoot: Bool
+        /// Who has to act on it. Rows collected before classification carry no class and count as actionable.
+        public var certClass: CertificateClass
+        /// The API's readable name (never a bare GUID), when stamped.
+        public var stampedDisplayName: String?
+        /// The issuer's readable name, when stamped.
+        public var issuerName: String?
 
         init(json c: JSONValue) {
             commonName = c["commonName"].string ?? ""
@@ -82,34 +105,64 @@ public struct SecurityInfo: Sendable, Hashable {
             issuer = c["issuer"].string ?? ""
             notBefore = c.firstString("notBefore", "notValidBefore") ?? ""
             notAfter = c.firstString("notAfter", "notValidAfter") ?? ""
-            if let s = c["status"].nonEmptyString, let st = CertStatus(rawValue: s) { status = st }
-            else if c["isExpired"].boolish { status = .expired } else if c["isExpiringSoon"].boolish { status = .expiringSoon } else { status = .valid }
-            daysUntilExpiry = c["daysUntilExpiry"].int
+            notAfterDate = FlexibleDate.parse(c["notAfterEpoch"]) ?? FlexibleDate.parse(notAfter)
+            if let s = c["status"].nonEmptyString, let st = CertStatus(rawValue: s) { storedStatus = st }
+            else if c["isExpired"].boolish { storedStatus = .expired } else if c["isExpiringSoon"].boolish { storedStatus = .expiringSoon } else { storedStatus = .valid }
+            storedDaysUntilExpiry = c["daysUntilExpiry"].int
             thumbprint = c.firstString("thumbprint", "sha1") ?? ""
             isSelfSigned = c["isSelfSigned"].boolish || c["selfSigned"].boolish
             path = c["path"].string ?? ""
             let loc = c["storeLocation"].string ?? ""
             store = (loc == "LocalMachine" || loc == "System") ? "System" : "User"
             isOsTrustedRoot = c["isOsTrustedRoot"].boolish
+            certClass = CertificateClass(c["class"])
+            stampedDisplayName = c["displayName"].nonEmptyString
+            issuerName = c["issuerName"].nonEmptyString
         }
 
+        /// Status worked out now from `notAfter`, not the frozen collection-time value.
+        public func status(at now: Date) -> CertStatus { SecurityInfo.liveStatus(notAfter: notAfterDate, stored: storedStatus, now: now) }
+        public var status: CertStatus { status(at: Date()) }
+
+        /// Whole days left, live from `notAfter`; the stored figure when there is no date.
+        public func daysUntilExpiry(at now: Date) -> Int? {
+            guard let notAfterDate else { return storedDaysUntilExpiry }
+            return Int((notAfterDate.timeIntervalSince(now) / 86_400).rounded(.down))
+        }
+        public var daysUntilExpiry: Int? { daysUntilExpiry(at: Date()) }
+
         public var displayName: String {
+            if let stampedDisplayName { return stampedDisplayName }
             if !commonName.isEmpty { return commonName }
             guard !subject.isEmpty else { return "—" }
             let first = subject.split(separator: ",").first.map(String.init) ?? subject
             return first.replacingOccurrences(of: #"^CN\s*=\s*"#, with: "", options: [.regularExpression, .caseInsensitive])
         }
         public var keychainName: String { path.isEmpty ? "—" : (path.split(separator: "/").last.map(String.init) ?? path) }
-        public var displayIssuer: String { issuer.count > 50 ? String(issuer.prefix(50)) + "..." : (issuer.isEmpty ? "—" : issuer) }
+        /// The issuer to show: the readable name when stamped, else the raw issuer, trimmed.
+        public var displayIssuer: String {
+            let text = issuerName ?? issuer
+            return text.count > 50 ? String(text.prefix(50)) + "..." : (text.isEmpty ? "—" : text)
+        }
         public var isExpired: Bool { status == .expired }
+        public var isActionable: Bool { certClass == .actionable }
 
         public func matches(_ query: String) -> Bool {
             let q = query.lowercased()
-            return commonName.lowercased().contains(q) || subject.lowercased().contains(q) || issuer.lowercased().contains(q) || thumbprint.lowercased().contains(q)
+            return [commonName, subject, issuer, thumbprint, stampedDisplayName ?? "", issuerName ?? ""].contains { $0.lowercased().contains(q) }
         }
     }
 
     public var certificates: [Certificate] { security["certificates"].elements.map(Certificate.init(json:)) }
+
+    /// The certificates the tab lists: actionable only unless `showSystemManaged`,
+    /// which brings back system-managed and trust-store certificates too.
+    public static func visibleCertificates(_ all: [Certificate], showSystemManaged: Bool) -> [Certificate] {
+        showSystemManaged ? all : all.filter(\.isActionable)
+    }
+
+    /// Whether any certificate carries an API class; a device last reported before classification has none.
+    public var certificatesAreClassified: Bool { security["certificates"].elements.contains { !$0["class"].isNull } }
 
     /// Expired OS roots the client counted, so they can be hidden without losing the number.
     public var osRootExpiredCount: Int {
@@ -303,4 +356,31 @@ public struct SecurityInfo: Sendable, Hashable {
         return ["paths", "processes", "extensions", "ipAddresses"].flatMap { ex[$0].elements.compactMap(\.string) }
     }
     public var defenderExclusionCount: Int { security["defenderExclusions"]["totalCount"].int ?? defenderExclusions.count }
+}
+
+/// Who has to act on a certificate, as the API stamps it at ingest. The rule
+/// lives in the API; the app only reads the stamp.
+public enum CertificateClass: String, Sendable, Hashable, CaseIterable {
+    /// Someone has to renew it.
+    case actionable
+    /// The OS or an agent issues and rotates it, or it is a reference copy with no private key.
+    case systemManaged = "system-managed"
+    /// An OS root or intermediate, or a Secure Boot certificate.
+    case trustStore = "trust-store"
+
+    /// Missing or unknown values read as actionable, so older reports keep counting.
+    public init(_ value: JSONValue) {
+        self = value.nonEmptyString.flatMap { CertificateClass(rawValue: $0.lowercased()) } ?? .actionable
+    }
+
+    public var label: String {
+        switch self {
+        case .actionable: return "Actionable"
+        case .systemManaged: return "System-Managed"
+        case .trustStore: return "Trust Store"
+        }
+    }
+
+    /// The `class` query value for `/security/certificates`.
+    public static func queryValue(showSystemManaged: Bool) -> String { showSystemManaged ? "all" : CertificateClass.actionable.rawValue }
 }
