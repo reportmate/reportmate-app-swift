@@ -143,6 +143,15 @@ final class DashboardInsightsModel {
     }
 
     nonisolated private static func fetchCard(_ key: String, api: ReportMateAPI, query: [String: String?]) async -> CardResult {
+        let result = await fetchOne(key, api: api, query: query)
+        // A server from before the API renamed this card answers under the old key.
+        if case .notFound = result, let old = DashboardInsightsDocument.renamedKeys[key] {
+            return await fetchOne(old, api: api, query: query)
+        }
+        return result
+    }
+
+    nonisolated private static func fetchOne(_ key: String, api: ReportMateAPI, query: [String: String?]) async -> CardResult {
         do {
             let json = try await retrying { try await api.getJSON("/dashboard/insights/\(key)", query: query) }
             if json.isNull { return .notFound }

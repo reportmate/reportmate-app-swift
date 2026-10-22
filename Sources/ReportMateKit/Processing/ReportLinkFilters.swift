@@ -81,7 +81,7 @@ public struct ReportLinkFilter: Sendable, Hashable {
         case "arch": return "Architecture: \(joined)"
         case "storage": return v.first == "low" ? "Under 10% free storage" : "Free space: " + v.map { StorageBuckets.free($0)?.label ?? $0 }.joined(separator: ", ")
         case "capacity": return "Capacity: " + v.map { StorageBuckets.capacity($0)?.label ?? $0 }.joined(separator: ", ")
-        case "directory": return "Directory: " + v.map { MacDirectory(rawValue: $0)?.label ?? $0 }.joined(separator: ", ")
+        case "directory": return "Directory: " + v.map { MacDirectory(rawValue: $0)?.label ?? IdentityDirectory.label($0) ?? $0 }.joined(separator: ", ")
         case "agent": return "Agent: " + v.map { $0 == "munki" ? "Munki" : $0 == "cimian" ? "Cimian" : $0 }.joined(separator: ", ")
         case "tool": return "Tool: \(joined)"
         case "level": return v.first == "warning" ? "Warnings" : "Errors"
@@ -385,8 +385,8 @@ public extension ReportLinkFilter {
     func matches(identity i: IdentityReportRow, platform: Platform = .unknown) -> Bool {
         let platforms = values("platform").map { Platform.normalize($0) }
         if !platforms.isEmpty, !platforms.contains(platform) { return false }
-        let directories = values("directory").compactMap(MacDirectory.init(rawValue:))
-        if !directories.isEmpty, platform == .windows || !directories.contains(MacDirectory.of(i)) { return false }
+        let directories = values("directory")
+        if !directories.isEmpty, !directories.contains(where: { IdentityDirectory.matches(i, platform: platform, key: $0) }) { return false }
         let admins = values("admins")
         if !admins.isEmpty {
             let n = i.adminUsers
@@ -505,5 +505,28 @@ public enum MacDirectory: String, Sendable, CaseIterable {
         if row.entraJoined { return .psso }
         if row.domainJoined || row.ldapBound { return .bound }
         return .unbound
+    }
+}
+
+/// `?directory=` values: the Identity report's Directory Services classes (Cloud
+/// Joined, Domain Joined, Standard, Unjoined) and Domain Joined's trust states
+/// (Trusted, Unconfirmed, Broken), as labels or kebab keys, and the earlier Mac
+/// keys (psso, bound, unbound).
+public enum IdentityDirectory {
+    static func fold(_ s: String) -> String { s.lowercased().filter { $0.isLetter } }
+
+    /// The identity report's widget label for a key, when it names one.
+    public static func label(_ key: String) -> String? {
+        let k = fold(key)
+        let labels = ["Cloud Joined", "Domain Joined", "Standard", "Unjoined", "Trusted", "Unconfirmed", "Broken"]
+        return labels.first { fold($0) == k }
+    }
+
+    public static func matches(_ row: IdentityReportRow, platform: Platform, key: String) -> Bool {
+        if let mac = MacDirectory(rawValue: key) { return platform != .windows && MacDirectory.of(row) == mac }
+        let k = fold(key)
+        if let type = row.enrollmentType, fold(type) == k { return true }
+        if let trust = row.trustLabel, fold(trust) == k { return true }
+        return false
     }
 }

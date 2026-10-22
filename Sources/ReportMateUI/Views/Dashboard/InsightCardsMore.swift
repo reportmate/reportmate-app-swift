@@ -26,13 +26,13 @@ struct InsightCardView: View {
         switch key {
         case "rebootDebt": RebootDebtCard()
         case "protectionGaps": ProtectionGapsCard()
-        case "managementToolErrors": ManagementToolErrorsCard()
+        case "managementToolLogs", "managementToolErrors": ManagementToolLogsCard()
         case "storage": StorageCard()
         case "checkinGaps": CheckInGapsCard(platform: platform)
         case "osCurrency": OSCurrencyCard()
         case "softwareRisk": SoftwareRiskCard()
         case "expiringCertificates": ExpiringCertificatesCard()
-        case "directoryJoin": DirectoryJoinCard(platform: platform)
+        case "directoryServices", "directoryJoin": DirectoryServicesCard(platform: platform)
         default: ConnectivityProblemsCard()
         }
     }
@@ -93,15 +93,16 @@ struct ProtectionGapsCard: View {
     }
 }
 
-// MARK: - Management Tools Errors
+// MARK: - Management Tools Logs
 
 /// Errors and warnings in the management tools' own logs over the last day, per
-/// tool, with the commonest error messages. Parsed by the API at ingest.
-struct ManagementToolErrorsCard: View {
+/// tool, with the commonest error messages. Parsed by the API at ingest. The MDM
+/// agent's own logs are left out.
+struct ManagementToolLogsCard: View {
     var body: some View {
-        InsightCard(key: "managementToolErrors", title: "Management Tools Errors", subtitle: "Errors in the management tools' logs", systemImage: "wrench.and.screwdriver", tone: .purple, link: DashboardLinks.devices()) { c in
+        InsightCard(key: "managementToolLogs", title: "Management Tools Logs", subtitle: "Errors and warnings in the tools' own logs", systemImage: "wrench.and.screwdriver", tone: .purple, link: DashboardLinks.devices()) { c in
             VStack(alignment: .leading, spacing: 12) {
-                let tools = c.items("tools").filter { ($0.int("devicesWithErrors") ?? 0) + ($0.int("devicesWithWarnings") ?? 0) > 0 }
+                let tools = ManagementToolMessages.tools(c).filter { ($0.int("devicesWithErrors") ?? 0) + ($0.int("devicesWithWarnings") ?? 0) > 0 }
                 let hours = c.int("windowHours") ?? 24
                 if tools.isEmpty {
                     Text("No tool reported an error or warning in the last \(hours) hours").appFont(.caption).foregroundStyle(.secondary)
@@ -124,16 +125,18 @@ struct ManagementToolErrorsCard: View {
                         }
                     }
                 }
-                let top = c.items("topErrors")
+                // Grouped by tool and message with the timestamp and level stripped.
+                let top = Array(ManagementToolMessages.topErrors(c).prefix(5))
                 if !top.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         InsightHeading("Commonest errors")
-                        ForEach(top) { e in
+                        ForEach(Array(top.enumerated()), id: \.offset) { _, g in
+                            let e = g.item
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 MaybeInsightLink(link: e.link) {
                                     VStack(alignment: .leading, spacing: 1) {
-                                        Text(e.string("message") ?? "").appFont(.callout).lineLimit(2).truncationMode(.middle)
-                                        Text("\(e.string("name") ?? "") · \(e.int("devices") ?? 0) devices · \(e.int("lines") ?? 0) lines").appFont(.caption).foregroundStyle(.secondary)
+                                        Text(g.message).appFont(.callout).lineLimit(2).truncationMode(.middle)
+                                        Text("\(e.string("name") ?? "") · \(g.devices) devices · \(g.lines) lines").appFont(.caption).foregroundStyle(.secondary)
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 }
@@ -221,7 +224,7 @@ struct InstallHealthCard: View {
         let c = insights.card("installHealth").flatMap { $0.error == nil ? $0 : nil }
         Card {
             VStack(alignment: .leading, spacing: 0) {
-                CardHeader("Install Health", subtitle: "Munki and Cimian across the fleet", systemImage: "arrow.down.circle", tone: .green) { appState.follow(link) }
+                CardHeader("Installs", subtitle: "Munki and Cimian across the fleet", systemImage: "arrow.down.circle", tone: .green) { appState.follow(link) }
                     .help(appState.describe(link))
                     .linkContextMenu(link)
                     .accessibilityAddTraits(.isButton)
@@ -442,39 +445,50 @@ struct ExpiringCertificatesCard: View {
     }
 }
 
-// MARK: - Directory Join
+// MARK: - Directory Services
 
-/// How devices are joined to a directory, with extra local admins and shared or
-/// assigned use, in three views. The view follows the platform toggle; the
-/// segmented control picks another without changing the toggle.
-struct DirectoryJoinCard: View {
+/// The Identity report's Directory Services classification: Cloud Joined, Domain
+/// Joined (Trusted, Unconfirmed, Broken), Standard and Unjoined, with extra local
+/// admins and shared or assigned use. It follows the global platform toggle; no
+/// card has a platform control of its own.
+struct DirectoryServicesCard: View {
     let platform: PlatformFilter
-    enum View3: String, CaseIterable, Identifiable { case all, windows, mac
-        var id: String { rawValue }
-        var title: String { self == .all ? "All" : self == .windows ? "Windows" : "Mac" }
-    }
-    @State private var chosen: View3?
 
-    private var view: View3 { chosen ?? (platform == .macOS ? .mac : platform == .windows ? .windows : .all) }
+    private static let colors: [String: Color] = [
+        "cloud joined": .green, "domain joined": .orange, "standard": .blue, "unjoined": .red,
+        "trusted": .yellow, "unconfirmed": .orange, "broken": .red,
+        // The API's earlier keys.
+        "entra": .green, "domain": .orange, "hybrid": .teal, "workgroup": .red, "psso": .green, "bound": .orange, "unbound": .red,
+    ]
+
+    private func color(_ s: InsightItem) -> Color {
+        Self.colors[(s.label ?? "").lowercased()] ?? Self.colors[(s.key ?? "").lowercased().replacingOccurrences(of: "-", with: " ")] ?? .gray
+    }
 
     var body: some View {
-        InsightCard(key: "directoryJoin", title: "Directory Join", subtitle: "Join type, local admins and use", systemImage: "person.badge.key", tone: .indigo, link: DashboardLinks.report("identity")) { c in
+        InsightCard(key: "directoryServices", title: "Directory Services", subtitle: "How devices are joined, local admins and use", systemImage: "person.badge.key", tone: .indigo, link: DashboardLinks.report("identity")) { c in
+            // The current card is one classification for the toggle's platform; an earlier
+            // API sent three views, of which the toggle picks one.
+            let section = c.json["segments"].array != nil ? InsightItem(json: c.json)
+                : InsightItem(json: c.json["views"][platform == .macOS ? "mac" : platform == .windows ? "windows" : "all"])
+            let segments = section.items("segments")
             VStack(alignment: .leading, spacing: 12) {
-                Picker("View", selection: Binding(get: { view }, set: { chosen = $0 })) {
-                    ForEach(View3.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                let v = c.json["views"][view.rawValue]
-                let section = InsightItem(json: v)
-                let segments = section.items("segments")
-                let colors: [String: Color] = ["entra": .blue, "hybrid": .teal, "domain": .orange, "workgroup": Color.secondary.opacity(0.4),
-                                               "psso": .blue, "bound": .orange, "unbound": Color.secondary.opacity(0.4)]
                 if segments.isEmpty {
-                    Text("No \(view == .all ? "" : view.title + " ")devices reported").appFont(.caption).foregroundStyle(.secondary)
+                    Text("No directory data reported").appFont(.caption).foregroundStyle(.secondary)
                 } else {
-                    InsightDonut(data: segments.map { InsightSlice(label: $0.label ?? $0.key ?? "", count: $0.count, color: colors[$0.key ?? ""] ?? .gray, link: $0.link) },
-                                 center: "\(v["devices"].int ?? 0)")
+                    InsightDonut(data: segments.map { InsightSlice(label: $0.label ?? $0.key ?? "", count: $0.count, color: color($0), link: $0.link) },
+                                 center: "\(section.int("devices") ?? segments.reduce(0) { $0 + $1.count })")
+                    // Domain Joined's trust breakdown, as the identity report expands it.
+                    ForEach(segments) { s in
+                        let parts = s.items("breakdown") + s.items("children") + s.items("trust")
+                        if !parts.isEmpty {
+                            VStack(alignment: .leading, spacing: 2) {
+                                InsightHeading("\(s.label ?? s.key ?? "") trust")
+                                let max = parts.map(\.count).max() ?? 1
+                                ForEach(parts) { p in InsightBarRow(label: p.label ?? p.key ?? "", count: p.count, max: max, tone: .orange, link: p.link) }
+                            }
+                        }
+                    }
                 }
                 InsightChips {
                     StatChip(value: section.item("extraAdmins")?.count ?? 0, label: "with extra local admins", tone: .red, link: section.item("extraAdmins")?.link)
@@ -483,7 +497,6 @@ struct DirectoryJoinCard: View {
                 }
             }
         }
-        .onChange(of: platform) { _, _ in chosen = nil }
     }
 }
 
@@ -506,13 +519,9 @@ struct AppUsageCard: View {
                 if apps.isEmpty {
                     Text("No usage recorded for this selection").appFont(.caption).foregroundStyle(.secondary)
                 } else {
-                    let max = Int((apps.compactMap { $0.double("totalHours") }.max() ?? 1).rounded())
+                    let max = apps.compactMap { $0.double("totalHours") }.max() ?? 1
                     VStack(alignment: .leading, spacing: 2) {
-                        ForEach(apps) { app in
-                            let hours = Int((app.double("totalHours") ?? 0).rounded())
-                            InsightBarRow(label: app.name ?? "", count: hours, max: Swift.max(max, 1), tone: .blue, link: app.link,
-                                          valueText: "\(hours) h · \(app.int("activeDevices") ?? 0) devices")
-                        }
+                        ForEach(apps) { app in AppUsageRow(app: app, maxHours: max) }
                     }
                 }
             }
@@ -563,5 +572,44 @@ struct ConnectivityProblemsCard: View {
                 InsightFigure(value: vpn?.count, label: "on VPN", tone: .blue, link: vpn?.link(or: DashboardLinks.report("network", ["vpn": "1"])))
             }
         }
+    }
+}
+
+/// One App Usage row on a fixed grid: name (flexible, truncated) | bar | hours |
+/// devices, the last three at fixed widths so the columns line up across rows.
+struct AppUsageRow: View {
+    let app: InsightItem
+    let maxHours: Double
+
+    private static let number: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f
+    }()
+
+    var body: some View {
+        let hours = app.double("totalHours") ?? 0
+        let devices = app.int("activeDevices") ?? app.int("devices") ?? 0
+        MaybeInsightLink(link: app.link) {
+            HStack(spacing: 10) {
+                Text(app.name ?? "").appFont(.callout).lineLimit(1).truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.secondary.opacity(0.12))
+                        Capsule().fill(Tone.blue.color.opacity(0.75)).frame(width: maxHours > 0 ? geo.size.width * hours / maxHours : 0)
+                    }
+                }
+                .frame(width: 160, height: 6)
+                Text("\(Self.number.string(from: NSNumber(value: hours.rounded())) ?? "0") h")
+                    .appFont(.callout, weight: .medium).monospacedDigit()
+                    .frame(width: 96, alignment: .trailing)
+                Text("\(Self.number.string(from: NSNumber(value: devices)) ?? "0") devices")
+                    .appFont(.callout).foregroundStyle(.secondary).monospacedDigit()
+                    .frame(width: 100, alignment: .trailing)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }

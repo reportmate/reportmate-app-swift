@@ -373,7 +373,7 @@ let appUsageEnvelope = #"""
     @Test func readsEveryCard() {
         let d = doc
         #expect(d.generatedAt != nil)
-        #expect(Set(d.cards.keys) == Set(DashboardInsightsDocument.cardKeys))
+        #expect(Set(DashboardInsightsDocument.cardKeys).isSubset(of: Set(d.cards.keys)))
         #expect(d.card("installHealth")?.item("pending")?.int("items") == 40)
         #expect(d.card("installHealth")?.items("byAgent").first?.json["silentAgents"]["count"].int == 4)
         #expect(d.card("managementToolErrors")?.items("tools").first?.int("devicesWithErrors") == 12)
@@ -410,5 +410,47 @@ let appUsageEnvelope = #"""
     @Test func platformParameter() {
         #expect(DashboardInsightsDocument.platformParameter(.all) == "all")
         #expect(DashboardInsightsDocument.platformParameter(.windows) == "Windows")
+    }
+}
+
+@Suite struct RevisionFourTests {
+    @Test func messagesLoseTheirTimestampAndLevel() {
+        #expect(ManagementToolMessages.normalize("<ts> -<n>:<n> [ERR] Device registration failed for <guid>") == "Device registration failed for <guid>")
+        #expect(ManagementToolMessages.normalize("2026-10-22T09:12:01Z [WARN] Retry later") == "Retry later")
+        #expect(ManagementToolMessages.normalize("Plain message") == "Plain message")
+    }
+
+    @Test func duplicatesGroupAndMDMIsDropped() {
+        let card = InsightCardData(json: json(#"""
+        {"tools": [{"tool": "mdm", "name": "Intune", "devicesWithErrors": 300}, {"tool": "installs", "name": "Munki", "devicesWithErrors": 4}],
+         "topErrors": [
+           {"message": "<ts> -<n>:<n> [ERR] Device registration failed for <guid>", "tool": "installs", "name": "Munki", "devices": 2, "lines": 5},
+           {"message": "<ts> +<n>:<n> [ERR] Device registration failed for <guid>", "tool": "installs", "name": "Munki", "devices": 3, "lines": 7},
+           {"message": "Enrollment check failed", "tool": "mdm", "name": "Intune", "devices": 90, "lines": 900}
+         ]}
+        """#))
+        #expect(ManagementToolMessages.tools(card).map { $0.string("tool") } == ["installs"])
+        let top = ManagementToolMessages.topErrors(card)
+        #expect(top.count == 1)
+        #expect(top.first?.message == "Device registration failed for <guid>")
+        #expect(top.first?.devices == 5 && top.first?.lines == 12)
+    }
+
+    @Test func renamedCardsAnswerUnderTheirNewKeys() {
+        let doc = DashboardInsightsDocument(json: json(#"{"cards": {"managementToolErrors": {"tools": []}, "directoryJoin": {"views": {}}}}"#))
+        #expect(doc.card("managementToolLogs") != nil)
+        #expect(doc.card("directoryServices") != nil)
+    }
+
+    @Test func directoryUsesTheIdentityReportClasses() {
+        let cloud = IdentityReportRow(json: json(#"{"directoryServices": {"azureAd": {"joined": true}}}"#))
+        let domain = IdentityReportRow(json: json(#"{"directoryServices": {"activeDirectory": {"bound": true}}, "domainTrust": {"trustStatus": "Broken"}}"#))
+        let standard = IdentityReportRow(json: json(#"{}"#))
+        func hit(_ row: IdentityReportRow, _ key: String) -> Bool { ReportLinkFilter(report: "identity", query: ["directory": key]).matches(identity: row, platform: .windows) }
+        #expect(hit(cloud, "Cloud Joined") && hit(cloud, "cloud-joined"))
+        #expect(hit(domain, "domain-joined") && hit(domain, "Broken") && !hit(domain, "trusted"))
+        #expect(hit(standard, "standard"))
+        #expect(IdentityDirectory.label("unconfirmed") == "Unconfirmed")
+        #expect(ReportLinkFilter.label(key: "directory", value: "cloud-joined") == "Directory: Cloud Joined")
     }
 }

@@ -89,7 +89,13 @@ struct IdentityReportView: View {
                 }
             },
             widgets: { rows in widgets(rows.map(i)) },
-            linking: ReportLinking(absorb: { _ in clearWidgetFilters() }, matches: { row, f in f.matches(identity: IdentityReportRow(json: row.json), platform: row.platform) })
+            linking: ReportLinking(absorb: { f in
+                clearWidgetFilters()
+                // A Directory Services class or trust state selects the Directory Services widget.
+                let d = f.values("directory")
+                if d.count == 1, let label = IdentityDirectory.label(d[0]) { _ = f.take("directory"); directoryFilter = label }
+            }, matches: { row, f in f.matches(identity: IdentityReportRow(json: row.json), platform: row.platform) },
+            widgetQuery: directoryFilter.map { ["directory": $0] } ?? [:])
         ) { rows in
             let pairs = filtered(rows)
             VStack(spacing: 0) {

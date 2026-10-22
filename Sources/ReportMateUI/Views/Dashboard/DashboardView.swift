@@ -152,10 +152,14 @@ struct DashboardView: View {
     static let wideBreakpoint: CGFloat = 2000
     /// Column 1 and each insight column never go narrower than this.
     static let columnMinimum: CGFloat = 360
-    /// The insight-column cards, by API key. Install Health sits in column 1 under Fleet
-    /// Status and App Usage under Recent Events, so neither is here.
-    static let cardOrder = ["rebootDebt", "protectionGaps", "managementToolErrors", "storage", "checkinGaps",
-                            "osCurrency", "softwareRisk", "expiringCertificates", "directoryJoin", "connectivityProblems"]
+    /// The insight-column cards between New Clients and Reboot & Update Debt, by API key.
+    /// Installs, Management Tools Logs and Check-in Gaps sit in column 1 and App Usage
+    /// under Recent Events.
+    static let cardOrder = ["protectionGaps", "storage", "osCurrency", "softwareRisk",
+                            "expiringCertificates", "directoryServices", "connectivityProblems"]
+    /// Column 2 ends with Reboot & Update Debt; column 1 carries Management Tools Logs and
+    /// Check-in Gaps under Installs.
+    static let lastCard = "rebootDebt"
 
     private var devices: [DeviceSummary] {
         guard let all = model.data?.devices else { return [] }
@@ -245,7 +249,8 @@ struct DashboardView: View {
             HStack(alignment: .top, spacing: 20) {
                 // Cards size to their content rather than to the tallest column.
                 statusColumn.frame(width: unit).fixedSize(horizontal: false, vertical: true)
-                insightStack(Self.cardOrder.enumerated().filter { $0.offset % 2 == 0 }.map(\.element)).frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                insightStack(Self.cardOrder.enumerated().filter { $0.offset % 2 == 0 }.map(\.element), newClients: true, last: Self.lastCard)
+                    .frame(width: unit).fixedSize(horizontal: false, vertical: true)
                 insightStack(Self.cardOrder.enumerated().filter { $0.offset % 2 == 1 }.map(\.element)).frame(width: unit).fixedSize(horizontal: false, vertical: true)
                 activityColumn.frame(maxWidth: .infinity)
             }
@@ -256,24 +261,25 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .top, spacing: 20) {
                     statusColumn.frame(width: unit).fixedSize(horizontal: false, vertical: true)
-                    insightStack(Array(Self.cardOrder.prefix(4))).frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                    insightStack(Array(Self.cardOrder.prefix(3)), newClients: true).frame(width: unit).fixedSize(horizontal: false, vertical: true)
                     activityColumn.frame(maxWidth: .infinity)
                 }
-                insightGrid(Array(Self.cardOrder.dropFirst(4)), maxColumns: 4)
+                insightGrid(Array(Self.cardOrder.dropFirst(3)) + [Self.lastCard], maxColumns: 4)
             }
         } else {
             VStack(alignment: .leading, spacing: 20) {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 20) {
-                        statusColumn.frame(width: Self.columnMinimum)
+                        VStack(spacing: 20) { statusColumn; newClientsCard }.frame(width: Self.columnMinimum)
                         activityColumn
                     }
                     VStack(spacing: 20) {
                         statusColumn
+                        newClientsCard
                         activityColumn
                     }
                 }
-                insightGrid(Self.cardOrder, maxColumns: 2)
+                insightGrid(Self.cardOrder + [Self.lastCard], maxColumns: 2)
             }
         }
     }
@@ -293,7 +299,8 @@ struct DashboardView: View {
                 VStack(spacing: 20) {
                     StatusWidget(devices: devices)
                     InstallHealthCard(stats: model.data?.installStats, platform: appState.platformFilter)
-                    NewClientsWidget(devices: devices)
+                    card("managementToolLogs")
+                    card("checkinGaps")
                 }
             }
         }
@@ -314,9 +321,20 @@ struct DashboardView: View {
         }
     }
 
-    private func insightStack(_ cards: [String]) -> some View {
+    private func insightStack(_ cards: [String], newClients: Bool = false, last: String? = nil) -> some View {
         VStack(spacing: 20) {
+            if newClients { newClientsCard }
             ForEach(cards, id: \.self) { card($0) }
+            if let last { card(last) }
+        }
+    }
+
+    @ViewBuilder
+    private var newClientsCard: some View {
+        if awaitingData {
+            SkeletonCard { SkeletonRows(count: 6) }.skeletonTimeout(retry: reloadDashboard)
+        } else {
+            NewClientsWidget(devices: devices)
         }
     }
 

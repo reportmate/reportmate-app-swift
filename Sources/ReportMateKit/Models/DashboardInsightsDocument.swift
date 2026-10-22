@@ -8,8 +8,8 @@ import Foundation
 public struct DashboardInsightsDocument: Sendable, Hashable {
     /// The card keys the API serves at `/dashboard/insights/{card}` and in the combined document.
     public static let cardKeys = [
-        "installHealth", "rebootDebt", "protectionGaps", "managementToolErrors", "storage",
-        "checkinGaps", "osCurrency", "softwareRisk", "expiringCertificates", "directoryJoin", "connectivityProblems",
+        "installHealth", "rebootDebt", "protectionGaps", "managementToolLogs", "storage",
+        "checkinGaps", "osCurrency", "softwareRisk", "expiringCertificates", "directoryServices", "connectivityProblems",
     ]
     /// App Usage has its own endpoint, `/dashboard/insights/appUsage`, because it takes filters.
     public static let appUsageKey = "appUsage"
@@ -32,6 +32,10 @@ public struct DashboardInsightsDocument: Sendable, Hashable {
         includeArchived = json["includeArchived"].boolish
         var cards: [String: InsightCardData] = [:]
         for (key, value) in json["cards"].object ?? [:] { cards[key] = InsightCardData(json: value) }
+        // A server from before the rename: its cards answer under their current keys.
+        for (current, old) in DashboardInsightsDocument.renamedKeys where cards[current] == nil {
+            if let card = cards[old] { cards[current] = card }
+        }
         self.cards = cards
     }
 
@@ -101,4 +105,56 @@ public struct InsightItem: Sendable, Hashable, Identifiable {
         if !params.isEmpty { comps.queryItems = params }
         return comps.url.flatMap(DeepLink.init(url:))
     }
+}
+
+/// The Management Tools Logs card's lists, made safe against an older API that
+/// counted the MDM agent's own logs and listed one message several times.
+public enum ManagementToolMessages {
+    /// `<ts> -<n>:<n> [ERR] Device registration failed` → `Device registration failed`.
+    public static func normalize(_ message: String) -> String {
+        var m = message.trimmingCharacters(in: .whitespaces)
+        let prefixes = [
+            #"^(<ts>|\d{4}-\d{2}-\d{2}[T ][\d:.,]+Z?)\s*"#,
+            #"^[+-]?(<n>|\d{1,2}):?(<n>|\d{2})\s+"#,
+            #"^\[(ERR|ERROR|WARN|WARNING|INFO|DEBUG|E|W|I|D)\]\s*"#,
+            #"^(ERROR|WARN|WARNING|ERR)[:\s]+"#,
+        ]
+        for pattern in prefixes {
+            if let r = m.range(of: pattern, options: [.regularExpression, .caseInsensitive]) { m.removeSubrange(r) }
+        }
+        return m.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The MDM agent's own logs are out of scope; the API tags that root `mdm`.
+    public static func isMDMAgent(_ tool: String?) -> Bool { (tool ?? "").lowercased() == "mdm" }
+
+    /// Tools without the MDM agent.
+    public static func tools(_ card: InsightCardData) -> [InsightItem] {
+        card.items("tools").filter { !isMDMAgent($0.string("tool")) }
+    }
+
+    /// Top errors grouped by tool and normalised message, devices and lines summed,
+    /// most devices first. The first entry's links stand for the group.
+    public static func topErrors(_ card: InsightCardData) -> [(message: String, item: InsightItem, devices: Int, lines: Int)] {
+        var order: [String] = []
+        var groups: [String: (message: String, item: InsightItem, devices: Int, lines: Int)] = [:]
+        for e in card.items("topErrors") where !isMDMAgent(e.string("tool")) {
+            let message = normalize(e.string("message") ?? "")
+            let key = "\(e.string("tool") ?? "")|\(message.lowercased())"
+            if var g = groups[key] {
+                g.devices += e.int("devices") ?? 0
+                g.lines += e.int("lines") ?? 0
+                groups[key] = g
+            } else {
+                groups[key] = (message, e, e.int("devices") ?? 0, e.int("lines") ?? 0)
+                order.append(key)
+            }
+        }
+        return order.compactMap { groups[$0] }.sorted { $0.devices != $1.devices ? $0.devices > $1.devices : $0.lines > $1.lines }
+    }
+}
+
+extension DashboardInsightsDocument {
+    /// A card under its current key, or the key it had before the API renamed it.
+    public static let renamedKeys: [String: String] = ["managementToolLogs": "managementToolErrors", "directoryServices": "directoryJoin"]
 }

@@ -168,15 +168,17 @@ the navigation stack; Back is ⌘[ or the toolbar arrow.
 Pages use the width of a wide window instead of a laptop-width column, and
 re-flow as the window is resized:
 
-- Dashboard: column 1 holds Fleet Status, Install Health (its two headline
-  counts are the largest figures on the page; it replaces the old Errors and
-  Warnings tiles) and New Clients. The wide column holds Recent Events, App
-  Usage, Platform Distribution and the OS version charts. At 2000 pt of content
-  width or more (a 27-inch display) the other ten cards take two columns the
-  width of column 1, dealt alternately, for four columns in all (1fr each, the
-  wide one 2fr). From 1500 pt there are three columns, with the first four cards
-  beside column 1 and the other six four across underneath. Below that the ten
-  cards sit in a two-column grid under the main layout. The web app switches at
+- Dashboard: column 1 holds Fleet Status, Installs (its two headline counts are
+  the largest figures on the page; it replaces the old Errors and Warnings
+  tiles), Management Tools Logs and Check-in Gaps. The wide column holds Recent
+  Events, App Usage, Platform Distribution and the OS version charts. At 2000 pt
+  of content width or more (a 27-inch display) two insight columns the width of
+  column 1 sit between them: column 2 opens with New Clients and ends with Reboot
+  & Update Debt, and the other cards are dealt alternately across both (1fr each,
+  the wide one 2fr). From 1500 pt there are three columns, column 2 holding New
+  Clients and three cards, the rest four across underneath. Below that the cards
+  sit in a two-column grid under the main layout. No card has a platform control
+  of its own; every card follows the toolbar toggle. The web app switches at
   1680 and 2200 px.
 - Report widget rows stretch to fill the window, and scroll sideways only when
   they cannot fit. Security's eight donuts flow into up to eight columns.
@@ -209,11 +211,13 @@ The top bar keeps every section tab on a device page too.
 The dashboard's twelve insight cards and the link parameters behind them are a
 contract shared with the web and Windows apps, written up in the web repo as
 [`docs/DASHBOARD-WIDGETS.md`](https://github.com/reportmate/reportmate-app-web/blob/main/docs/DASHBOARD-WIDGETS.md).
-Each card answers one question about the fleet: Install Health, Reboot & Update
-Debt, Protection Gaps, Management Tools Errors, Storage, Check-in Gaps, OS
-Currency, Software Risk, Expiring Certificates, Directory Join (All, Windows and
-Mac views, following the platform toggle), Connectivity Problems, and App Usage
-(the top ten apps, with Usage and Catalog chips)
+Each card answers one question about the fleet: Installs, Reboot & Update Debt,
+Protection Gaps, Management Tools Logs (the MDM agent's own logs left out,
+messages grouped with their timestamps stripped), Storage, Check-in Gaps, OS
+Currency, Software Risk, Expiring Certificates, Directory Services (the Identity
+report's classes: Cloud Joined, Domain Joined with Trusted, Unconfirmed and
+Broken, Standard, Unjoined), Connectivity Problems, and App Usage (the top ten
+apps on a fixed grid, with Usage and Catalog chips)
 (`Views/Dashboard/InsightWidgets.swift`, `InsightCardsMore.swift`).
 
 Every count, bar, legend row and chip on the dashboard, the Fleet Status legend,
@@ -241,7 +245,7 @@ and appear as removable chips under the header, and Copy Link carries both.
 | `/hardware` | `arch`, `storage=low\|lt5\|5-10\|10-20\|20+`, `capacity=le256\|512\|1t\|2t+`, `platform=macOS\|Windows`, `memory=le8`, `type=laptop\|desktop`, `processor` |
 | `/installs` | `filter` (`errors`, `warnings`, `pending`), `agent=munki\|cimian`, `item`, `stale=1`, `view` |
 | `/events/failures` | `hours`, `reason`, `outcome` |
-| `/identity` | `admins=extra\|2\|3\|4+`, `join=entra\|domain\|hybrid\|workgroup`, `directory=psso\|bound\|unbound`, `platform=macOS\|Windows`, `usage` |
+| `/identity` | `admins=extra\|2\|3\|4+`, `join=entra\|domain\|hybrid\|workgroup`, `directory=` (Cloud Joined, Domain Joined, Standard, Unjoined, Trusted, Unconfirmed, Broken, as labels or kebab keys; and psso, bound, unbound), `platform=macOS\|Windows`, `usage` |
 | `/device/<serial>` | `tab=management&tool=<tool>&level=error\|warning` opens the log viewer on that tool, errors (or warnings) only |
 | `/applications` | `type=usage&apps=&period=`; `/applications/usage/<app>?days=30` |
 | `/network` | `connection=wired\|wifi`, `signal=weak`, `quality=poor`, `vpn=1` |
