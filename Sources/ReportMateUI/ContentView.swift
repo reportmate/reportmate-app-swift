@@ -181,7 +181,10 @@ struct ContentView: View {
 
     @ViewBuilder
     private var sectionView: some View {
-        if !appState.isConfigured {
+        if appState.connectionResolving {
+            ProgressView("Connecting to ReportMate…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if !appState.isConfigured {
             NotConfiguredView()
         } else {
             switch appState.section {
@@ -281,12 +284,12 @@ private struct SharedTasks: ViewModifier {
     func body(content: Content) -> some View {
         content
             .task { kiosk.attach(appState) }
-            .task { await appState.preferEntraIfAvailable() }
+            .task { await appState.resolveConnection() }
             // ⌘K (and the Find Device menu item) puts the cursor in the toolbar search.
             .onChange(of: appState.showSearch) { _, wants in
                 if wants { searchFocused.wrappedValue = true; appState.showSearch = false }
             }
-            .task(id: appState.configuration) {
+            .task(id: appState.isConfigured ? appState.configuration : nil) {
                 guard appState.isConfigured else { return }
                 await appState.loadSettings()
                 await appState.loadDevices()

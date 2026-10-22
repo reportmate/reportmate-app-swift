@@ -52,10 +52,10 @@ make app-pkg
 The CLI configures itself from the app: on Save, and at every launch, the
 app writes its non-secret connection (endpoint, auth method, Entra audience)
 to `~/Library/Application Support/ReportMate/connection.json`, and
-`reportmateutil` reads it when no `REPORTMATE_*` variables are set. An API
-key or passphrase is read from the app's Keychain item on first use (macOS
-asks once to allow it); an Entra sign-in needs no secret at all, the CLI mints
-its token with `az`. `reportmateutil config` shows what it resolved and from
+`reportmateutil` reads it when no `REPORTMATE_*` variables are set. With
+Entra sign-in the CLI needs no secret at all and mints its token with `az`; the
+app stores no API key or passphrase, so for those methods give the CLI its own
+`REPORTMATE_*` variables. `reportmateutil config` shows what it resolved and from
 where.
 
 
@@ -104,7 +104,7 @@ swift test -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/us
 ## Connecting
 
 Settings (⌘,) → Connection takes the API base URL and one of three
-credentials:
+authentication methods. Entra sign-in is the default:
 
 | Method | Header | Notes |
 |---|---|---|
@@ -112,8 +112,22 @@ credentials:
 | Passphrase | `X-Client-Passphrase` | The legacy shared client passphrase (full access). |
 | Entra sign-in | `Authorization: Bearer` | A delegated token for the API app registration, minted from the signed-in user's `az login` session; nothing is stored on the Mac. |
 
-Credentials are kept in the Keychain. The endpoint's own ingest key is not a
-read credential and will be refused with 403.
+The app never reads or writes the Keychain and stores no secret on the Mac, so
+it never shows a Keychain password prompt. Entra sign-in needs nothing stored:
+the token is minted from the operator's `az login` and held in memory. The
+non-secret connection (API URL, method, Entra audience, web URL) is kept in the
+app's preferences (`com.github.reportmate.mac`). For a deployment without Entra,
+an API key or passphrase is read, never typed or saved, from:
+
+- the environment: `REPORTMATE_API_KEY` or `REPORTMATE_PASSPHRASE`;
+- a configuration profile that manages the app's domain `com.github.reportmate.mac`
+  (keys `ApiKey`, `Passphrase`; only a forced, managed value counts);
+- for the passphrase only, the runner's `com.github.reportmate` domain.
+
+Settings shows where a key or passphrase came from and cannot edit it. Items an
+older build left in the Keychain under `com.github.reportmate.mac` are ignored,
+not deleted; remove them in Keychain Access if wanted. The endpoint's own
+ingest key is not a read credential and will be refused with 403.
 
 On a Mac whose ReportMate runner already reports, the app inherits the API URL
 from the runner's `com.github.reportmate` preference domain (a managed
@@ -121,15 +135,17 @@ configuration profile or `/Library/Preferences/com.github.reportmate.plist`, key
 `ApiUrl`) whenever it has none of its own, and the shared `Passphrase` when the
 runner uses one. The runner's `ApiKey` is never inherited: it is an ingest key
 and the API refuses it for reads, so a key-only runner leaves the app with the
-URL filled in and Settings asking for a read credential. The Settings sheet says
-where the values came from, Save keeps a copy in the app's Keychain, and
-environment variables and the Keychain always win over the inherited values.
+URL filled in and Entra sign-in as the method. The Settings sheet says where
+the values came from, Save keeps the app's own URL and method in its
+preferences, and environment variables and saved settings win over the
+inherited values.
 
-Admin Macs sign in with Entra rather than a stored secret: when the app only
-inherited the runner's endpoint and passphrase, it asks the API's
-`/api/v1/auth/config` whether OIDC is on and, if `az login` can mint a token
-for the advertised audience, switches itself to Entra sign-in and drops the
-passphrase. Settings → Connection also has a Discover button that fills the
+Admin Macs sign in with Entra rather than a stored secret. Before the first
+request the app settles its credential: an Entra sign-in with no audience takes
+the one the API advertises at `/api/v1/auth/config`, and a passphrase inherited
+from the runner is replaced by Entra when OIDC is on and `az login` can mint a
+token. Pages show "Connecting to ReportMate…" until then, so nothing is sent
+with a credential that is about to be swapped. Settings → Connection also has a Discover button that fills the
 audience from the same endpoint.
 
 ## Navigation
@@ -232,7 +248,7 @@ assembly; admin actions are hidden for the local report.
 ```
 Sources/ReportMateKit/          shared library, no UI
 ├── API/ReportMateAPI.swift     every endpoint the app calls
-├── Auth/                       Keychain store, Entra token source
+├── Auth/                       Entra token source (az)
 ├── Config/AppConfiguration     base URL and credential
 ├── JSON/JSONValue              the tree every reader walks
 ├── Models/                     devices, events, settings document

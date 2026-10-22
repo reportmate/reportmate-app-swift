@@ -21,11 +21,28 @@ public enum AuthMethod: String, Sendable, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Where the credential in use came from. The app itself never stores a secret.
+public enum CredentialSource: String, Sendable, Codable {
+    /// No API key or passphrase: Entra sign-in, or nothing yet.
+    case none
+    /// `REPORTMATE_API_KEY` or `REPORTMATE_PASSPHRASE`.
+    case environment
+    /// A configuration profile that manages the app's own domain (`com.github.reportmate.mac`).
+    case managedProfile
+    /// The runner's `com.github.reportmate` domain (its shared `Passphrase`).
+    case runner
+}
+
 /// Connection settings for the fleet API.
 ///
-/// Resolution order: environment (`REPORTMATE_URL`, `REPORTMATE_API_KEY`,
-/// `REPORTMATE_PASSPHRASE`, `REPORTMATE_OIDC_AUDIENCE`) wins over the
-/// Keychain, which wins over nothing. Secrets never touch UserDefaults.
+/// Nothing secret is ever written by the app, and the app never reads or writes
+/// the Keychain. Entra sign-in (a token minted from the operator's `az login`,
+/// kept in memory) is the default and needs no stored secret. The non-secret
+/// connection (API URL, auth method, Entra audience, web URL) is kept in the
+/// app's preferences. An API key or passphrase, for deployments without Entra,
+/// is read only from the environment (`REPORTMATE_API_KEY`,
+/// `REPORTMATE_PASSPHRASE`), from a managed profile for the app's domain, or,
+/// for the passphrase, from the runner's `com.github.reportmate` domain.
 public struct AppConfiguration: Sendable, Equatable {
     public var baseURL: String
     public var authMethod: AuthMethod
@@ -36,10 +53,17 @@ public struct AppConfiguration: Sendable, Equatable {
     public var webBaseURL: String
     /// True when the API URL came from the runner's configuration on this Mac rather than the app's own settings.
     public var inheritedFromRunner = false
+    /// Where `apiKey` or `passphrase` came from; secrets are never typed into the app.
+    public var credentialSource: CredentialSource = .none
 
     public static let webBaseURLDefaultsKey = "webBaseURL"
+    public static let baseURLDefaultsKey = "apiBaseURL"
+    public static let authMethodDefaultsKey = "authMethod"
+    public static let oidcAudienceDefaultsKey = "oidcAudience"
+    /// The app's own preference domain, which a profile can manage.
+    public static let appDomain = "com.github.reportmate.mac"
 
-    public init(baseURL: String = "", authMethod: AuthMethod = .apiKey, apiKey: String = "", passphrase: String = "", oidcAudience: String = "", webBaseURL: String = "") {
+    public init(baseURL: String = "", authMethod: AuthMethod = .entraBearer, apiKey: String = "", passphrase: String = "", oidcAudience: String = "", webBaseURL: String = "") {
         self.baseURL = baseURL
         self.authMethod = authMethod
         self.apiKey = apiKey
@@ -81,45 +105,87 @@ public struct AppConfiguration: Sendable, Equatable {
         }
     }
 
-    // MARK: - Persistence
+    /// True while the connection still needs the API's `/auth/config` (and `az`) to
+    /// settle on a credential: an Entra sign-in with no audience yet, or a passphrase
+    /// inherited from the runner that Entra should replace. Requests wait for it, so
+    /// none goes out with a credential that is about to be swapped.
+    public var needsEntraResolution: Bool {
+        guard !normalizedBaseURL.isEmpty else { return false }
+        switch authMethod {
+        case .entraBearer: return oidcAudience.isEmpty
+        case .passphrase: return credentialSource == .runner
+        case .apiKey: return false
+        }
+    }
 
-    public static func load(keychain: KeychainStore = KeychainStore(), environment: [String: String] = ProcessInfo.processInfo.environment) -> AppConfiguration {
+    // MARK: - Loading
+
+    public static func load(environment: [String: String] = ProcessInfo.processInfo.environment) -> AppConfiguration {
+        load(defaults: .standard, managed: managedSecrets(), runner: fromRunner(), environment: environment)
+    }
+
+    /// Build the configuration from its read-only sources. `defaults` holds only
+    /// non-secret settings; `managed` carries `ApiKey` / `Passphrase` that a profile
+    /// forces in the app's domain.
+    public static func load(defaults: UserDefaults, managed: [String: String], runner: AppConfiguration?, environment: [String: String]) -> AppConfiguration {
+        func saved(_ key: String) -> String {
+            (defaults.string(forKey: key) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         var config = AppConfiguration()
-        config.baseURL = keychain.get(.apiBaseURL) ?? ""
-        config.apiKey = keychain.get(.apiKey) ?? ""
-        config.passphrase = keychain.get(.passphrase) ?? ""
-        config.oidcAudience = keychain.get(.oidcAudience) ?? ""
-        config.webBaseURL = UserDefaults.standard.string(forKey: AppConfiguration.webBaseURLDefaultsKey) ?? ""
-        // A Mac whose runner already reports has an API URL and credential in the
-        // runner's domain (managed profile or /Library/Preferences); the app
-        // inherits them so a configured device never says "No API is configured".
-        if config.baseURL.isEmpty, let runner = AppConfiguration.fromRunner() {
+        config.baseURL = saved(baseURLDefaultsKey)
+        config.oidcAudience = saved(oidcAudienceDefaultsKey)
+        config.webBaseURL = saved(webBaseURLDefaultsKey)
+        let savedMethod = AuthMethod(rawValue: saved(authMethodDefaultsKey))
+
+        if let key = managed["ApiKey"], !key.isEmpty { config.apiKey = key; config.credentialSource = .managedProfile }
+        if let pass = managed["Passphrase"], !pass.isEmpty { config.passphrase = pass; config.credentialSource = .managedProfile }
+
+        // A Mac whose runner already reports has an API URL (and maybe the shared
+        // passphrase) in the runner's domain; the app inherits them so a configured
+        // device never says "No API is configured".
+        if config.baseURL.isEmpty, let runner {
             config.baseURL = runner.baseURL
             config.inheritedFromRunner = true
-            if config.apiKey.isEmpty, config.passphrase.isEmpty, config.oidcAudience.isEmpty, !runner.passphrase.isEmpty {
-                config.passphrase = runner.passphrase
-                config.authMethod = .passphrase
-            }
         }
-        if let m = keychain.get(.authMethod), let method = AuthMethod(rawValue: m) {
-            config.authMethod = method
+        if let runner, config.apiKey.isEmpty, config.passphrase.isEmpty, !runner.passphrase.isEmpty, savedMethod == nil || savedMethod == .passphrase {
+            config.passphrase = runner.passphrase
+            config.credentialSource = .runner
+        }
+
+        if let savedMethod {
+            config.authMethod = savedMethod
         } else if !config.apiKey.isEmpty {
             config.authMethod = .apiKey
-        } else if !config.passphrase.isEmpty {
+        } else if !config.passphrase.isEmpty, config.credentialSource != .runner || config.oidcAudience.isEmpty {
             config.authMethod = .passphrase
-        } else if !config.oidcAudience.isEmpty {
+        } else {
             config.authMethod = .entraBearer
         }
 
-        if let v = environment["REPORTMATE_URL"], !v.isEmpty { config.baseURL = v }
+        if let v = environment["REPORTMATE_URL"], !v.isEmpty { config.baseURL = v; config.inheritedFromRunner = false }
         if let v = environment["REPORTMATE_WEB_URL"], !v.isEmpty { config.webBaseURL = v }
-        if let v = environment["REPORTMATE_API_KEY"], !v.isEmpty { config.apiKey = v; config.authMethod = .apiKey }
-        if let v = environment["REPORTMATE_PASSPHRASE"], !v.isEmpty, config.apiKey.isEmpty { config.passphrase = v; config.authMethod = .passphrase }
+        if let v = environment["REPORTMATE_API_KEY"], !v.isEmpty { config.apiKey = v; config.authMethod = .apiKey; config.credentialSource = .environment }
+        if let v = environment["REPORTMATE_PASSPHRASE"], !v.isEmpty, environment["REPORTMATE_API_KEY"]?.isEmpty ?? true {
+            config.passphrase = v; config.authMethod = .passphrase; config.credentialSource = .environment
+        }
         if let v = environment["REPORTMATE_OIDC_AUDIENCE"], !v.isEmpty {
             config.oidcAudience = v
-            if config.apiKey.isEmpty, config.passphrase.isEmpty { config.authMethod = .entraBearer }
+            if config.credentialSource != .environment { config.authMethod = .entraBearer }
         }
         return config
+    }
+
+    /// `ApiKey` and `Passphrase` only when a configuration profile forces them in
+    /// the app's domain; a value a user wrote there by hand is ignored.
+    public static func managedSecrets(domain: String = AppConfiguration.appDomain) -> [String: String] {
+        var out: [String: String] = [:]
+        for key in ["ApiKey", "Passphrase"] where CFPreferencesAppValueIsForced(key as CFString, domain as CFString) {
+            if let v = CFPreferencesCopyAppValue(key as CFString, domain as CFString) as? String {
+                let t = v.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { out[key] = t }
+            }
+        }
+        return out
     }
 
     /// The runner's own configuration on this Mac: the `com.github.reportmate`
@@ -135,20 +201,32 @@ public struct AppConfiguration: Sendable, Equatable {
         guard let url = read("ApiUrl") else { return nil }
         var config = AppConfiguration(baseURL: url)
         // The runner's ApiKey is a per-client ingest key that the API refuses for
-        // reads with 403, so only the legacy passphrase (full access) is inherited;
-        // with a key-only runner the URL comes across and Settings asks for a read credential.
-        if let pass = read("Passphrase") { config.passphrase = pass; config.authMethod = .passphrase }
+        // reads with 403, so only the legacy passphrase (full access) is inherited.
+        if let pass = read("Passphrase") { config.passphrase = pass; config.authMethod = .passphrase; config.credentialSource = .runner }
         return config
     }
 
-    public func save(keychain: KeychainStore = KeychainStore()) throws {
-        try keychain.set(normalizedBaseURL, for: .apiBaseURL)
-        try keychain.set(apiKey, for: .apiKey)
-        try keychain.set(passphrase, for: .passphrase)
-        try keychain.set(oidcAudience, for: .oidcAudience)
-        try keychain.set(authMethod.rawValue, for: .authMethod)
-        UserDefaults.standard.set(webBaseURL.trimmingCharacters(in: .whitespacesAndNewlines), forKey: AppConfiguration.webBaseURLDefaultsKey)
+    // MARK: - Saving
+
+    /// Keep the non-secret connection in the app's preferences. Secrets are never
+    /// written anywhere: an API key or passphrase stays where it was read from.
+    public func save(defaults: UserDefaults = .standard) {
+        func put(_ value: String, _ key: String) {
+            let t = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.isEmpty { defaults.removeObject(forKey: key) } else { defaults.set(t, forKey: key) }
+        }
+        put(inheritedFromRunner ? "" : normalizedBaseURL, AppConfiguration.baseURLDefaultsKey)
+        put(authMethod.rawValue, AppConfiguration.authMethodDefaultsKey)
+        put(oidcAudience, AppConfiguration.oidcAudienceDefaultsKey)
+        put(webBaseURL, AppConfiguration.webBaseURLDefaultsKey)
         exportConnection()
+    }
+
+    /// Drop the app's saved connection, so it falls back to the runner and the environment.
+    public static func reset(defaults: UserDefaults = .standard) {
+        for key in [baseURLDefaultsKey, authMethodDefaultsKey, oidcAudienceDefaultsKey, webBaseURLDefaultsKey] {
+            defaults.removeObject(forKey: key)
+        }
     }
 }
 
@@ -157,8 +235,8 @@ public struct AppConfiguration: Sendable, Equatable {
 extension AppConfiguration {
     /// Where the app leaves its non-secret connection for `reportmateutil`, so the
     /// CLI configures itself from the app: the endpoint, the auth method and the
-    /// Entra audience. Secrets stay in the Keychain; the CLI reads the one item it
-    /// needs through `security`, or mints an Entra token with `az`.
+    /// Entra audience. Nothing secret: with Entra sign-in the CLI mints its own token
+    /// with `az`; an API key or passphrase reaches it only through `REPORTMATE_*`.
     public static var sharedConnectionURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         return base.appendingPathComponent("ReportMate/connection.json")
@@ -222,17 +300,21 @@ public struct AuthConfig: Sendable, Equatable {
 
 extension AppConfiguration {
     /// The rule for admin machines: sign in with Entra, never a stored secret.
-    /// A configuration that only inherited the runner's endpoint and passphrase
-    /// switches to Entra when the API advertises OIDC and `az` can mint a token;
-    /// otherwise it is returned unchanged.
-    public func preferringEntra(tokenSource: AzTokenSource = .shared) async -> AppConfiguration {
-        guard inheritedFromRunner, authMethod == .passphrase, !baseURL.isEmpty else { return self }
-        guard let auth = try? await AuthConfig.discover(baseURL: baseURL), auth.oidcEnabled, let audience = auth.audience else { return self }
-        guard (try? await tokenSource.token(forResource: audience)) != nil else { return self }
+    /// An Entra configuration with no audience takes the one the API advertises at
+    /// `/api/v1/auth/config`. A passphrase inherited from the runner switches to
+    /// Entra when the API advertises OIDC and `az` can mint a token. Anything else,
+    /// or a deployment without OIDC, is returned unchanged.
+    public func resolvingEntra(tokenSource: AzTokenSource = .shared, discover: @Sendable (String) async throws -> AuthConfig = { try await AuthConfig.discover(baseURL: $0) }) async -> AppConfiguration {
+        guard needsEntraResolution else { return self }
+        guard let auth = try? await discover(baseURL), auth.oidcEnabled, let audience = auth.audience else { return self }
         var out = self
+        if authMethod == .passphrase {
+            guard (try? await tokenSource.token(forResource: audience)) != nil else { return self }
+            out.passphrase = ""
+            out.credentialSource = .none
+        }
         out.authMethod = .entraBearer
         out.oidcAudience = audience
-        out.passphrase = ""
         return out
     }
 }

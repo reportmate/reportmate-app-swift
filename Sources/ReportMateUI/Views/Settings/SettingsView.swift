@@ -26,7 +26,6 @@ struct ConnectionSettingsView: View {
     @State private var testing = false
     @State private var testResult: String?
     @State private var testFailed = false
-    @State private var saveError: String?
 
     var body: some View {
         Form {
@@ -44,12 +43,12 @@ struct ConnectionSettingsView: View {
                 }
                 switch draft.authMethod {
                 case .apiKey:
-                    SecureField("API key", text: $draft.apiKey, prompt: Text("rm_…"))
-                    Text("A per-client key from the API's admin key management, with the read scopes this app needs.")
+                    LabeledContent("API key", value: draft.apiKey.isEmpty ? "Not provided" : "Ending …\(draft.apiKey.suffix(4))")
+                    Text("For deployments without Entra sign-in. The app stores no secrets: the key is read from REPORTMATE_API_KEY or from a configuration profile that sets ApiKey in com.github.reportmate.mac.")
                         .appFont(.caption).foregroundStyle(.secondary)
                 case .passphrase:
-                    SecureField("Passphrase", text: $draft.passphrase)
-                    Text("The legacy shared client passphrase. Prefer an API key or Entra sign-in.")
+                    LabeledContent("Passphrase", value: draft.passphrase.isEmpty ? "Not provided" : "Set (\(sourceName(draft.credentialSource)))")
+                    Text("The legacy shared passphrase. The app stores no secrets: it is read from REPORTMATE_PASSPHRASE, a configuration profile that sets Passphrase in com.github.reportmate.mac, or the runner's com.github.reportmate domain. Prefer Entra sign-in.")
                         .appFont(.caption).foregroundStyle(.secondary)
                 case .entraBearer:
                     HStack {
@@ -82,14 +81,13 @@ struct ConnectionSettingsView: View {
                         .keyboardShortcut(.defaultAction)
                         .disabled(!draft.isConfigured || draft == appState.configuration)
                 }
-                if let saveError { Text(saveError).foregroundStyle(.red).appFont(.caption) }
             }
 
             Section {
-                LabeledContent("Stored credential", value: appState.configuration.credentialSummary)
+                LabeledContent("Credential", value: appState.configuration.credentialSummary)
                 if appState.configuration.inheritedFromRunner {
                     LabeledContent("Source") {
-                        Text(appState.configuration.isConfigured ? "Inherited from the ReportMate runner's configuration on this Mac (com.github.reportmate). Save to keep a copy in the app's Keychain." : "The API URL comes from the ReportMate runner's configuration on this Mac. The runner's own key is an ingest credential the API refuses for reads, so enter a read credential and save.")
+                        Text(appState.configuration.isConfigured ? "Inherited from the ReportMate runner's configuration on this Mac (com.github.reportmate). Save keeps your own URL and sign-in choice; secrets are never stored." : "The API URL comes from the ReportMate runner's configuration on this Mac. The runner's own key is an ingest credential the API refuses for reads, so choose Entra sign-in.")
                             .appFont(.caption).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
                     }
                 }
@@ -97,11 +95,12 @@ struct ConnectionSettingsView: View {
                     Text("REPORTMATE_URL, REPORTMATE_API_KEY, REPORTMATE_PASSPHRASE, REPORTMATE_OIDC_AUDIENCE")
                         .appFont(.caption).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
                 }
-                Button("Forget Credentials", role: .destructive) {
-                    KeychainStore().clearAll()
-                    draft = AppConfiguration()
-                    try? appState.update(configuration: draft)
+                Button("Reset Connection", role: .destructive) {
+                    AppConfiguration.reset()
+                    draft = AppConfiguration.load()
+                    appState.update(configuration: draft)
                 }
+                .help("Forget the URL and sign-in choice saved in this app; the environment, profiles and the runner still apply")
             }
         }
         .formStyle(.grouped)
@@ -134,11 +133,17 @@ struct ConnectionSettingsView: View {
     }
 
     private func save() {
-        do {
-            try appState.update(configuration: draft)
-            saveError = nil
-        } catch {
-            saveError = error.localizedDescription
+        // A URL typed here is the app's own, no longer the runner's.
+        if draft.normalizedBaseURL != appState.configuration.normalizedBaseURL { draft.inheritedFromRunner = false }
+        appState.update(configuration: draft)
+    }
+
+    private func sourceName(_ source: CredentialSource) -> String {
+        switch source {
+        case .environment: return "environment"
+        case .managedProfile: return "configuration profile"
+        case .runner: return "runner"
+        case .none: return "unknown"
         }
     }
 }

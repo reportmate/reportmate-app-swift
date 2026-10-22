@@ -16,9 +16,17 @@ final class DashboardInsightsModel {
     var loading: Set<String> = []
     var errors: [String: String] = [:]
     var loadedAt: Date?
+    /// The connection the shown cards were loaded with, and a counter that marks
+    /// the newest load. A load started before the credential changed (an inherited
+    /// passphrase swapped for Entra, say) finishes later than the one that replaced
+    /// it; its results, 401s included, are dropped instead of overwriting the cards.
+    private var loadedWith: AppConfiguration?
+    private var generation = 0
 
     func load(api: ReportMateAPI, force: Bool = false) async {
-        if !force, let loadedAt, Date().timeIntervalSince(loadedAt) < 300 { return }
+        if !force, loadedWith == api.configuration, let loadedAt, Date().timeIntervalSince(loadedAt) < 300 { return }
+        generation += 1
+        let mine = generation
         loading = ["security", "management", "hardware", "system"]
         // Two at a time: each bulk report takes the API ten seconds or more, and
         // four at once had the gateway answer 503 for the last one. A 5xx or a
@@ -44,6 +52,7 @@ final class DashboardInsightsModel {
             }
             for _ in 0..<2 { if let path = next.next() { group.addTask { await fetch(path) } } }
             while let (path, result) = await group.next() {
+                guard mine == generation else { group.cancelAll(); return }
                 if let more = next.next() { group.addTask { await fetch(more) } }
                 let key = String(path.dropFirst())
                 switch result {
@@ -61,7 +70,9 @@ final class DashboardInsightsModel {
                 loading.remove(key)
             }
         }
+        guard mine == generation else { return }
         loadedAt = Date()
+        loadedWith = api.configuration
     }
 }
 
