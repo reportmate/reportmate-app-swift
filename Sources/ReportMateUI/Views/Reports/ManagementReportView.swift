@@ -50,14 +50,13 @@ struct ManagementReportView: View {
     }
 
     private var enrollment: some View {
-        FleetReportContainer(
+        var container = FleetReportContainer(
             section: .management, model: model, activeFilterCount: [providerFilter, statusFilter, typeFilter].compactMap { $0 }.count, clearFilters: { providerFilter = nil; statusFilter = nil; typeFilter = nil }, subtitle: "Enrollment status and type, providers, and configurations", searchPlaceholder: "Search devices",
             searchKeys: { row in
                 let d = ManagementReportRow(json: row.json)
                 return [row.deviceName, row.serialNumber, d.intuneId, d.provider, row.inventory.usage, row.inventory.catalog, row.inventory.assetTag, row.inventory.location, row.inventory.department]
             },
             toolbar: { rows in
-                ManagementViewSwitch()
                 CSVExportButton(filename: "management-report", headers: ["Device Name", "Serial Number", "Asset Tag", "Provider", "Enrollment Status", "Enrollment Type", "Usage", "Catalog", "Location"]) {
                     filtered(rows).map { p in [p.row.deviceName, p.row.serialNumber, p.row.inventory.assetTag ?? "", p.m.provider, p.m.enrollmentStatus, p.m.enrollmentType, p.row.inventory.usage ?? "", p.row.inventory.catalog ?? "", p.row.inventory.location ?? ""] }
                 }
@@ -70,6 +69,8 @@ struct ManagementReportView: View {
                 table(filtered(rows))
             }
         }
+        container.titleControl = AnyView(ManagementViewSwitch())
+        return container
     }
 
     /// `?provider=` and `?enrollmentType=` select the widget rows; `?enrolled=` narrows the rows.

@@ -128,6 +128,8 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
     /// rest with `linkMatches`. `widgetLinkQuery` is the widget filters in link form,
     /// so Copy Link carries every filter on screen.
     var linking: ReportLinking? = nil
+    /// Drawn where the title goes, in place of the section name (Management's two views).
+    var titleControl: AnyView? = nil
 
     init(section: AppSection, model: FleetReportModel, activeFilterCount: Int = 0, clearFilters: (() -> Void)? = nil, query: [String: String?] = [:], subtitle: String? = nil, searchPlaceholder: String = "Search…",
          searchKeys: @escaping (ReportRow) -> [String?] = { [$0.deviceName, $0.serialNumber, $0.inventory.assetTag] },
@@ -181,7 +183,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(section.title).appFont(.title3, weight: .semibold)
+                    if let titleControl { titleControl } else { Text(section.title).appFont(.title3, weight: .semibold) }
                     Text(subtitleText(rows.count)).appFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()

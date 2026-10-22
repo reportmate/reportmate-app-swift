@@ -131,10 +131,8 @@ struct ManagementLogsReportView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                ManagementViewSwitch()
-                VStack(alignment: .leading, spacing: 2) {
-                    Label("Management Tools Logs", systemImage: AppSection.management.systemImage)
-                        .appFont(.title3, weight: .semibold).foregroundStyle(AppSection.management.accent)
+                VStack(alignment: .leading, spacing: 4) {
+                    ManagementViewSwitch()
                     Text("Errors and warnings in the management tools' own logs, MDM agent excluded").appFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -334,19 +332,21 @@ struct ManagementLogsReportView: View {
     }
 }
 
-/// Management's two views, Enrollment and Tools Logs, as a segmented control in each view's header.
+/// Management's header: a two-segment control where the title goes, Device Management
+/// Service (MDM enrollment) or Management Tools Logs; the subtitle under it follows.
 struct ManagementViewSwitch: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        Picker("View", selection: Binding(get: { appState.pages.managementMode }, set: { mode in
+        Picker("Management", selection: Binding(get: { appState.pages.managementMode }, set: { mode in
             appState.linkQuery = [:]
             appState.pages.managementMode = mode
         })) {
-            Text("Enrollment").tag(PageModels.ManagementMode.enrollment)
-            Text("Logs").tag(PageModels.ManagementMode.logs)
+            Text("Device Management Service").tag(PageModels.ManagementMode.enrollment)
+            Text("Management Tools Logs").tag(PageModels.ManagementMode.logs)
         }
         .pickerStyle(.segmented)
+        .controlSize(.large)
         .labelsHidden()
         .fixedSize()
         .help("MDM enrollment, or the management tools' logs across the fleet")
