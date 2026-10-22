@@ -577,4 +577,23 @@ let appUsageEnvelope = #"""
         #expect(CompactHours.format(328_089) == "328k h")
         #expect(CompactHours.format(1_400_000) == "1.4M h")
     }
+
+    @Test func neverTrapsOnHostileNumbers() {
+        #expect(CompactHours.format(.nan) == "—")
+        #expect(CompactHours.format(.infinity) == "—")
+        #expect(CompactHours.format(-.infinity) == "—")
+        #expect(CompactHours.format(-5) == "—")
+        #expect(CompactHours.format(1e300) == "999M h")
+        #expect(Double.nan.safeInt == 0)
+        #expect(Double.infinity.safeInt == 0)
+        #expect(1e300.safeInt == Int.max)
+        #expect((-1e300).safeInt == Int.min)
+        #expect(42.9.safeInt == 42)
+        #expect(TimeFormatting.duration(seconds: .nan) == "—")
+        #expect(TimeFormatting.hours(.infinity) == "—")
+        #expect(ByteFormatting.bytes(.infinity) == "0 Bytes")
+        #expect(ByteFormatting.bytes(1e-300) == "0 Bytes" || ByteFormatting.bytes(1e-300).hasSuffix("Bytes"))
+        #expect(ByteFormatting.gigabytes(1e300).hasSuffix("GB"))
+        #expect(ByteFormatting.bytes(1e300).hasSuffix("PB"))
+    }
 }

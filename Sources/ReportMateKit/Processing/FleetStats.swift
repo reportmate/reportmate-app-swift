@@ -15,7 +15,7 @@ public enum FleetStats {
         guard !devices.isEmpty else { return [] }
         var counts: [DeviceStatus: Int] = [:]
         for d in devices { counts[d.status, default: 0] += 1 }
-        return counts.map { StatusSlice(status: $0.key, count: $0.value, percentage: Int((Double($0.value) / Double(devices.count) * 100).rounded())) }
+        return counts.map { StatusSlice(status: $0.key, count: $0.value, percentage: ((Double($0.value) / Double(devices.count) * 100).rounded()).safeInt) }
             .sorted { a, b in
                 if a.status.sortOrder != b.status.sortOrder { return a.status.sortOrder < b.status.sortOrder }
                 return a.count > b.count
@@ -186,7 +186,7 @@ public enum FleetStats {
         let known = filtered.filter { $0.platform != .unknown }.count
         return Platform.allCases.compactMap { p -> PlatformStats? in
             guard var s = stats[p], s.count > 0, p != .unknown else { return nil }
-            s.percentage = known > 0 ? Int((Double(s.count) / Double(known) * 100).rounded()) : 0
+            s.percentage = known > 0 ? ((Double(s.count) / Double(known) * 100).rounded()).safeInt : 0
             return s
         }.sorted { $0.count > $1.count }
     }
@@ -212,7 +212,7 @@ public enum FleetStats {
         let total = filtered.count
         return order.compactMap { stats[$0] }.map { s in
             var s = s
-            s.percentage = total > 0 ? Int((Double(s.count) / Double(total) * 100).rounded()) : 0
+            s.percentage = total > 0 ? ((Double(s.count) / Double(total) * 100).rounded()).safeInt : 0
             return s
         }.sorted { $0.count > $1.count }
     }

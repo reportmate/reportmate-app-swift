@@ -180,7 +180,7 @@ struct HardwareWidget: View {
     }
 
     private func batteryLabel(_ b: HardwareInfo.Battery, cycles: Bool) -> String {
-        var s = "\(Int(b.chargePercent))%"
+        var s = "\((b.chargePercent).safeInt)%"
         if cycles, b.cycleCount > 0 { s += " · \(b.cycleCount) cycles" }
         if let h = b.health { s += " · \(h)" }
         return s

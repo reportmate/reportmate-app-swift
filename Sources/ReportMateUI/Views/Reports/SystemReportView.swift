@@ -118,7 +118,7 @@ struct SystemReportView: View {
                 CSVExportButton(filename: "system-report", headers: ["Device Name", "Serial Number", "Asset Tag", "OS", "Version", "Build", "Edition", "Activation", "License Source", "Time Zone", "Locale", "Uptime", "Boot Time", "Last Seen"]) {
                     filtered(rows).map { p in
                         let d = p.s
-                        let up = d.uptime.map { "\(Int($0 / 86_400))d \(Int($0.truncatingRemainder(dividingBy: 86_400) / 3600))h" } ?? ""
+                        let up = d.uptime.map { "\(($0 / 86_400).safeInt)d \(($0.truncatingRemainder(dividingBy: 86_400) / 3600).safeInt)h" } ?? ""
                         return [p.row.deviceName, p.row.serialNumber, p.row.inventory.assetTag ?? "", d.osDisplayName, d.osVersion ?? "", d.buildNumber ?? "", d.edition ?? "", d.activationLabel ?? "", d.licenseSource ?? "", d.timeZone ?? "", d.locale ?? "", up, d.bootTime ?? "", p.row.json["lastSeen"].string ?? ""]
                     }
                 }

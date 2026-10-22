@@ -674,7 +674,7 @@ struct PlatformDistributionWidget: View {
         if age.devicesWithAge > 0 {
             HStack(spacing: 12) {
                 SectionLabel("Fleet age")
-                Text("avg \(Int(age.averageAgeDays.rounded())) days").appFont(.caption)
+                Text("avg \((age.averageAgeDays.rounded()).safeInt) days").appFont(.caption)
                 if let n = age.newest { Text("newest \(TimeFormatting.shortDate(n))").appFont(.caption).foregroundStyle(.secondary) }
                 if let o = age.oldest { Text("oldest \(TimeFormatting.shortDate(o))").appFont(.caption).foregroundStyle(.secondary) }
             }
@@ -778,7 +778,7 @@ struct OSVersionWidget: View {
                             VStack(spacing: 3) {
                                 ForEach(visible) { node in
                                     let maxCount = max(visible.map(\.count).max() ?? 1, 1)
-                                    let pct = total > 0 ? Int((Double(node.count) / Double(total) * 100).rounded()) : 0
+                                    let pct = total > 0 ? ((Double(node.count) / Double(total) * 100).rounded()).safeInt : 0
                                     HStack(spacing: 2) {
                                     Button { appState.follow(DashboardLinks.system(osVersion: node.name)) } label: {
                                         HStack(spacing: 8) {

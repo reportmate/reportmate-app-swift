@@ -439,7 +439,7 @@ struct KioskSettingsEditor: View {
                 }
                 Picker("Zoom", selection: $settings.kiosk.zoom) {
                     ForEach((Self.zoomSteps.contains(settings.kiosk.zoom) ? Self.zoomSteps : (Self.zoomSteps + [settings.kiosk.zoom]).sorted()), id: \.self) { z in
-                        Text("\(Int((z * 100).rounded()))%").tag(z)
+                        Text("\(((z * 100).rounded()).safeInt)%").tag(z)
                     }
                 }
                 Stepper("Idle timeout: \(settings.kiosk.idleMinutes == 0 ? "never" : "\(settings.kiosk.idleMinutes) min")", value: $settings.kiosk.idleMinutes, in: 0...240)

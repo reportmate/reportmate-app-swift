@@ -93,7 +93,7 @@ struct InstallsTabView: View {
         guard let date = FlexibleDate.parse(timestamp) else { return "unknown" }
         let diff = Date().timeIntervalSince(date)
         if diff < 0 { return "just now" }
-        let minutes = Int(diff / 60), hours = minutes / 60, days = hours / 24
+        let minutes = (diff / 60).safeInt, hours = minutes / 60, days = hours / 24
         if diff < 60 { return "just now" }
         if minutes < 60 { return "\(minutes)m ago" }
         if hours < 24 { return minutes % 60 > 0 ? "\(hours)h \(minutes % 60)m ago" : "\(hours)h ago" }

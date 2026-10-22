@@ -577,7 +577,7 @@ public struct IdentityInfo: Sendable, Hashable {
     public func hasSecureToken(_ user: UserAccount) -> Bool { secureTokenUsers?.usersWithToken.contains(user.username) ?? false }
 
     public static func minutes(_ m: Double) -> String {
-        m > 60 ? String(format: "%.1fh", m / 60) : "\(Int(m.rounded()))m"
+        m > 60 ? String(format: "%.1fh", m / 60) : "\((m.rounded()).safeInt)m"
     }
 }
 

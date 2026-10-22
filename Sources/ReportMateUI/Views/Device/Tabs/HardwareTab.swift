@@ -104,9 +104,9 @@ struct HardwareTabView: View {
                 .frame(maxWidth: .infinity)
                 LazyVGrid(columns: tileColumns, spacing: 12) {
                     SpecTile(icon: "internaldrive", title: "Storage", tone: .purple, value: ByteFormatting.bytes(hw.totalStorageBytes),
-                             detail: hw.totalStorageBytes > 0 ? "\(min(100, Int((hw.freeStorageBytes / hw.totalStorageBytes * 100).rounded())))% Free" : nil)
+                             detail: hw.totalStorageBytes > 0 ? "\(min(100, ((hw.freeStorageBytes / hw.totalStorageBytes * 100).rounded()).safeInt))% Free" : nil)
                     if hw.hasBattery, let b = hw.battery {
-                        SpecTile(icon: "battery.75percent", title: "Battery", tone: .green, value: "\(b.cycleCount) Cycles", detail: "\(Int(b.chargePercent.rounded()))% • \(b.health ?? "Unknown")")
+                        SpecTile(icon: "battery.75percent", title: "Battery", tone: .green, value: "\(b.cycleCount) Cycles", detail: "\((b.chargePercent.rounded()).safeInt)% • \(b.health ?? "Unknown")")
                     }
                     if let w = hw.wireless, w.isAvailable {
                         SpecTile(icon: "wifi", title: "Wireless", tone: .teal, value: w.generation ?? "Available", detail: [w.version, w.status].compactMap { $0 }.joined(separator: " • "))
@@ -131,10 +131,10 @@ struct HardwareTabView: View {
             SpecTile(icon: "internaldrive", title: "Storage", tone: .purple, value: ByteFormatting.bytes(hw.totalStorageBytes),
                      detail: "\(ByteFormatting.bytes(hw.freeStorageBytes)) Free", footnote: hw.internalDrives.first?.type ?? "Internal")
             if hw.hasBattery, let b = hw.battery {
-                SpecTile(icon: "battery.75percent", title: "Battery", tone: .green, value: "\(b.cycleCount) Cycles", detail: "\(Int(b.chargePercent.rounded()))% • \(b.health ?? "Unknown")")
+                SpecTile(icon: "battery.75percent", title: "Battery", tone: .green, value: "\(b.cycleCount) Cycles", detail: "\((b.chargePercent.rounded()).safeInt)% • \(b.health ?? "Unknown")")
             }
             SpecTile(icon: "square.3.layers.3d", title: "GPU", tone: .green, value: hw.graphicsName ?? "Unknown",
-                     detail: [hw.gpuCores > 0 ? "\(hw.gpuCores) Cores" : nil, hw.graphicsMemoryGB > 0 ? "\(Int(hw.graphicsMemoryGB)) GB VRAM" : nil].compactMap { $0 }.joined(separator: " • "),
+                     detail: [hw.gpuCores > 0 ? "\(hw.gpuCores) Cores" : nil, hw.graphicsMemoryGB > 0 ? "\((hw.graphicsMemoryGB).safeInt) GB VRAM" : nil].compactMap { $0 }.joined(separator: " • "),
                      footnote: hw.graphicsManufacturer.map { "\($0) Discrete Card\(hw.graphicsDriverVersion.map { " - Driver \($0)" } ?? "")" } ?? (hw.graphicsMetalSupport ?? "Discrete GPU"))
             if hw.hasNpu {
                 SpecTile(icon: "brain", title: "NPU", tone: .pink, value: hw.npuTops.map { "\($0) TOPS" } ?? "\(hw.npuCores) Cores", detail: hw.npuName,
@@ -163,7 +163,7 @@ struct HardwareTabView: View {
                             .frame(width: 40, height: 40)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(d.name).appFont(.headline)
-                                Text("\(d.diagonalInches.map { "\(Int($0))\" " } ?? "")\(d.isInternal ? "Built-in" : "External") \(d.displayType ?? "")").appFont(.caption).foregroundStyle(.secondary)
+                                Text("\(d.diagonalInches.map { "\(($0).safeInt)\" " } ?? "")\(d.isInternal ? "Built-in" : "External") \(d.displayType ?? "")").appFont(.caption).foregroundStyle(.secondary)
                             }
                         }
                         .frame(width: 260, alignment: .leading)
@@ -289,10 +289,10 @@ struct HardwareTabView: View {
                         }
                         .frame(width: 160)
                     }
-                    if b.chargePercent > 0 { StatRow(label: "Charge", value: "\(Int(b.chargePercent.rounded()))%") }
+                    if b.chargePercent > 0 { StatRow(label: "Charge", value: "\((b.chargePercent.rounded()).safeInt)%") }
                     if let r = b.estimatedRuntime { StatRow(label: "Runtime", value: r) }
-                    if let d = b.designCapacity { StatRow(label: "Design Capacity", value: "\(Int(d)) mAh") }
-                    if let c = b.currentCapacity { StatRow(label: "Current Capacity", value: "\(Int(c)) mAh") }
+                    if let d = b.designCapacity { StatRow(label: "Design Capacity", value: "\((d).safeInt) mAh") }
+                    if let c = b.currentCapacity { StatRow(label: "Current Capacity", value: "\((c).safeInt) mAh") }
                     if let condition = b.condition { StatRow(label: "Condition", value: condition) }
                 }
                 .padding(16)

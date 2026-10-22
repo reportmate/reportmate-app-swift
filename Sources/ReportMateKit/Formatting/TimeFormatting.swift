@@ -8,7 +8,7 @@ public enum TimeFormatting {
         guard let date else { return "never" }
         let diff = now.timeIntervalSince(date)
         if diff < 0 { return "just now" }
-        let seconds = Int(diff)
+        let seconds = (diff).safeInt
         let minutes = seconds / 60
         let hours = minutes / 60
         let days = hours / 24
@@ -60,7 +60,7 @@ public enum TimeFormatting {
     /// Duration in seconds rendered as `1h 05m`, `12m 30s` or `45s`.
     public static func duration(seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "—" }
-        let total = Int(seconds.rounded())
+        let total = (seconds.rounded()).safeInt
         let h = total / 3600
         let m = (total % 3600) / 60
         let s = total % 60
@@ -72,9 +72,9 @@ public enum TimeFormatting {
     /// Hours rendered as `12.5h` or `45m`.
     public static func hours(_ hours: Double) -> String {
         guard hours.isFinite, hours >= 0 else { return "—" }
-        if hours < 1 { return "\(Int((hours * 60).rounded()))m" }
+        if hours < 1 { return "\(((hours * 60).rounded()).safeInt)m" }
         if hours < 10 { return String(format: "%.1fh", hours) }
-        return "\(Int(hours.rounded()))h"
+        return "\((hours.rounded()).safeInt)h"
     }
 
     private static let exactFormatter: DateFormatter = {
@@ -105,16 +105,16 @@ public enum ByteFormatting {
     public static func bytes(_ value: Double) -> String {
         guard value > 0, value.isFinite else { return "0 Bytes" }
         let units = ["Bytes", "KB", "MB", "GB", "TB", "PB"]
-        let i = min(Int(log(value) / log(1024)), units.count - 1)
+        let i = max(0, min((log(value) / log(1024)).safeInt, units.count - 1))
         let scaled = value / pow(1024, Double(i))
         let rounded = (scaled * 100).rounded() / 100
-        if rounded == rounded.rounded() { return "\(Int(rounded)) \(units[i])" }
+        if rounded == rounded.rounded() { return "\((rounded).safeInt) \(units[i])" }
         return String(format: "%g %@", rounded, units[i])
     }
 
     public static func gigabytes(_ bytes: Double) -> String {
         guard bytes > 0 else { return "Unknown" }
-        return "\(Int((bytes / 1_073_741_824).rounded())) GB"
+        return "\(((bytes / 1_073_741_824).rounded()).safeInt) GB"
     }
 
     public static func count(_ n: Int) -> String {
@@ -131,14 +131,32 @@ public enum ByteFormatting {
 /// Hours as the App Usage card shows them: `950 h`, `1.2k h`, `328k h`, `1.4M h`.
 /// One decimal below ten thousand or ten million, none above; the web card does the same.
 public enum CompactHours {
+    /// The largest figure shown; anything above reads as this (`999M h`).
+    static let ceiling: Double = 999_000_000
+
+    /// "—" for a value that is not a finite, non-negative number. Never converts to `Int`,
+    /// so API data cannot trap it.
     public static func format(_ hours: Double) -> String {
-        let h = max(0, hours)
+        guard hours.isFinite, hours >= 0 else { return "—" }
+        let h = min(hours, ceiling)
         func scaled(_ value: Double, _ suffix: String) -> String {
-            let text = value < 10 ? String(format: "%.1f", value) : String(Int(value.rounded()))
-            return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + suffix
+            var text = value < 10 ? String(format: "%.1f", value) : String(format: "%.0f", value)
+            if text.hasSuffix(".0") { text.removeLast(2) }
+            return text + suffix
         }
         if h >= 999_500 { return scaled(h / 1_000_000, "M") + " h" }
         if h >= 999.5 { return scaled(h / 1_000, "k") + " h" }
-        return "\(Int(h.rounded())) h"
+        return String(format: "%.0f", h) + " h"
+    }
+}
+
+extension Double {
+    /// `Int(self)` that never traps on API data: NaN and infinity become 0, and values
+    /// beyond `Int`'s range clamp to its ends.
+    public var safeInt: Int {
+        guard isFinite else { return 0 }
+        if self >= 9.2233720368547748e18 { return Int.max }
+        if self <= -9.2233720368547748e18 { return Int.min }
+        return Int(self)
     }
 }

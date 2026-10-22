@@ -36,7 +36,7 @@ enum AppFontScale {
     static let `default`: Double = 1.0
 
     static func clamp(_ value: Double) -> Double { min(max(value, range.lowerBound), range.upperBound) }
-    static func label(_ value: Double) -> String { "\(Int((value * 100).rounded()))%" }
+    static func label(_ value: Double) -> String { "\(((value * 100).rounded()).safeInt)%" }
 }
 
 private struct AppFontScaleKey: EnvironmentKey {

@@ -176,7 +176,7 @@ public struct HardwareReportRow: Sendable, Hashable {
         guard gb > 0 else { return "Unknown" }
         let sizes: [Double] = [2, 4, 8, 12, 16, 24, 32, 36, 48, 64, 96, 128, 192, 256, 384, 512]
         let best = sizes.min { abs(gb - $0) < abs(gb - $1) } ?? sizes[0]
-        return "\(Int(best)) GB"
+        return "\((best).safeInt) GB"
     }
 
     public var memoryText: String {
@@ -186,9 +186,9 @@ public struct HardwareReportRow: Sendable, Hashable {
         if bytes > 0 {
             if bytes >= 1_000_000_000 {
                 let gb = (bytes / 1_073_741_824 * 10).rounded() / 10
-                return gb == gb.rounded() ? "\(Int(gb)) GB" : "\(gb) GB"
+                return gb == gb.rounded() ? "\((gb).safeInt) GB" : "\(gb) GB"
             }
-            return "\(Int((bytes / 1_048_576).rounded())) MB"
+            return "\(((bytes / 1_048_576).rounded()).safeInt) MB"
         }
         if let s = memory.string { return s.replacingOccurrences(of: ".0 GB", with: " GB") }
         return "Unknown"
@@ -222,7 +222,7 @@ public struct HardwareReportRow: Sendable, Hashable {
         if storage.isNull { return ("No drives", nil) }
         if let s = storage.string { return (s, nil) }
         guard let drives = storage.array else {
-            if let n = storage.double { return (n >= 1_000_000_000_000 ? String(format: "%.1f TB", n / 1_099_511_627_776) : "\(Int((n / 1_073_741_824).rounded())) GB", nil) }
+            if let n = storage.double { return (n >= 1_000_000_000_000 ? String(format: "%.1f TB", n / 1_099_511_627_776) : "\(((n / 1_073_741_824).rounded()).safeInt) GB", nil) }
             return ("Unknown", nil)
         }
         if drives.isEmpty { return ("No drives", nil) }
@@ -230,9 +230,9 @@ public struct HardwareReportRow: Sendable, Hashable {
         guard total > 0 else { return ("\(drives.count) drives", nil) }
         let gb = total / 1_073_741_824
         let totalText: String
-        if gb >= 3500 { totalText = "4 TB" } else if gb >= 1700 { totalText = "2 TB" } else if gb >= 900 { totalText = "1 TB" } else if gb >= 450 { totalText = "512 GB" } else { totalText = "\(Int(gb.rounded())) GB" }
+        if gb >= 3500 { totalText = "4 TB" } else if gb >= 1700 { totalText = "2 TB" } else if gb >= 900 { totalText = "1 TB" } else if gb >= 450 { totalText = "512 GB" } else { totalText = "\((gb.rounded()).safeInt) GB" }
         let freeGB = free / 1_073_741_824
-        let freeText: String? = free > 0 ? (freeGB >= 900 ? String(format: "%.1f TB", freeGB / 1024) : "\(Int(freeGB.rounded())) GB") : nil
+        let freeText: String? = free > 0 ? (freeGB >= 900 ? String(format: "%.1f TB", freeGB / 1024) : "\((freeGB.rounded()).safeInt) GB") : nil
         return (totalText, freeText)
     }
 }
@@ -737,7 +737,7 @@ public struct SystemReportRow: Sendable, Hashable {
     /// `formatUptime`: "3d 4h", "5h 12m", "45m".
     public var uptimeText: String? {
         guard let s = uptime, s > 0 else { return nil }
-        let days = Int(s / 86_400), hours = Int(s.truncatingRemainder(dividingBy: 86_400) / 3600), mins = Int(s.truncatingRemainder(dividingBy: 3600) / 60)
+        let days = (s / 86_400).safeInt, hours = (s.truncatingRemainder(dividingBy: 86_400) / 3600).safeInt, mins = (s.truncatingRemainder(dividingBy: 3600) / 60).safeInt
         if days > 0 { return "\(days)d \(hours)h" }
         if hours > 0 { return "\(hours)h \(mins)m" }
         return "\(mins)m"

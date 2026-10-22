@@ -267,7 +267,7 @@ struct ComplianceRow: View {
                     Text(label).appFont(.callout)
                     Spacer()
                     Text("\(on) of \(total)").appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
-                    Text("\(Int((pct * 100).rounded()))%").appFont(.caption, weight: .medium).foregroundStyle(tone.color).monospacedDigit().frame(width: 38, alignment: .trailing)
+                    Text("\(((pct * 100).rounded()).safeInt)%").appFont(.caption, weight: .medium).foregroundStyle(tone.color).monospacedDigit().frame(width: 38, alignment: .trailing)
                 }
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -315,7 +315,7 @@ struct InsightDonut: View {
                         Text(item.label).appFont(.callout).lineLimit(1)
                         Spacer(minLength: 6)
                         Text("\(item.count)").appFont(.callout, weight: .medium).monospacedDigit()
-                        Text(total == 0 ? "" : "\(Int((Double(item.count) / Double(total) * 100).rounded()))%").appFont(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 34, alignment: .trailing)
+                        Text(total == 0 ? "" : "\(((Double(item.count) / Double(total) * 100).rounded()).safeInt)%").appFont(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 34, alignment: .trailing)
                     }
                     if let link = item.link { InsightLink(link: link) { row } } else { row.padding(.horizontal, 4).padding(.vertical, 2) }
                 }

@@ -311,7 +311,7 @@ struct InstallsReportView: View {
         let manifestTotal = max(manifests.reduce(0) { $0 + $1.count }, 1)
         let munki = InstallsReport.versionCounts(devices, cimian: false)
         let cimian = InstallsReport.versionCounts(devices, cimian: true)
-        func pct(_ n: Int, _ total: Int) -> Int { Int((Double(n) / Double(max(total, 1)) * 100).rounded()) }
+        func pct(_ n: Int, _ total: Int) -> Int { ((Double(n) / Double(max(total, 1)) * 100).rounded()).safeInt }
         return LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12, alignment: .top)], alignment: .leading, spacing: 12) {
             DistributionBarsWidget(title: "Software Repos", rows: repos.map { .init(key: $0.repo, label: repoDisplay($0.repo), count: $0.count, percentage: pct($0.count, repoTotal)) },
                                    emptyText: "No software repos found", tone: .blue, selected: model.selectedSoftwareRepo, showPercent: false) { repo in
@@ -459,7 +459,7 @@ struct InstallsReportView: View {
             HStack {
                 Text(model.loadingMessage).appFont(.callout, weight: .medium)
                 Spacer()
-                Text("\(Int((model.reportProgress * 100).rounded()))%").appFont(.caption).foregroundStyle(.secondary)
+                Text("\(((model.reportProgress * 100).rounded()).safeInt)%").appFont(.caption).foregroundStyle(.secondary)
             }
             ProgressView(value: model.reportProgress).progressViewStyle(.linear)
             Text("Processing \(model.selectedInstalls.count) item\(model.selectedInstalls.count == 1 ? "" : "s") across \(model.filters.devicesWithData > 0 ? String(model.filters.devicesWithData) : "all") devices")

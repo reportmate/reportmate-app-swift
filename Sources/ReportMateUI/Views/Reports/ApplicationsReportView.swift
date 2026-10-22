@@ -468,7 +468,7 @@ struct ApplicationsReportView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(ApplicationsReport.duration(seconds: app.totalSeconds)).appFont(.callout).foregroundStyle(.secondary)
                 Text(String(format: "%.1f hours", app.totalHours)).appFont(.caption2).foregroundStyle(.secondary)
-                if let ratio = app.activeRatio { Pill("\(Int((ratio * 100).rounded()))% active", tone: .gray) }
+                if let ratio = app.activeRatio { Pill("\(((ratio * 100).rounded()).safeInt)% active", tone: .gray) }
             }
             .frame(width: 130, alignment: .leading)
             Text(app.launchCount.formatted()).appFont(.callout).monospacedDigit().frame(width: 90, alignment: .leading)

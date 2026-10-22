@@ -245,11 +245,11 @@ public struct ApplicationsInfo: Sendable, Hashable {
     /// `formatDuration`: `45s`, `12m`, `3h 05m`, `4d 6h`.
     public static func formatDuration(_ seconds: Double) -> String {
         guard seconds > 0 else { return "-" }
-        if seconds < 60 { return "\(Int(seconds.rounded()))s" }
-        if seconds < 3600 { return "\(Int((seconds / 60).rounded()))m" }
-        let hours = Int(seconds / 3600)
-        if hours >= 48 { return "\(Int((Double(hours) / 24).rounded()))d \(hours % 24)h" }
-        let mins = Int(((seconds.truncatingRemainder(dividingBy: 3600)) / 60).rounded())
+        if seconds < 60 { return "\((seconds.rounded()).safeInt)s" }
+        if seconds < 3600 { return "\(((seconds / 60).rounded()).safeInt)m" }
+        let hours = (seconds / 3600).safeInt
+        if hours >= 48 { return "\(((Double(hours) / 24).rounded()).safeInt)d \(hours % 24)h" }
+        let mins = (((seconds.truncatingRemainder(dividingBy: 3600)) / 60).rounded()).safeInt
         return mins > 0 ? "\(hours)h \(mins)m" : "\(hours)h"
     }
 

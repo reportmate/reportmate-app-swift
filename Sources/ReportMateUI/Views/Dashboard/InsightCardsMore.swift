@@ -190,7 +190,7 @@ struct StorageCard: View {
                                 HStack {
                                     Text(d.name ?? d.string("serialNumber") ?? "").appFont(.callout).lineLimit(1).truncationMode(.middle)
                                     Spacer()
-                                    Text(ByteCountFormatter.string(fromByteCount: Int64(d.double("freeBytes") ?? 0), countStyle: .decimal) + " free")
+                                    Text(ByteCountFormatter.string(fromByteCount: Int64((d.double("freeBytes") ?? 0).safeInt), countStyle: .decimal) + " free")
                                         .appFont(.caption).foregroundStyle(.secondary)
                                     Text(String(format: "%.1f%%", d.double("freePct") ?? 0)).appFont(.callout, weight: .medium).foregroundStyle(Tone.red.color).monospacedDigit()
                                         .frame(minWidth: 48, alignment: .trailing)

@@ -177,7 +177,7 @@ struct NetworkReportView: View {
         }
     }
 
-    private func trim(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(v) }
+    private func trim(_ v: Double) -> String { v == v.rounded() ? String((v).safeInt) : String(v) }
 
     private func monoCell(_ value: String?, width: CGFloat) -> some View {
         HStack(spacing: 4) {
