@@ -566,3 +566,15 @@ let appUsageEnvelope = #"""
         #expect(SafeLink.url(base: "https://support.microsoft.com/help/", component: "  ") == nil)
     }
 }
+
+@Suite struct CompactHoursTests {
+    @Test func shortensLikeTheWebCard() {
+        #expect(CompactHours.format(950) == "950 h")
+        #expect(CompactHours.format(0.4) == "0 h")
+        #expect(CompactHours.format(1_234) == "1.2k h")
+        #expect(CompactHours.format(1_000) == "1k h")
+        #expect(CompactHours.format(12_345) == "12k h")
+        #expect(CompactHours.format(328_089) == "328k h")
+        #expect(CompactHours.format(1_400_000) == "1.4M h")
+    }
+}

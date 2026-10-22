@@ -449,11 +449,12 @@ struct NewClientsWidget: View {
                 CardHeader("New Clients", subtitle: "Registered in the last 7 days") { appState.follow(DashboardLinks.devices()) }
                     .linkContextMenu(DashboardLinks.devices())
                 if newDevices.isEmpty {
-                    EmptyStateView(title: "No new clients", message: "No devices registered in the last 7 days", systemImage: "laptopcomputer")
-                        .frame(minHeight: 200)
+                    Text("No devices registered in the last 7 days").appFont(.callout).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
+                    // The card is as tall as its rows (ten at most), never stretched or scrolled.
+                    VStack(spacing: 0) {
+                        Group {
                             ForEach(newDevices.prefix(10)) { device in
                                 Button { appState.open(device: device.serialNumber) } label: {
                                     VStack(alignment: .leading, spacing: 3) {
@@ -473,7 +474,6 @@ struct NewClientsWidget: View {
                             }
                         }
                     }
-                    .frame(maxHeight: 560)
                 }
             }
         }

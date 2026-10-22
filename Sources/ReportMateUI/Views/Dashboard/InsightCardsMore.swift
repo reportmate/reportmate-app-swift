@@ -538,6 +538,7 @@ struct AppUsageCard: View {
                 } else {
                     let max = apps.compactMap { $0.double("totalHours") }.max() ?? 1
                     VStack(alignment: .leading, spacing: 2) {
+                        AppUsageHeader()
                         ForEach(apps) { app in AppUsageRow(app: app, maxHours: max) }
                     }
                 }
@@ -592,43 +593,68 @@ struct ConnectivityProblemsCard: View {
     }
 }
 
-/// One App Usage row on a fixed grid: name (flexible, truncated) | bar | hours |
-/// devices, the last three at fixed widths so the columns line up across rows.
+/// App Usage's column widths, shared by the header and every row so they line up.
+enum AppUsageColumns {
+    static let bar: CGFloat = 60
+    static let hours: CGFloat = 64
+    static let devices: CGFloat = 56
+}
+
+/// App · Hours · Devices, over the rows.
+struct AppUsageHeader: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("App").frame(maxWidth: .infinity, alignment: .leading)
+            Color.clear.frame(width: AppUsageColumns.bar, height: 1)
+            Text("Hours").frame(width: AppUsageColumns.hours, alignment: .trailing)
+            Text("Devices").frame(width: AppUsageColumns.devices, alignment: .trailing)
+        }
+        .appFont(.caption2, weight: .semibold)
+        .foregroundStyle(.secondary)
+        .textCase(.uppercase)
+        .padding(.horizontal, 4)
+        .accessibilityHidden(true)
+    }
+}
+
+/// One App Usage row on the shared grid: name (flexible, truncated) | 60 pt bar |
+/// compact hours | device count. The full name and exact hours are in the tooltip.
 struct AppUsageRow: View {
     let app: InsightItem
     let maxHours: Double
 
-    private static let number: NumberFormatter = {
+    private static let exact: NumberFormatter = {
         let f = NumberFormatter()
         f.numberStyle = .decimal
-        f.maximumFractionDigits = 0
+        f.maximumFractionDigits = 1
         return f
     }()
 
     var body: some View {
         let hours = app.double("totalHours") ?? 0
         let devices = app.int("activeDevices") ?? app.int("devices") ?? 0
+        let name = app.name ?? ""
         MaybeInsightLink(link: app.link) {
             HStack(spacing: 10) {
-                Text(app.name ?? "").appFont(.callout).lineLimit(1).truncationMode(.tail)
+                Text(name).appFont(.callout).lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(1)
-                    .help(app.name ?? "")
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.secondary.opacity(0.12))
                         Capsule().fill(Tone.blue.color.opacity(0.75)).frame(width: maxHours > 0 ? geo.size.width * hours / maxHours : 0)
                     }
                 }
-                .frame(width: 70, height: 6)
-                Text("\(Self.number.string(from: NSNumber(value: hours.rounded())) ?? "0") h")
+                .frame(width: AppUsageColumns.bar, height: 6)
+                Text(CompactHours.format(hours))
                     .appFont(.callout, weight: .medium).monospacedDigit()
-                    .frame(width: 84, alignment: .trailing)
-                Text("\(Self.number.string(from: NSNumber(value: devices)) ?? "0") devices")
+                    .frame(width: AppUsageColumns.hours, alignment: .trailing)
+                Text("\(devices)")
                     .appFont(.callout).foregroundStyle(.secondary).monospacedDigit()
-                    .frame(width: 88, alignment: .trailing)
+                    .frame(width: AppUsageColumns.devices, alignment: .trailing)
             }
         }
+        .help("\(name): \(Self.exact.string(from: NSNumber(value: hours)) ?? "0") hours on \(devices) devices")
         .accessibilityElement(children: .combine)
     }
 }

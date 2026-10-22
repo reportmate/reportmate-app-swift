@@ -127,3 +127,18 @@ public enum ByteFormatting {
         return f
     }()
 }
+
+/// Hours as the App Usage card shows them: `950 h`, `1.2k h`, `328k h`, `1.4M h`.
+/// One decimal below ten thousand or ten million, none above; the web card does the same.
+public enum CompactHours {
+    public static func format(_ hours: Double) -> String {
+        let h = max(0, hours)
+        func scaled(_ value: Double, _ suffix: String) -> String {
+            let text = value < 10 ? String(format: "%.1f", value) : String(Int(value.rounded()))
+            return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + suffix
+        }
+        if h >= 999_500 { return scaled(h / 1_000_000, "M") + " h" }
+        if h >= 999.5 { return scaled(h / 1_000, "k") + " h" }
+        return "\(Int(h.rounded())) h"
+    }
+}
