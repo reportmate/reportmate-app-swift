@@ -10,6 +10,9 @@ private extension InsightCardData {
 }
 
 private extension InsightItem {
+    /// The server's link when it opens the Tools Logs report (an older API pointed at /devices).
+    var logsLink: DeepLink? { link.flatMap { $0.target == .managementLogs ? $0 : nil } }
+
     /// The server's link, or `fallback` when it gave a bare report path.
     func link(or fallback: DeepLink) -> DeepLink {
         guard let l = link, !l.query.isEmpty else { return fallback }
@@ -114,10 +117,10 @@ struct ManagementToolLogsCard: View {
                                 MaybeInsightLink(link: DashboardLinks.managementLogs(tool: tool)) {
                                     Text(t.name ?? tool ?? "").appFont(.callout, weight: .medium).lineLimit(1).frame(width: 110, alignment: .leading)
                                 }
-                                MaybeInsightLink(link: DashboardLinks.managementLogs(tool: tool, level: "error")) {
+                                MaybeInsightLink(link: t.logsLink ?? DashboardLinks.managementLogs(tool: tool, level: "error")) {
                                     Text("\(errors) errors").appFont(.callout).foregroundStyle(errors == 0 ? Color.secondary : Tone.red.color).monospacedDigit()
                                 }
-                                MaybeInsightLink(link: DashboardLinks.managementLogs(tool: tool, level: "warning")) {
+                                MaybeInsightLink(link: InsightItem(json: .object(["link": t.json["warningsLink"]])).logsLink ?? DashboardLinks.managementLogs(tool: tool, level: "warning")) {
                                     Text("\(warnings) warnings").appFont(.callout).foregroundStyle(warnings == 0 ? Color.secondary : Tone.yellow.color).monospacedDigit()
                                 }
                                 Spacer(minLength: 0)
@@ -135,7 +138,7 @@ struct ManagementToolLogsCard: View {
                             let e = g.item
                             let tool = e.string("tool") ?? ""
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                MaybeInsightLink(link: DashboardLinks.managementLogs(tool: tool, message: ManagementToolsFleet.messageID(tool: tool, message: g.message))) {
+                                MaybeInsightLink(link: e.logsLink ?? DashboardLinks.managementLogs(tool: tool, message: e.string("id") ?? ManagementToolsFleet.messageID(tool: tool, message: g.message))) {
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(g.message).appFont(.callout).lineLimit(2).truncationMode(.middle)
                                         Text("\(e.string("name") ?? "") · \(g.devices) devices · \(g.lines) lines").appFont(.caption).foregroundStyle(.secondary)

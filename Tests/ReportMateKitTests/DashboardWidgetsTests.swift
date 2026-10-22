@@ -672,3 +672,66 @@ let appUsageEnvelope = #"""
         #expect(rows.filter { ReportLinkFilter(report: "system", query: ["patch": "behind"]).matches(system: $0, currency: currency) }.count == 1)
     }
 }
+
+/// The final revision 6 shapes (reportmate-api #163), with SAMPLE values.
+@Suite struct RevisionSixFinalShapeTests {
+    @Test func userAccountsCard() {
+        let card = InsightCardData(json: json(#"""
+        {"generatedAt": "2026-10-22T18:00:00+00:00", "total": 900,
+         "authentication": [
+           {"key": "modern", "label": "Modern", "count": 500, "link": {"path": "/identity", "params": {"auth": "modern", "platform": "macOS"}}},
+           {"key": "legacy", "label": "Legacy", "count": 60, "link": {"path": "/identity", "params": {"auth": "legacy", "platform": "macOS"}}},
+           {"key": "standard", "label": "Standard", "count": 340, "link": {"path": "/identity", "params": {"auth": "standard", "platform": "macOS"}}}],
+         "adminAccounts": [{"name": "macadmins", "devices": 540, "link": {"path": "/identity", "params": {"admin": "macadmins"}}}],
+         "extraAdmins": {"count": 488, "link": {"path": "/identity", "params": {"admins": "extra"}}}}
+        """#))
+        let auth = card.items("authentication")
+        #expect(auth.map(\.key) == ["modern", "legacy", "standard"])
+        #expect(auth.map(\.count).reduce(0, +) == card.int("total"))
+        #expect(card.items("adminAccounts").first?.count == 540)
+        #expect(card.items("adminAccounts").first?.string("name") == "macadmins")
+        // Each link filters the Identity report, keeping its own platform.
+        let link = auth[1].link
+        #expect(link?.url.absoluteString == "reportmate://identity?auth=legacy&platform=macOS")
+        let f = ReportLinkFilter(report: "identity", query: link?.query ?? [:])
+        #expect(f.params == ["auth": "legacy", "platform": "macOS"])
+        let legacyMac = IdentityReportRow(json: json(#"{"directoryServices": {"activeDirectory": {"bound": true}}}"#))
+        #expect(legacyMac.authLabel == "Legacy")
+        #expect(f.matches(identity: legacyMac, platform: .macOS))
+        #expect(!f.matches(identity: legacyMac, platform: .windows))
+    }
+
+    @Test func directoryServicesWithoutExtraAdmins() {
+        let card = InsightCardData(json: json(#"{"total": 10, "segments": [], "shared": {"count": 4}, "assigned": {"count": 6}}"#))
+        #expect(card.item("extraAdmins") == nil)
+        #expect(card.item("shared")?.count == 4)
+    }
+
+    @Test func fleetEndpoint() {
+        let fleet = ManagementToolsFleet(json: json(#"""
+        {"hours": 24, "platform": "all", "filters": {"tool": null, "level": null, "message": "a1b2c3d4e5f6"},
+         "generatedAt": "2026-10-22T18:00:00+00:00", "computeSeconds": 0.4,
+         "tools": [{"tool": "installs", "name": "Munki", "platform": "macOS", "devices": 550, "devicesWithErrors": 12, "devicesWithWarnings": 40,
+                    "errorLines": 300, "warningLines": 900, "lastAt": "2026-10-22T17:00:00+00:00",
+                    "trend": [{"hour": "2026-10-22T16", "errors": 3, "warnings": 4}, {"hour": "2026-10-22T17", "errors": 5, "warnings": 6}],
+                    "link": {"path": "/management/logs", "params": {"hours": "24", "tool": "installs", "level": "error"}},
+                    "warningsLink": {"path": "/management/logs", "params": {"hours": "24", "tool": "installs", "level": "warning"}}}],
+         "messages": [{"id": "a1b2c3d4e5f6", "message": "Could not download <n> bytes", "tool": "installs", "name": "Munki", "devices": 5, "lines": 40,
+                       "lastAt": "2026-10-22T17:00:00+00:00", "link": {"path": "/management/logs", "params": {"hours": "24", "message": "a1b2c3d4e5f6"}}}],
+         "devices": [{"serialNumber": "SAMPLE1", "deviceName": "Sample Mac", "platform": "macOS", "tool": "installs", "name": "Munki", "errors": 3, "warnings": 0,
+                      "lastAt": "2026-10-22T17:00:00+00:00", "link": {"path": "/device/SAMPLE1", "params": {"tab": "management", "tool": "installs", "level": "error"}}}],
+         "devicesTruncated": true}
+        """#))
+        #expect(fleet.tools.first?.lastSeen != nil)
+        #expect(fleet.tools.first?.trend.map(\.at) == ["2026-10-22T16", "2026-10-22T17"])
+        #expect(fleet.messages.first?.id == "a1b2c3d4e5f6")
+        #expect(fleet.messages.first?.lastSeen != nil)
+        #expect(fleet.devices.first?.name == "Munki")
+        #expect(fleet.devicesTruncated)
+        // The server already filtered devices to the message; the app keeps them.
+        #expect(fleet.filtered(tool: nil, level: nil, message: "a1b2c3d4e5f6").devices.count == 1)
+        let link = InsightItem(json: json(#"{"link": {"path": "/management/logs", "params": {"hours": "24", "message": "a1b2c3d4e5f6"}}}"#)).link
+        #expect(link?.target == .managementLogs)
+        #expect(link?.query["message"] == "a1b2c3d4e5f6")
+    }
+}

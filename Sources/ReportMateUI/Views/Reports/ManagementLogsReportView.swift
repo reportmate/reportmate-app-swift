@@ -13,16 +13,18 @@ final class ManagementLogsModel {
     private(set) var loadedAt: Date?
     private var loadedKey: String?
 
-    func load(api: ReportMateAPI, hours: Int, platform: PlatformFilter, force: Bool = false) async {
+    /// `message` goes to the server, which lists the devices that logged it; tool and
+    /// level narrow on screen.
+    func load(api: ReportMateAPI, hours: Int, platform: PlatformFilter, message: String? = nil, force: Bool = false) async {
         let p = DashboardInsightsDocument.platformParameter(platform)
-        let key = "\(api.configuration.normalizedBaseURL)|\(hours)|\(p)"
+        let key = "\(api.configuration.normalizedBaseURL)|\(hours)|\(p)|\(message ?? "")"
         if !force, key == loadedKey, let loadedAt, Date().timeIntervalSince(loadedAt) < 120 { return }
         if loading, !force { return }
         loading = true
         defer { loading = false }
         if key != loadedKey { fleet = nil }
         do {
-            let json = try await api.getJSON("/management/logs/fleet", query: ["hours": String(hours), "platform": p])
+            let json = try await api.getJSON("/management/logs/fleet", query: ["hours": String(hours), "platform": p, "message": message])
             if json.isNull {
                 // No fleet endpoint on this server yet: the dashboard card has 24 hours of the same data.
                 var card = try await api.getJSON("/dashboard/insights/managementToolLogs", query: ["platform": p])
@@ -106,7 +108,9 @@ struct ManagementLogsReportView: View {
             }
         }
         .navigationTitle("Management Tools Logs")
-        .task(id: "\(appState.configuration.normalizedBaseURL)|\(hours)|\(appState.platformFilter.rawValue)") { await model.load(api: appState.api, hours: hours, platform: appState.platformFilter) }
+        .task(id: "\(appState.configuration.normalizedBaseURL)|\(hours)|\(appState.platformFilter.rawValue)|\(message ?? "")") {
+            await model.load(api: appState.api, hours: hours, platform: appState.platformFilter, message: message)
+        }
         .onChange(of: appState.refreshRequested) { _, _ in reload(force: true) }
         .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
             guard let link = appState.consumeDeepLink(for: .management) else { return }
@@ -119,7 +123,7 @@ struct ManagementLogsReportView: View {
     }
 
     private func reload(force: Bool) {
-        Task { await model.load(api: appState.api, hours: hours, platform: appState.platformFilter, force: force) }
+        Task { await model.load(api: appState.api, hours: hours, platform: appState.platformFilter, message: message, force: force) }
     }
 
     // MARK: Header and filters
@@ -299,6 +303,9 @@ struct ManagementLogsReportView: View {
                     ReportSortHeader(title: "Last At", column: DeviceColumn.lastAt, sortColumn: $deviceSort, ascending: $deviceAscending, width: 120, descendingFirst: true)
                 }
                 .padding(.horizontal, 16).padding(.vertical, 8).background(Color.subtleBackground)
+                if fleet.devicesTruncated {
+                    Text("Showing the first \(fleet.devices.count.formatted()) devices; narrow by tool, level or message to see the rest.").appFont(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.top, 8)
+                }
                 if fleet.devices.isEmpty {
                     Text(model.fleet?.isPartial == true ? "The device list needs the server's fleet tool logs; each message above links to an example device." : "No devices match these filters")
                         .appFont(.callout).foregroundStyle(.secondary).padding(16)

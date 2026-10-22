@@ -59,6 +59,8 @@ public struct ManagementToolsFleet: Sendable, Hashable {
     public var tools: [Tool]
     public var messages: [Message]
     public var devices: [Device]
+    /// The server sent its first thousand devices of more.
+    public var devicesTruncated = false
     /// Built from the dashboard card: 24 hours only, one example device per message.
     public var isPartial: Bool
 
@@ -85,6 +87,7 @@ public struct ManagementToolsFleet: Sendable, Hashable {
         tools = j["tools"].elements.compactMap(Self.tool).filter { !ManagementToolMessages.isMDMAgent($0.tool) }
         messages = j.first("messages", "topErrors").elements.compactMap(Self.message).filter { !ManagementToolMessages.isMDMAgent($0.tool) }
         devices = j["devices"].elements.compactMap(Self.device).filter { !ManagementToolMessages.isMDMAgent($0.tool) }
+        devicesTruncated = j["devicesTruncated"].boolish
         isPartial = false
     }
 
@@ -128,7 +131,9 @@ public struct ManagementToolsFleet: Sendable, Hashable {
             out.devices = out.devices.filter { $0.warnings > 0 }
         default: break
         }
-        if let message { out.devices = out.devices.filter { $0.messageIds.contains(message) } }
+        // The fleet endpoint filters devices by `message` itself (its devices carry no message
+        // ids); only the card-built shape knows which device logged which message.
+        if let message, devices.contains(where: { !$0.messageIds.isEmpty }) { out.devices = out.devices.filter { $0.messageIds.contains(message) } }
         return out
     }
 
@@ -136,7 +141,7 @@ public struct ManagementToolsFleet: Sendable, Hashable {
         guard let tool = t["tool"].nonEmptyString else { return nil }
         return Tool(tool: tool, name: t["name"].nonEmptyString ?? tool, platform: t["platform"].nonEmptyString,
                     devices: t["devices"].int ?? 0, devicesWithErrors: t["devicesWithErrors"].int ?? 0, devicesWithWarnings: t["devicesWithWarnings"].int ?? 0,
-                    errorLines: t["errorLines"].int ?? 0, warningLines: t["warningLines"].int ?? 0, lastSeen: FlexibleDate.parse(t["lastSeen"]),
+                    errorLines: t["errorLines"].int ?? 0, warningLines: t["warningLines"].int ?? 0, lastSeen: FlexibleDate.parse(t.first("lastAt", "lastSeen")),
                     trend: t["trend"].elements.map { TrendPoint(at: $0.firstString("at", "hour", "day") ?? "", errors: $0["errors"].int ?? 0, warnings: $0["warnings"].int ?? 0) })
     }
 
@@ -146,14 +151,14 @@ public struct ManagementToolsFleet: Sendable, Hashable {
         let normalised = ManagementToolMessages.normalize(text)
         return Message(id: m["id"].nonEmptyString ?? messageID(tool: tool, message: text), message: normalised, tool: tool,
                        name: m["name"].nonEmptyString ?? tool, level: (m["level"].string ?? "error").lowercased(),
-                       devices: m["devices"].int ?? 0, lines: m["lines"].int ?? 0, lastSeen: FlexibleDate.parse(m["lastSeen"]))
+                       devices: m["devices"].int ?? 0, lines: m["lines"].int ?? 0, lastSeen: FlexibleDate.parse(m.first("lastAt", "lastSeen")))
     }
 
     static func device(_ d: JSONValue) -> Device? {
         guard let serial = d["serialNumber"].nonEmptyString else { return nil }
         let tool = d["tool"].string ?? ""
         return Device(serialNumber: serial, deviceName: d["deviceName"].nonEmptyString ?? d["name"].nonEmptyString ?? serial, platform: d["platform"].nonEmptyString,
-                      tool: tool, name: d["toolName"].nonEmptyString ?? tool, errors: d["errors"].int ?? 0, warnings: d["warnings"].int ?? 0,
+                      tool: tool, name: d.first("toolName", "name").nonEmptyString ?? tool, errors: d["errors"].int ?? 0, warnings: d["warnings"].int ?? 0,
                       lastAt: FlexibleDate.parse(d.first("lastAt", "lastSeen")), messageIds: d["messageIds"].elements.compactMap(\.nonEmptyString))
     }
 }
