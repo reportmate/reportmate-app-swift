@@ -84,6 +84,9 @@ public struct InstallsFilterOptions: Sendable, Hashable {
     public var manifests: [String] = []
     public var devicesWithData = 0
     public var devices: [InstallsDevice] = []
+    /// Agents that have not run for longer than the API's threshold.
+    public var staleAgents: [StaleAgent] = []
+    public var staleAgentThresholdDays: Double?
 
     public init() {}
 
@@ -104,6 +107,8 @@ public struct InstallsFilterOptions: Sendable, Hashable {
         manifests = list("manifests")
         devices = json["devices"].elements.map(InstallsDevice.init(json:))
         devicesWithData = j["devicesWithData"].int ?? devices.count
+        staleAgents = json["staleAgents"].elements.map(StaleAgent.init(json:))
+        staleAgentThresholdDays = json["staleAgentThresholdDays"].double
     }
 
     /// Item names for the picker under the platform toggle.
@@ -256,6 +261,9 @@ public struct InstallRecord: Sendable, Hashable, Identifiable {
     public let name: String
     public let version: String
     public let status: String
+    /// The installed and catalog versions as the row carries them, for "behind" counts.
+    public let installedVersion: String?
+    public let latestVersion: String?
     public let source: String
     public let usage: String?
     public let catalog: String?
@@ -274,6 +282,8 @@ public struct InstallRecord: Sendable, Hashable, Identifiable {
         lastSeen = j["lastSeen"].nonEmptyString
         name = j["itemName"].nonEmptyString ?? j["displayName"].nonEmptyString ?? j["name"].nonEmptyString ?? ""
         version = j["installedVersion"].nonEmptyString ?? j["latestVersion"].nonEmptyString ?? ""
+        installedVersion = j["installedVersion"].nonEmptyString
+        latestVersion = j["latestVersion"].nonEmptyString
         status = j["currentStatus"].nonEmptyString?.lowercased() ?? j["status"].nonEmptyString?.lowercased() ?? "unknown"
         source = j["source"].nonEmptyString ?? "cimian"
         usage = j["usage"].nonEmptyString
@@ -551,5 +561,28 @@ public enum InstallsReport {
         if hours <= 24 { return .active }
         if hours <= 168 { return .stale }
         return .missing
+    }
+}
+
+/// An install agent (Munki or Cimian) that has not run recently, from `/installs/filters`.
+public struct StaleAgent: Sendable, Hashable, Identifiable {
+    public var id: String { serialNumber }
+    public let serialNumber: String
+    public let agent: String?
+    public let platform: Platform
+    public let staleDays: Double
+
+    public init(serialNumber: String, agent: String? = nil, platform: Platform = .unknown, staleDays: Double) {
+        self.serialNumber = serialNumber
+        self.agent = agent
+        self.platform = platform
+        self.staleDays = staleDays
+    }
+
+    public init(json: JSONValue) {
+        serialNumber = json["serialNumber"].nonEmptyString ?? ""
+        agent = json["agent"].nonEmptyString
+        platform = Platform.detect(device: json)
+        staleDays = json["staleDays"].double ?? 0
     }
 }

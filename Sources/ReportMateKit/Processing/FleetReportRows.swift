@@ -385,6 +385,7 @@ public struct SecurityReportRow: Sendable, Hashable {
     public var expiringSoonCertCount: Int { json["expiringSoonCertCount"].int ?? 0 }
     public var cveCount: Int { json["cveCount"].int ?? 0 }
     public var criticalCveCount: Int { json["criticalCveCount"].int ?? 0 }
+    public var activelyExploitedCveCount: Int { json["activelyExploitedCveCount"].int ?? 0 }
     public var autoLoginUser: String? { json["autoLoginUser"].nonEmptyString }
 
     public var encryptionLabel: String { encryptionEnabled ? "Encrypted" : "Not Encrypted" }
@@ -557,6 +558,12 @@ public struct IdentityReportRow: Sendable, Hashable {
     public var trustStatus: String?
     public var authMethod: String?
     public var sessionSummary: SessionSummary?
+    /// Joined to Active Directory (bound, or `isDomainJoined`).
+    public var domainJoined: Bool
+    /// Joined to Entra ID (`azureAd.joined`, or a Platform SSO registration on a Mac).
+    public var entraJoined: Bool
+    /// The inventory usage ("Shared", "Assigned").
+    public var usage: String?
 
     /// Reads both shapes: the flat row the web's `/api/v1/identity` route hands its
     /// page, and the FastAPI row it is built from (`summary`, `directoryServices`,
@@ -582,6 +589,9 @@ public struct IdentityReportRow: Sendable, Hashable {
         let ssoRegistered = json["platformSSORegistered"].boolish || json["platformSSOUsers"]["deviceRegistered"].boolish
         let domainJoined = json["domainJoined"].boolish || ad["bound"].boolish || ad["isDomainJoined"].boolish
         let entraJoined = json["entraJoined"].boolish || entra["joined"].boolish || ssoRegistered
+        self.domainJoined = domainJoined
+        self.entraJoined = entraJoined
+        usage = json["usage"].nonEmptyString ?? json["inventory"]["usage"].nonEmptyString
         adBound = json["adBound"].boolish || ad["bound"].boolish
         ldapBound = json["ldapBound"].boolish || ds["ldap"]["bound"].boolish
         usernames = json["users"].elements.compactMap { $0["username"].nonEmptyString }
