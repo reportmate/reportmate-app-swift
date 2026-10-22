@@ -20,7 +20,10 @@ final class FleetReportModel {
     init(path: String) { self.path = path }
 
     func load(api: ReportMateAPI, query: [String: String?] = [:], force: Bool = false) async {
-        if !force, loadedAt != nil, !rows.isEmpty { return }
+        // A return within a minute shows the kept rows as they are; after that they stay
+        // on screen while a background refresh replaces them.
+        if !force, let loadedAt, !rows.isEmpty, Date().timeIntervalSince(loadedAt) < 60 { return }
+        if loading, !force { return }
         loading = true
         error = nil
         do {
@@ -120,12 +123,21 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
     var toolbar: ([ReportRow]) -> Toolbar
     var widgets: (([ReportRow]) -> Widgets)?
     var content: ([ReportRow]) -> Content
+    /// Link parameters (`?provider=Unmanaged`): the report reads them from a link,
+    /// hands the ones a widget shows to `absorbLink`, and narrows the rows by the
+    /// rest with `linkMatches`. `widgetLinkQuery` is the widget filters in link form,
+    /// so Copy Link carries every filter on screen.
+    var linking: ReportLinking? = nil
+    /// Drawn where the title goes, in place of the section name (Management's two views).
+    var titleControl: AnyView? = nil
 
     init(section: AppSection, model: FleetReportModel, activeFilterCount: Int = 0, clearFilters: (() -> Void)? = nil, query: [String: String?] = [:], subtitle: String? = nil, searchPlaceholder: String = "Search…",
          searchKeys: @escaping (ReportRow) -> [String?] = { [$0.deviceName, $0.serialNumber, $0.inventory.assetTag] },
          @ViewBuilder toolbar: @escaping ([ReportRow]) -> Toolbar = { _ in EmptyView() },
          widgets: (([ReportRow]) -> Widgets)?,
+         linking: ReportLinking? = nil,
          @ViewBuilder content: @escaping ([ReportRow]) -> Content) {
+        self.linking = linking
         self.section = section
         self.model = model
         self.activeFilterCount = activeFilterCount
@@ -143,6 +155,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
     @State private var selections = DeviceSelections()
     @State private var filtersExpanded = false
     @State private var widgetsExpanded = true
+    @State private var linkFilter = ReportLinkFilter(report: "")
 
     private var summaries: [DeviceSummary] { model.rows.map(\.asDeviceSummary) }
 
@@ -159,6 +172,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
         var list = model.rows
         if appState.platformFilter != .all { list = list.filter { appState.platformFilter.includes($0.platform) } }
         if !selections.isEmpty { list = list.filter { selections.matches($0.asDeviceSummary) } }
+        if let linking, !linkFilter.isEmpty { let f = linkFilter; list = list.filter { linking.matches($0, f) } }
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
         if !q.isEmpty { list = list.filter { row in searchKeys(row).contains { $0?.lowercased().contains(q) ?? false } } }
         return list
@@ -169,18 +183,18 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(section.title).appFont(.title3, weight: .semibold)
+                    if let titleControl { titleControl } else { Text(section.title).appFont(.title3, weight: .semibold) }
                     Text(subtitleText(rows.count)).appFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if model.loading { ProgressView().controlSize(.small) }
                 toolbar(rows)
                 // One button clears everything narrowing the rows: widget filters, selections and search.
-                let narrowing = activeFilterCount + selections.count + (search.isEmpty ? 0 : 1)
+                let narrowing = activeFilterCount + linkFilter.count + selections.count + (search.isEmpty ? 0 : 1)
                 if narrowing > 0 {
                     Button(narrowing == 1 ? "Clear Filter" : "Clear Filters (\(narrowing))") {
                         search = ""
                         selections.clear()
+                        linkFilter.params = [:]
                         clearFilters?()
                     }
                     .buttonStyle(.bordered).tint(.orange)
@@ -196,9 +210,14 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
             .overlay(alignment: .bottom) { Divider() }
+            if model.loading { LoadProgressBar(updating: !model.rows.isEmpty) }
+            if let error = model.error, !model.rows.isEmpty, !model.loading {
+                RefreshFailedBanner(message: error, updatedAt: model.loadedAt) { Task { await model.load(api: appState.api, query: query, force: true) } }
+            }
+            if !linkFilter.isEmpty { linkFilterBar }
             DeviceFiltersView(options: DeviceFilterOptions(devices: summaries), selections: $selections, expanded: $filtersExpanded)
             if model.loading, model.rows.isEmpty {
-                LoadingView(message: "Loading \(section.title.lowercased()) report…")
+                ReportSkeleton(widgets: widgets == nil ? 0 : 4).skeletonTimeout(fillsPage: true) { Task { await model.load(api: appState.api, query: query, force: true) } }
             } else if let error = model.error, model.rows.isEmpty {
                 ErrorBanner(message: error) { Task { await model.load(api: appState.api, query: query, force: true) } }.padding()
                 Spacer()
@@ -219,7 +238,12 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
                         }
                         .buttonStyle(.plain)
                         if widgetsExpanded {
-                            ScrollView(.horizontal) { widgets(rows).padding(.horizontal, 16).padding(.bottom, 12) }
+                            // Widgets stretch to fill a wide window and scroll sideways when they cannot fit.
+                            ViewThatFits(in: .horizontal) {
+                                widgets(rows).frame(maxWidth: .infinity, alignment: .leading)
+                                ScrollView(.horizontal) { widgets(rows) }
+                            }
+                            .padding(.horizontal, 16).padding(.bottom, 12)
                         }
                     }
                     .overlay(alignment: .bottom) { Divider() }
@@ -230,6 +254,46 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
         .navigationTitle(section.title)
         .task(id: appState.configuration) { await model.load(api: appState.api, query: query) }
         .onChange(of: appState.refreshRequested) { _, _ in Task { await model.load(api: appState.api, query: query, force: true) } }
+        .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
+            guard let linking, let link = appState.consumeDeepLink(for: section) else { return }
+            var f = ReportLinkFilter(report: linking.report ?? section.rawValue, query: link.query)
+            linking.absorb(&f)
+            linkFilter = f
+        }
+        .onChange(of: linkQuery, initial: true) { _, q in if linking != nil { appState.linkQuery = q } }
+    }
+
+    /// The link form of every filter on screen.
+    private var linkQuery: [String: String] {
+        var q = linking?.widgetQuery ?? [:]
+        q.merge(linkFilter.params) { _, link in link }
+        return q
+    }
+
+    /// The filters a link brought, each removable on its own.
+    private var linkFilterBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal.decrease.circle").foregroundStyle(.secondary).accessibilityHidden(true)
+            FlowLayout(spacing: 6) {
+                ForEach(linkFilter.chips, id: \.key) { chip in
+                    Button { linkFilter.params[chip.key] = nil } label: {
+                        HStack(spacing: 4) {
+                            Text(chip.label).appFont(.caption, weight: .medium)
+                            Image(systemName: "xmark").appFont(.caption2)
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.accentColor.opacity(0.14), in: Capsule())
+                        .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove this filter")
+                    .accessibilityLabel("Remove filter \(chip.label)")
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
@@ -291,4 +355,24 @@ struct ReportEmptyRows: View {
         }
         .frame(maxWidth: .infinity).padding(40)
     }
+}
+
+extension View {
+    /// A report widget's width: at least `width` (its old fixed size), growing to
+    /// share the row when the window is wider than the widgets need.
+    func reportWidgetWidth(_ width: CGFloat) -> some View {
+        frame(minWidth: width, idealWidth: width, maxWidth: .infinity, alignment: .topLeading)
+    }
+}
+
+/// How a report reads its link parameters. See `FleetReportContainer.linking`.
+struct ReportLinking {
+    /// The parameter set to read, when it differs from the section (`failures`).
+    var report: String? = nil
+    /// Moves parameters a widget shows into that widget's state.
+    var absorb: (inout ReportLinkFilter) -> Void = { _ in }
+    /// Whether a row passes the parameters left after `absorb`.
+    var matches: (ReportRow, ReportLinkFilter) -> Bool
+    /// The widget filters as link parameters.
+    var widgetQuery: [String: String] = [:]
 }

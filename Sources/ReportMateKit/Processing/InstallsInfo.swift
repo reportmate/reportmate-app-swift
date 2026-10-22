@@ -77,7 +77,7 @@ public struct InstallPackage: Sendable, Hashable, Identifiable {
         var size = bytes
         var i = 0
         while size >= 1024, i < units.count - 1 { size /= 1024; i += 1 }
-        return i == 0 ? "\(Int(size)) \(units[i])" : String(format: "%.1f %@", size, units[i])
+        return i == 0 ? "\((size).safeInt) \(units[i])" : String(format: "%.1f %@", size, units[i])
     }
 }
 
@@ -377,7 +377,7 @@ public struct InstallsInfo: Sendable, Hashable {
             let chosen = withActivity ?? sessions.first { $0["status"].string != "running" } ?? sessions[0]
             runType = chosen.firstString("runType", "run_type") ?? "Manual"
             durationSeconds = chosen["durationSeconds"].double
-            duration = durationSeconds.map { "\(Int($0))s" } ?? "Unknown"
+            duration = durationSeconds.map { "\(($0).safeInt)s" } ?? "Unknown"
         } else if let sessions = cimian["sessions"].array, !sessions.isEmpty {
             pick(sessions)
         }
@@ -415,7 +415,7 @@ public struct InstallsInfo: Sendable, Hashable {
                                     softwareRepoURL: cimian["config"].firstString("SoftwareRepoURL", "softwareRepoUrl") ?? session0.firstString("softwareRepoUrl", "software_repo_url") ?? "",
                                     manifest: cimian["config"].firstString("ClientIdentifier", "clientIdentifier") ?? session0.firstString("clientIdentifier", "client_identifier") ?? "",
                                     runType: runType, lastRun: installs["lastCheckIn"].string ?? "",
-                                    duration: durationSeconds.map { "\(Int($0))s" } ?? duration, durationSeconds: durationSeconds, catalogs: catalogsText)
+                                    duration: durationSeconds.map { "\(($0).safeInt)s" } ?? duration, durationSeconds: durationSeconds, catalogs: catalogsText)
         }
         lastUpdate = installs.firstString("lastCheckIn", "collectedAt") ?? ""
 

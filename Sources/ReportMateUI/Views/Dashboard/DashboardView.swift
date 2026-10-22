@@ -4,13 +4,20 @@ import ReportMateKit
 
 /// The dashboard: fleet status, install error and warning counters, new
 /// clients on the left; recent events, platform distribution and OS version
-/// charts on the right. Refreshes every 30 seconds like the web page.
+/// charts on the right, and the twelve insight cards. The layout follows the
+/// window: two insight columns on a 27-inch display (`wideBreakpoint`), one
+/// beside the charts on a desktop (`desktopBreakpoint`), and a grid underneath
+/// below that. Refreshes every 30 seconds like the web page.
 @MainActor
 @Observable
 final class DashboardModel {
     var data: DashboardData?
     var loading = false
     var error: String?
+    /// The load on arriving at the page is in flight.
+    var refreshing = false
+    /// A refresh failed while the last good payload stays on screen.
+    var refreshError: String?
     var lastUpdate: Date?
     var connectionStatus: ConnectionStatus = .connecting
     /// Bumped every two minutes so relative times re-render.
@@ -26,6 +33,9 @@ final class DashboardModel {
 
     func load(api: ReportMateAPI, includeArchived: Bool, initial: Bool) async {
         if initial { loading = data == nil }
+        // Only the load on arrival shows as Updating; the 30-second poll stays quiet.
+        if initial { refreshing = true }
+        defer { if initial { refreshing = false } }
         do {
             let fresh = try await api.dashboard(eventsLimit: 200, includeArchived: includeArchived)
             if var existing = data, !initial {
@@ -47,10 +57,15 @@ final class DashboardModel {
                 data = d
             }
             error = nil
+            refreshError = nil
             if !isLive { connectionStatus = .polling }
             lastUpdate = Date()
         } catch {
-            if initial { self.error = error.localizedDescription; connectionStatus = .error }
+            if data == nil {
+                if initial { self.error = error.localizedDescription; connectionStatus = .error }
+            } else {
+                refreshError = error.localizedDescription
+            }
         }
         loading = false
     }
@@ -121,8 +136,27 @@ final class DashboardModel {
 
 struct DashboardView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = DashboardModel()
-    @State private var insights = DashboardInsightsModel()
+    /// Kept by `AppState` across navigation: a return shows the last data at once.
+    private var model: DashboardModel { appState.pages.dashboard }
+    private var insights: DashboardInsightsModel { appState.pages.insights }
+    /// Width inside the page padding; drives the switch between layouts.
+    private var contentWidth: CGFloat { appState.pages.dashboardWidth }
+    /// Draw only the skeleton layout and load nothing: shown while the connection settles.
+    var placeholder = false
+
+    /// Content width at which the dashboard goes to three columns, with insight
+    /// cards 5–12 in a grid underneath. The web app's matching switch is 1680 px.
+    static let desktopBreakpoint: CGFloat = 1500
+    /// Content width (a 27-inch display) at which the insight cards take two
+    /// columns of their own, dealt alternately. The web app's switch is 2200 px.
+    static let wideBreakpoint: CGFloat = 2000
+    /// Column 1 and each insight column never go narrower than this.
+    static let columnMinimum: CGFloat = 360
+    /// Column 2, under New Clients, and column 3, by API key (revision 5 of the spec).
+    /// Narrower tiers flow the same order into fewer columns: column 2's cards, then
+    /// column 3's. Installs, Management Tools Logs and Check-in Gaps sit in column 1.
+    static let column2 = ["directoryServices", "userAccounts", "connectivityProblems", "protectionGaps", "expiringCertificates"]
+    static let column3 = ["updateDebt", "storage", "appUsage", "softwareRisk", "rebootDebt"]
 
     private var devices: [DeviceSummary] {
         guard let all = model.data?.devices else { return [] }
@@ -138,39 +172,38 @@ struct DashboardView: View {
 
     var body: some View {
         Group {
-            if model.loading, model.data == nil {
-                LoadingView(message: "Loading dashboard…")
-            } else if let error = model.error, model.data == nil {
+            if let error = model.error, model.data == nil {
                 ErrorBanner(message: error) { Task { await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: true) } }
                     .padding()
                 Spacer()
             } else {
-                ScrollView {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .top, spacing: 20) {
-                            leftColumn.frame(width: 360)
-                            rightColumn
-                        }
-                        VStack(spacing: 20) {
-                            leftColumn
-                            rightColumn
+                VStack(spacing: 0) {
+                    if let failure = model.refreshError ?? (insights.hasData ? insights.error : nil) {
+                        RefreshFailedBanner(message: failure, updatedAt: model.lastUpdate) {
+                            Task { await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: false) }
+                            Task { await loadInsights(force: true) }
                         }
                     }
-                    .padding(20)
+                    ScrollView {
+                        layout.padding(20)
+                    }
+                    .overlay(alignment: .top) { progressBar }
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width - 40 } action: { appState.pages.dashboardWidth = $0 }
             }
         }
         .navigationTitle("ReportMate")
         .task(id: appState.configuration) {
+            guard !placeholder else { return }
             model.startLive(api: appState.api)
             defer { model.stopLive() }
             await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: true)
-            Task { await insights.load(api: appState.api) }
+            Task { await loadInsights() }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { break }
                 await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: false)
-                await insights.load(api: appState.api)
+                await loadInsights()
             }
         }
         .task {
@@ -179,43 +212,151 @@ struct DashboardView: View {
                 model.clockTick += 1
             }
         }
+        .onChange(of: appState.platformFilter) { _, _ in Task { await loadInsights() } }
+        .environment(insights)
+        .environment(\.insightsRetry) { Task { await loadInsights(force: true) } }
         .onChange(of: appState.refreshRequested) { _, _ in
+            guard !placeholder else { return }
             Task { await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: model.data == nil) }
-            Task { await insights.load(api: appState.api, force: true) }
+            Task { await loadInsights(force: true) }
         }
     }
 
-    private var leftColumn: some View {
-        VStack(spacing: 20) {
-            StatusWidget(devices: devices)
-            HStack(spacing: 14) {
-                InstallStatWidget(kind: .error, stats: model.data?.installStats, filter: appState.platformFilter)
-                InstallStatWidget(kind: .warning, stats: model.data?.installStats, filter: appState.platformFilter)
+    /// A sweep until the dashboard payload lands, then "Loading n of 12" as the cards answer; a sweep marked Updating while kept data refreshes.
+    @ViewBuilder
+    private var progressBar: some View {
+        let total = DashboardInsightsModel.cardCount
+        if placeholder || model.data == nil, model.error == nil {
+            LoadProgressBar()
+        } else if insights.loading, insights.answered < total, insights.error == nil {
+            LoadProgressBar(loaded: insights.answered, total: total)
+        } else if model.refreshing || insights.loading {
+            LoadProgressBar(updating: true)
+        }
+    }
+
+    // MARK: Layouts
+
+    @ViewBuilder
+    private var layout: some View {
+        if contentWidth >= Self.wideBreakpoint {
+            // Wide (27-inch class): fleet status, two insight columns dealt
+            // alternately so both grow evenly, then events and charts at double width.
+            let unit = max(Self.columnMinimum, (contentWidth - 60) / 5)
+            HStack(alignment: .top, spacing: 20) {
+                // Cards size to their content rather than to the tallest column.
+                statusColumn.frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                insightStack(Self.column2, newClients: true).frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                insightStack(Self.column3).frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                activityColumn.frame(maxWidth: .infinity)
             }
-            NewClientsWidget(devices: devices)
-            SystemInsightWidget(rows: filtered(insights.system), loading: insights.loading.contains("system"), error: insights.errors["system"])
+        } else if contentWidth >= Self.desktopBreakpoint {
+            // Desktop: three independent stacks, never a row underneath them (a row there
+            // leaves gaps beside a tall column 1). Column 2 keeps its cards; column 3's are
+            // dealt alternately into column 2 and the events column.
+            let unit = max(Self.columnMinimum, (contentWidth - 40) / 4)
+            let (toInsights, toActivity) = Self.deal(Self.column3)
+            HStack(alignment: .top, spacing: 20) {
+                statusColumn.frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                insightStack(Self.column2 + toInsights, newClients: true).frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                activityColumn(extra: toActivity).frame(maxWidth: .infinity)
+            }
+        } else {
+            // Two stacks, every insight card dealt alternately into them; one stack when narrow.
+            let (left, right) = Self.deal(Self.column2 + Self.column3)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 20) {
+                    VStack(spacing: 20) {
+                        statusColumn
+                        newClientsCard
+                        ForEach(left, id: \.self) { card($0) }
+                    }
+                    .frame(width: Self.columnMinimum)
+                    activityColumn(extra: right)
+                }
+                VStack(spacing: 20) {
+                    statusColumn
+                    newClientsCard
+                    activityColumn(extra: Self.column2 + Self.column3)
+                }
+            }
         }
     }
 
-    private func filtered(_ rows: [ReportRow]) -> [ReportRow] {
-        appState.platformFilter == .all ? rows : rows.filter { appState.platformFilter.includes($0.platform) }
+    private func reloadDashboard() {
+        Task { await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: true) }
     }
 
-    private var rightColumn: some View {
+    /// Until the dashboard payload arrives the columns draw as skeletons in the same layout.
+    private var awaitingData: Bool { placeholder || model.data == nil }
+
+    private var statusColumn: some View {
+        Group {
+            if awaitingData {
+                DashboardStatusSkeleton().skeletonTimeout(retry: reloadDashboard)
+            } else {
+                VStack(spacing: 20) {
+                    StatusWidget(devices: devices)
+                    InstallHealthCard(stats: model.data?.installStats, platform: appState.platformFilter)
+                    card("managementToolLogs")
+                    card("checkinGaps")
+                }
+            }
+        }
+    }
+
+    private var activityColumn: some View { activityColumn(extra: []) }
+
+    /// Recent Events, Platform Distribution and the OS versions, then any insight cards
+    /// dealt to this stack on a narrower window.
+    private func activityColumn(extra: [String]) -> some View {
         VStack(spacing: 20) {
-            RecentEventsWidget(events: events, connectionStatus: model.connectionStatus, lastUpdate: model.lastUpdate)
-            PlatformDistributionWidget(devices: devices)
-            osVersionRow
-            insightRow
+            if awaitingData {
+                DashboardActivitySkeleton().skeletonTimeout(retry: reloadDashboard)
+            } else {
+                RecentEventsWidget(events: events, connectionStatus: model.connectionStatus, lastUpdate: model.lastUpdate)
+                PlatformDistributionWidget(devices: devices)
+                osVersionRow
+            }
+            ForEach(extra, id: \.self) { card($0) }
         }
     }
 
-    private var insightRow: some View {
-        UniformGrid(minColumnWidth: 300, maxColumns: 3, spacing: 16) {
-            SecurityPostureWidget(rows: filtered(insights.security), loading: insights.loading.contains("security"), error: insights.errors["security"])
-            ManagementInsightWidget(rows: filtered(insights.management), loading: insights.loading.contains("management"), error: insights.errors["management"])
-            HardwareInsightWidget(rows: filtered(insights.hardware), loading: insights.loading.contains("hardware"), error: insights.errors["hardware"])
+    /// Cards dealt alternately into two stacks: first, third, … and second, fourth, …
+    static func deal(_ cards: [String]) -> (first: [String], second: [String]) {
+        let indexed = cards.enumerated()
+        return (indexed.filter { $0.offset % 2 == 0 }.map(\.element), indexed.filter { $0.offset % 2 == 1 }.map(\.element))
+    }
+
+    private func insightStack(_ cards: [String], newClients: Bool = false) -> some View {
+        VStack(spacing: 20) {
+            if newClients { newClientsCard }
+            ForEach(cards, id: \.self) { card($0) }
         }
+    }
+
+    @ViewBuilder
+    private var newClientsCard: some View {
+        if awaitingData {
+            SkeletonCard { SkeletonRows(count: 6) }.skeletonTimeout(retry: reloadDashboard)
+        } else {
+            NewClientsWidget(devices: devices)
+        }
+    }
+
+    // MARK: Insight cards
+
+    /// One request for every card, cached by the API for five minutes and asked again
+    /// here at most that often (the 30-second tick finds it fresh).
+    private func loadInsights(force: Bool = false) async {
+        guard !placeholder, appState.isConfigured else { return }
+        async let cards: Void = insights.load(api: appState.api, platform: appState.platformFilter, includeArchived: appState.includeArchived, force: force)
+        async let usage: Void = insights.loadAppUsage(api: appState.api, platform: appState.platformFilter, force: force)
+        _ = await (cards, usage)
+    }
+
+    private func card(_ key: String) -> some View {
+        InsightCardView(key: key, platform: appState.platformFilter)
     }
 
     @ViewBuilder
@@ -247,8 +388,9 @@ struct StatusWidget: View {
         Card {
             VStack(spacing: 0) {
                 CardHeader("Fleet Status", subtitle: "Click to view all devices", systemImage: "laptopcomputer", tone: .blue) {
-                    appState.section = .devices
+                    appState.follow(DashboardLinks.devices())
                 }
+                .linkContextMenu(DashboardLinks.devices())
                 if devices.isEmpty {
                     EmptyStateView(title: "No devices found", message: "Devices will appear here when they report in", systemImage: "laptopcomputer")
                 } else {
@@ -266,13 +408,11 @@ struct StatusWidget: View {
                             }
                         }
                         .contentShape(Rectangle())
-                        .onTapGesture { appState.section = .devices }
+                        .onTapGesture { appState.follow(DashboardLinks.devices()) }
+                        .linkContextMenu(DashboardLinks.devices())
                         VStack(spacing: 4) {
                             ForEach(slices) { slice in
-                                Button {
-                                    NotificationCenter.default.post(name: .devicesStatusFilter, object: slice.status.rawValue)
-                                    appState.section = .devices
-                                } label: {
+                                InsightLink(link: DashboardLinks.devices(status: slice.status)) {
                                     HStack {
                                         Circle().fill(Color(hex: slice.status.chartColorHex)).frame(width: 12, height: 12)
                                         Text(slice.status.displayName).appFont(.callout, weight: .medium)
@@ -283,7 +423,6 @@ struct StatusWidget: View {
                                     .padding(.horizontal, 8).padding(.vertical, 6)
                                     .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -296,49 +435,6 @@ struct StatusWidget: View {
 
 extension Notification.Name {
     static let devicesStatusFilter = Notification.Name("ReportMate.devicesStatusFilter")
-}
-
-// MARK: - Error / warning counters
-
-struct InstallStatWidget: View {
-    enum Kind { case error, warning }
-    @Environment(AppState.self) private var appState
-    let kind: Kind
-    let stats: InstallStats?
-    let filter: PlatformFilter
-
-    private var value: Int? {
-        guard let stats else { return nil }
-        return kind == .error ? stats.devicesWithErrors(for: filter) : stats.devicesWithWarnings(for: filter)
-    }
-
-    var body: some View {
-        let tone: Tone = kind == .error ? .red : .yellow
-        let label = kind == .error ? (value == 1 ? "Error" : "Errors") : (value == 1 ? "Warning" : "Warnings")
-        Button {
-            appState.section = .installs
-            NotificationCenter.default.post(name: .installsFilter, object: kind == .error ? "errors" : "warnings")
-        } label: {
-            Card {
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8).fill(value == nil ? Color.secondary.opacity(0.12) : tone.color.opacity(0.15))
-                        Image(systemName: kind == .error ? "xmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundStyle(value == nil ? Color.secondary : tone.color).appFont(fixed: 20)
-                    }
-                    .frame(width: 44, height: 44)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(value.map(String.init) ?? "-").appFont(.title, weight: .bold).foregroundStyle(value == nil ? Color.secondary : tone.color).monospacedDigit()
-                        Text(label).appFont(.callout).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 16).padding(.vertical, 20)
-            }
-        }
-        .buttonStyle(.plain)
-        .help(kind == .error ? "Devices with one or more failed installs" : "Devices with one or more install warnings")
-    }
 }
 
 extension Notification.Name {
@@ -356,13 +452,15 @@ struct NewClientsWidget: View {
     var body: some View {
         Card {
             VStack(spacing: 0) {
-                CardHeader("New Clients", subtitle: "Registered in the last 7 days") { appState.section = .devices }
+                CardHeader("New Clients", subtitle: "Registered in the last 7 days") { appState.follow(DashboardLinks.devices()) }
+                    .linkContextMenu(DashboardLinks.devices())
                 if newDevices.isEmpty {
-                    EmptyStateView(title: "No new clients", message: "No devices registered in the last 7 days", systemImage: "laptopcomputer")
-                        .frame(minHeight: 200)
+                    Text("No devices registered in the last 7 days").appFont(.callout).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
+                    // The card is as tall as its rows (ten at most), never stretched or scrolled.
+                    VStack(spacing: 0) {
+                        Group {
                             ForEach(newDevices.prefix(10)) { device in
                                 Button { appState.open(device: device.serialNumber) } label: {
                                     VStack(alignment: .leading, spacing: 3) {
@@ -382,7 +480,6 @@ struct NewClientsWidget: View {
                             }
                         }
                     }
-                    .frame(maxHeight: 560)
                 }
             }
         }
@@ -403,7 +500,8 @@ struct PlatformDistributionWidget: View {
     var body: some View {
         Card {
             VStack(spacing: 0) {
-                CardHeader("Platform Distribution", systemImage: "laptopcomputer", tone: .purple) { appState.section = .devices }
+                CardHeader("Platform Distribution", systemImage: "laptopcomputer", tone: .purple) { appState.follow(DashboardLinks.devices()) }
+                    .linkContextMenu(DashboardLinks.devices())
                 VStack(alignment: .leading, spacing: 10) {
                     if devices.isEmpty {
                         EmptyStateView(title: "No devices found", message: "Platform distribution will appear when devices are detected")
@@ -422,36 +520,46 @@ struct PlatformDistributionWidget: View {
     private func platformCard(_ s: FleetStats.PlatformStats) -> some View {
         let isOpen = expanded == s.platform.rawValue
         return VStack(spacing: 0) {
-            Button { withAnimation(.easeInOut(duration: 0.15)) { expanded = isOpen ? nil : s.platform.rawValue } } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: s.platform.systemImage).appFont(fixed: 22).foregroundStyle(.secondary).frame(width: 28)
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(s.platform.chartLabel).appFont(.headline)
-                            Text("\(s.percentage)%").appFont(.callout).foregroundStyle(.tertiary)
-                        }
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Color.secondary.opacity(0.12))
-                                Capsule().fill(Color.purple.opacity(0.8)).frame(width: geo.size.width * CGFloat(s.percentage) / 100)
+            HStack(spacing: 12) {
+                Button { withAnimation(.easeInOut(duration: 0.15)) { expanded = isOpen ? nil : s.platform.rawValue } } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: s.platform.systemImage).appFont(fixed: 22).foregroundStyle(.secondary).frame(width: 28)
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(s.platform.chartLabel).appFont(.headline)
+                                Text("\(s.percentage)%").appFont(.callout).foregroundStyle(.secondary)
                             }
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.secondary.opacity(0.12))
+                                    Capsule().fill(Color.purple.opacity(0.8)).frame(width: geo.size.width * CGFloat(s.percentage) / 100)
+                                }
+                            }
+                            .frame(height: 8)
                         }
-                        .frame(height: 8)
                     }
-                    Text("\(s.count)").appFont(.title3, weight: .semibold).monospacedDigit()
-                    Image(systemName: "chevron.down").rotationEffect(.degrees(isOpen ? 180 : 0)).foregroundStyle(.secondary).appFont(.caption)
+                    .contentShape(Rectangle())
                 }
-                .padding(12)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(s.platform.chartLabel), \(isOpen ? "collapse" : "expand") details")
+                InsightLink(link: devicesLink(s.platform)) {
+                    Text("\(s.count)").appFont(.title3, weight: .semibold).monospacedDigit()
+                }
+                Button { withAnimation(.easeInOut(duration: 0.15)) { expanded = isOpen ? nil : s.platform.rawValue } } label: {
+                    Image(systemName: "chevron.down").rotationEffect(.degrees(isOpen ? 180 : 0)).foregroundStyle(.secondary).appFont(.caption)
+                        .frame(width: 20, height: 20).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isOpen ? "Collapse" : "Expand")
             }
-            .buttonStyle(.plain)
+            .padding(12)
             if isOpen {
                 Divider()
                 VStack(alignment: .leading, spacing: 12) {
-                    drill("Architecture", s.architectures, total: s.count)
-                    drill("Usage", s.usages, total: s.count)
-                    drill("Catalog", s.catalogs, total: s.count)
-                    drill("Department", s.departments, total: s.count)
+                    drill("Architecture", s.architectures, total: s.count) { archLink(s.platform, $0) }
+                    drill("Usage", s.usages, total: s.count) { devicesLink(s.platform, ["usage": $0]) }
+                    drill("Catalog", s.catalogs, total: s.count) { devicesLink(s.platform, ["catalog": $0]) }
+                    drill("Department", s.departments, total: s.count) { devicesLink(s.platform, ["area": $0]) }
                     ageLine(s.ageStats)
                 }
                 .padding(12)
@@ -476,12 +584,12 @@ struct PlatformDistributionWidget: View {
             ForEach(known) { u in
                 let isOpen = expanded == "usage:\(u.usage)"
                 VStack(spacing: 0) {
-                    Button { withAnimation(.easeInOut(duration: 0.15)) { expanded = isOpen ? nil : "usage:\(u.usage)" } } label: {
-                        HStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        Button { withAnimation(.easeInOut(duration: 0.15)) { expanded = isOpen ? nil : "usage:\(u.usage)" } } label: {
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                                     Text(u.usage).appFont(.headline)
-                                    Text("\(u.percentage)%").appFont(.callout).foregroundStyle(.tertiary)
+                                    Text("\(u.percentage)%").appFont(.callout).foregroundStyle(.secondary)
                                 }
                                 GeometryReader { geo in
                                     ZStack(alignment: .leading) {
@@ -491,18 +599,26 @@ struct PlatformDistributionWidget: View {
                                 }
                                 .frame(height: 8)
                             }
-                            Text("\(u.count)").appFont(.title3, weight: .semibold).monospacedDigit()
-                            Image(systemName: "chevron.down").rotationEffect(.degrees(isOpen ? 180 : 0)).foregroundStyle(.secondary).appFont(.caption)
+                            .contentShape(Rectangle())
                         }
-                        .padding(12).contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        InsightLink(link: devicesLink(platform.platform, ["usage": u.usage])) {
+                            Text("\(u.count)").appFont(.title3, weight: .semibold).monospacedDigit()
+                        }
+                        Button { withAnimation(.easeInOut(duration: 0.15)) { expanded = isOpen ? nil : "usage:\(u.usage)" } } label: {
+                            Image(systemName: "chevron.down").rotationEffect(.degrees(isOpen ? 180 : 0)).foregroundStyle(.secondary).appFont(.caption)
+                                .frame(width: 20, height: 20).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isOpen ? "Collapse" : "Expand")
                     }
-                    .buttonStyle(.plain)
+                    .padding(12)
                     if isOpen {
                         Divider()
                         VStack(alignment: .leading, spacing: 12) {
-                            drill("Architecture", u.architectures, total: u.count)
-                            drill("Catalog", u.catalogs, total: u.count)
-                            drill("Department", u.departments, total: u.count)
+                            drill("Architecture", u.architectures, total: u.count) { archLink(platform.platform, $0) }
+                            drill("Catalog", u.catalogs, total: u.count) { devicesLink(platform.platform, ["usage": u.usage, "catalog": $0]) }
+                            drill("Department", u.departments, total: u.count) { devicesLink(platform.platform, ["usage": u.usage, "area": $0]) }
                         }
                         .padding(12).background(Color.subtleBackground)
                     }
@@ -514,15 +630,49 @@ struct PlatformDistributionWidget: View {
     }
 
     @ViewBuilder
-    private func drill(_ title: String, _ data: [String: Int], total: Int) -> some View {
+    private func drill(_ title: String, _ data: [String: Int], total: Int, link: @escaping (String) -> DeepLink?) -> some View {
         if !data.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 SectionLabel(title)
                 ForEach(data.sorted { $0.value > $1.value }, id: \.key) { entry in
-                    BarRow(label: entry.key, count: entry.value, total: total)
+                    if let target = link(entry.key) {
+                        InsightLink(link: target) { BarRow(label: entry.key, count: entry.value, total: total) }
+                    } else {
+                        BarRow(label: entry.key, count: entry.value, total: total).padding(.horizontal, 4)
+                    }
                 }
             }
         }
+    }
+
+    /// `/devices` for one platform, with the widget's own usage and catalog pills carried along.
+    private func devicesLink(_ platform: Platform, _ extra: [String: String] = [:]) -> DeepLink {
+        var q: [String: String] = [:]
+        if let u = filters.usage.first { q["usage"] = u }
+        if let c = filters.catalog.first { q["catalog"] = c }
+        switch platform {
+        case .macOS: q["platform"] = "mac"
+        case .windows: q["platform"] = "win"
+        default: break
+        }
+        q.merge(extra) { _, new in new }
+        return DashboardLinks.devices(q)
+    }
+
+    /// An architecture row opens the Hardware report on its family: arm64 on a Mac is Apple Silicon.
+    private func archLink(_ platform: Platform, _ arch: String) -> DeepLink? {
+        let a = arch.lowercased()
+        let family: String
+        switch (platform, a) {
+        case (.macOS, "arm64"): family = "Apple Silicon"
+        case (.macOS, "x64"), (.macOS, "x86"): family = "Intel"
+        case (.windows, "arm64"): family = "ARM64"
+        case (.windows, "x64"), (.windows, "x86"): family = "x64"
+        default: return nil
+        }
+        var q = ["arch": family]
+        q["platform"] = platform == .macOS ? "mac" : "win"
+        return DashboardLinks.report("hardware", q)
     }
 
     @ViewBuilder
@@ -530,7 +680,7 @@ struct PlatformDistributionWidget: View {
         if age.devicesWithAge > 0 {
             HStack(spacing: 12) {
                 SectionLabel("Fleet age")
-                Text("avg \(Int(age.averageAgeDays.rounded())) days").appFont(.caption)
+                Text("avg \((age.averageAgeDays.rounded()).safeInt) days").appFont(.caption)
                 if let n = age.newest { Text("newest \(TimeFormatting.shortDate(n))").appFont(.caption).foregroundStyle(.secondary) }
                 if let o = age.oldest { Text("oldest \(TimeFormatting.shortDate(o))").appFont(.caption).foregroundStyle(.secondary) }
             }
@@ -607,6 +757,9 @@ struct OSVersionWidget: View {
                     }
                     .frame(width: 30, height: 30)
                     Text("\(platform.displayName) Versions").appFont(.headline)
+                        .onTapGesture { appState.follow(DashboardLinks.system()) }
+                        .linkContextMenu(DashboardLinks.system())
+                        .help("Show the System report")
                     Spacer()
                     if selectedGroup != nil {
                         Button { withAnimation { selectedGroup = nil } } label: { Label("All versions", systemImage: "chevron.left").appFont(.caption) }
@@ -631,8 +784,9 @@ struct OSVersionWidget: View {
                             VStack(spacing: 3) {
                                 ForEach(visible) { node in
                                     let maxCount = max(visible.map(\.count).max() ?? 1, 1)
-                                    let pct = total > 0 ? Int((Double(node.count) / Double(total) * 100).rounded()) : 0
-                                    Button { select(node) } label: {
+                                    let pct = total > 0 ? ((Double(node.count) / Double(total) * 100).rounded()).safeInt : 0
+                                    HStack(spacing: 2) {
+                                    Button { appState.follow(DashboardLinks.system(osVersion: node.name)) } label: {
                                         HStack(spacing: 8) {
                                             Text(node.displayName).appFont(.caption, weight: .medium).monospacedDigit().frame(minWidth: 52, alignment: .leading)
                                             GeometryReader { geo in
@@ -655,6 +809,17 @@ struct OSVersionWidget: View {
                                     }
                                     .buttonStyle(.plain)
                                     .onHover { hovered = $0 ? node.name : nil }
+                                    .help(appState.describe(DashboardLinks.system(osVersion: node.name)))
+                                    .linkContextMenu(DashboardLinks.system(osVersion: node.name))
+                                    if selectedGroup == nil, !node.children.isEmpty {
+                                        Button { withAnimation { selectedGroup = node.name } } label: {
+                                            Image(systemName: "chevron.right").appFont(.caption2).foregroundStyle(.secondary).frame(width: 16, height: 20).contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("Show \(node.displayName) patch versions")
+                                        .accessibilityLabel("Show \(node.displayName) patch versions")
+                                    }
+                                    }
                                 }
                             }
                         }
@@ -663,15 +828,6 @@ struct OSVersionWidget: View {
                     .padding(14)
                 }
             }
-        }
-    }
-
-    private func select(_ node: FleetStats.VersionNode) {
-        if selectedGroup == nil, !node.children.isEmpty {
-            withAnimation { selectedGroup = node.name }
-        } else {
-            NotificationCenter.default.post(name: .systemVersionFilter, object: node.name)
-            appState.section = .system
         }
     }
 

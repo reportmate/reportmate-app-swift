@@ -245,7 +245,7 @@ public struct LogsInfo: Sendable, Hashable {
             func first(_ keys: String...) -> String? {
                 for k in keys {
                     if let s = obj[k].string, !s.trimmingCharacters(in: .whitespaces).isEmpty { return s }
-                    if let d = obj[k].double { return d == d.rounded() ? String(Int(d)) : String(d) }
+                    if let d = obj[k].double { return d == d.rounded() ? String((d).safeInt) : String(d) }
                 }
                 return nil
             }
@@ -483,30 +483,34 @@ public struct LogsInfo: Sendable, Hashable {
 
     public static func formatBytes(_ bytes: Double?) -> String {
         guard let bytes, bytes.isFinite else { return "" }
-        if bytes < 1024 { return "\(Int(bytes)) B" }
+        if bytes < 1024 { return "\((bytes).safeInt) B" }
         let units = ["KB", "MB", "GB"]
         var value = bytes / 1024
         var unit = 0
         while value >= 1024, unit < units.count - 1 { value /= 1024; unit += 1 }
-        return (value < 10 ? String(format: "%.1f", value) : String(Int(value.rounded()))) + " " + units[unit]
+        return (value < 10 ? String(format: "%.1f", value) : String((value.rounded()).safeInt)) + " " + units[unit]
     }
 
     public static func formatDuration(_ seconds: Double?) -> String {
         guard let seconds, seconds.isFinite else { return "" }
-        if seconds < 60 { return "\(Int(seconds.rounded()))s" }
-        let minutes = Int(seconds / 60)
-        let rest = Int((seconds.truncatingRemainder(dividingBy: 60)).rounded())
+        if seconds < 60 { return "\((seconds.rounded()).safeInt)s" }
+        let minutes = (seconds / 60).safeInt
+        let rest = ((seconds.truncatingRemainder(dividingBy: 60)).rounded()).safeInt
         if minutes < 60 { return rest > 0 ? "\(minutes)m \(rest)s" : "\(minutes)m" }
         return "\(minutes / 60)h \(minutes % 60)m"
     }
 }
 
 extension NSRegularExpression {
+    /// Log lines past this length are matched on their first part only: the line parsers
+    /// run on device text, and the cap bounds their work on a hostile line.
+    static let maxMatchLength = 8_192
+
     /// Capture groups of the first match, nil when the pattern does not match;
     /// a group that did not participate is nil.
     func captures(in text: String) -> [String?]? {
-        let ns = text as NSString
-        guard let m = firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        let ns = (text.utf16.count > Self.maxMatchLength ? String(text.prefix(Self.maxMatchLength)) : text) as NSString
+        guard let m = firstMatch(in: ns as String, range: NSRange(location: 0, length: ns.length)) else { return nil }
         return (1..<m.numberOfRanges).map { i in
             let r = m.range(at: i)
             return r.location == NSNotFound ? nil : ns.substring(with: r)

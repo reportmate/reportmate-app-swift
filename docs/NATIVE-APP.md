@@ -52,10 +52,10 @@ make app-pkg
 The CLI configures itself from the app: on Save, and at every launch, the
 app writes its non-secret connection (endpoint, auth method, Entra audience)
 to `~/Library/Application Support/ReportMate/connection.json`, and
-`reportmateutil` reads it when no `REPORTMATE_*` variables are set. An API
-key or passphrase is read from the app's Keychain item on first use (macOS
-asks once to allow it); an Entra sign-in needs no secret at all, the CLI mints
-its token with `az`. `reportmateutil config` shows what it resolved and from
+`reportmateutil` reads it when no `REPORTMATE_*` variables are set. With
+Entra sign-in the CLI needs no secret at all and mints its token with `az`; the
+app stores no API key or passphrase, so for those methods give the CLI its own
+`REPORTMATE_*` variables. `reportmateutil config` shows what it resolved and from
 where.
 
 
@@ -104,7 +104,7 @@ swift test -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/us
 ## Connecting
 
 Settings (⌘,) → Connection takes the API base URL and one of three
-credentials:
+authentication methods. Entra sign-in is the default:
 
 | Method | Header | Notes |
 |---|---|---|
@@ -112,8 +112,22 @@ credentials:
 | Passphrase | `X-Client-Passphrase` | The legacy shared client passphrase (full access). |
 | Entra sign-in | `Authorization: Bearer` | A delegated token for the API app registration, minted from the signed-in user's `az login` session; nothing is stored on the Mac. |
 
-Credentials are kept in the Keychain. The endpoint's own ingest key is not a
-read credential and will be refused with 403.
+The app never reads or writes the Keychain and stores no secret on the Mac, so
+it never shows a Keychain password prompt. Entra sign-in needs nothing stored:
+the token is minted from the operator's `az login` and held in memory. The
+non-secret connection (API URL, method, Entra audience, web URL) is kept in the
+app's preferences (`com.github.reportmate.mac`). For a deployment without Entra,
+an API key or passphrase is read, never typed or saved, from:
+
+- the environment: `REPORTMATE_API_KEY` or `REPORTMATE_PASSPHRASE`;
+- a configuration profile that manages the app's domain `com.github.reportmate.mac`
+  (keys `ApiKey`, `Passphrase`; only a forced, managed value counts);
+- for the passphrase only, the runner's `com.github.reportmate` domain.
+
+Settings shows where a key or passphrase came from and cannot edit it. Items an
+older build left in the Keychain under `com.github.reportmate.mac` are ignored,
+not deleted; remove them in Keychain Access if wanted. The endpoint's own
+ingest key is not a read credential and will be refused with 403.
 
 On a Mac whose ReportMate runner already reports, the app inherits the API URL
 from the runner's `com.github.reportmate` preference domain (a managed
@@ -121,15 +135,17 @@ configuration profile or `/Library/Preferences/com.github.reportmate.plist`, key
 `ApiUrl`) whenever it has none of its own, and the shared `Passphrase` when the
 runner uses one. The runner's `ApiKey` is never inherited: it is an ingest key
 and the API refuses it for reads, so a key-only runner leaves the app with the
-URL filled in and Settings asking for a read credential. The Settings sheet says
-where the values came from, Save keeps a copy in the app's Keychain, and
-environment variables and the Keychain always win over the inherited values.
+URL filled in and Entra sign-in as the method. The Settings sheet says where
+the values came from, Save keeps the app's own URL and method in its
+preferences, and environment variables and saved settings win over the
+inherited values.
 
-Admin Macs sign in with Entra rather than a stored secret: when the app only
-inherited the runner's endpoint and passphrase, it asks the API's
-`/api/v1/auth/config` whether OIDC is on and, if `az login` can mint a token
-for the advertised audience, switches itself to Entra sign-in and drops the
-passphrase. Settings → Connection also has a Discover button that fills the
+Admin Macs sign in with Entra rather than a stored secret. Before the first
+request the app settles its credential: an Entra sign-in with no audience takes
+the one the API advertises at `/api/v1/auth/config`, and a passphrase inherited
+from the runner is replaced by Entra when OIDC is on and `az login` can mint a
+token. Pages show "Connecting to ReportMate…" until then, so nothing is sent
+with a credential that is about to be swapped. Settings → Connection also has a Discover button that fills the
 audience from the same endpoint.
 
 ## Navigation
@@ -139,14 +155,117 @@ reports as tabs (Installs, Applications, System, Management, Identity,
 Hardware, Peripherals, Security, Network). Nothing else sits in the bar: the API
 endpoint lives in Settings, and a red or grey dot appears at the right only while
 the connection is failing or unset. A window too narrow for every tab collapses
-the reports into a Reports menu, and a device page always uses that menu so the
-device's own tabs lead. The app's accent is pinned to blue, like the web's links,
+the reports into a Reports menu; a device page keeps the full row, like the web. The app's accent is pinned to blue, like the web's links,
 whatever the Mac's accent colour setting. ⌘1–⌘9 and ⌘0 jump between sections, ⌘K opens
 device search, ⌘R refreshes, and the toolbar's platform toggle (Mac / Windows
 / All) applies everywhere the web platform filter does.
 
 Device pages and drill-downs (per-application usage, usage coverage) push onto
 the navigation stack; Back is ⌘[ or the toolbar arrow.
+
+### Wide windows
+
+Pages use the width of a wide window instead of a laptop-width column, and
+re-flow as the window is resized:
+
+- Dashboard: column 1 holds Fleet Status, Installs (its two headline counts are
+  the largest figures on the page; it replaces the old Errors and Warnings
+  tiles), Management Tools Logs and Check-in Gaps. The wide column holds Recent
+  Events, Platform Distribution and the OS version charts. At 2000 pt of content
+  width or more (a 27-inch display) two columns the width of column 1 sit between
+  them: column 2 is New Clients, Directory Services, User Accounts, Connectivity Problems,
+  Protection Gaps and Expiring Certificates; column 3 is Update Debt, Storage, App
+  Usage, Software Risk and Uptime Overview (1fr each, the wide one 2fr). From 1500 pt
+  there are three columns, with column 3's cards dealt alternately into column 2
+  and the events column. Below that there are two columns, with every insight card
+  dealt alternately into them, and one column when narrow. At every width the
+  dashboard is independent column stacks, never a row of cards beneath them. No card has a platform control
+  of its own; every card follows the toolbar toggle. The web app switches at
+  1680 and 2200 px.
+- Report widget rows stretch to fill the window, and scroll sideways only when
+  they cannot fit. Security's eight donuts flow into up to eight columns.
+- Card grids (`UniformGrid`) balance their columns, so six cards sit as two rows
+  of three rather than four and two. The device Info tab goes up to six columns.
+- Hardware tab spec tiles flow into more columns. Tables already fill the width.
+- Settings keeps the fixed-width Mac settings window.
+
+### Returning to a page, loading and refresh failures
+
+Each page's data lives in `PageModels`, owned by `AppState`, not by the page
+view. Going back to the dashboard, a report, Devices, Events or one of the last
+dozen device pages shows its last data at once and refreshes it in the
+background; skeletons appear only on a page's first load. A thin bar across the
+top of the page shows progress: "Loading 1 of 2" while the dashboard's sources
+arrive (a device page counts its modules), a sweep when the count is unknown,
+and "Updating" while kept data refreshes. When a background refresh fails, the
+last good data stays with a one-line "Couldn't refresh" note, when it last
+updated, and Retry; the full error state is for a page with nothing to show yet.
+A skeleton never shows for more than ten seconds: after that it turns into
+"Still loading… · Retry". An error replaces it the moment it comes back, and an
+insights endpoint the server does not have yet (404) says "Not available on this
+server yet" at once. Where the API serves one card per request
+(`/dashboard/insights/{card}`), the cards load in parallel and each paints as it
+answers, with "Loading n of 12" across the top; otherwise one request brings them all.
+The top bar keeps every section tab on a device page too.
+
+### Dashboard widgets and their links
+
+The dashboard's twelve insight cards and the link parameters behind them are a
+contract shared with the web and Windows apps, written up in the web repo as
+[`docs/DASHBOARD-WIDGETS.md`](https://github.com/reportmate/reportmate-app-web/blob/main/docs/DASHBOARD-WIDGETS.md).
+Each card answers one question about the fleet: Installs, Uptime Overview,
+Update Debt (patch level against the fleet's latest, pending and deferred updates),
+Protection Gaps, Management Tools Logs (the MDM agent's own logs left out,
+messages grouped with their timestamps stripped), Storage, Check-in Gaps, Software Risk, Expiring Certificates, Directory Services (the Identity
+report's classes: Cloud Joined, Domain Joined with Trusted, Unconfirmed and
+Broken, Standard, Unjoined), User Accounts (authentication, the top admin
+accounts, devices with extra local admins), Connectivity Problems, and App Usage (the top ten
+apps on a fixed grid, with Usage and Catalog chips)
+(`Views/Dashboard/InsightWidgets.swift`, `InsightCardsMore.swift`).
+
+Every count, bar, legend row and chip on the dashboard, the Fleet Status legend,
+Platform Distribution and the OS version bars included, opens the report that
+owns it with the matching filter on, through the same `reportmate://` link the
+web uses: clicking Unmanaged in Management opens
+`reportmate://management?provider=Unmanaged`. A card's header opens the report
+unfiltered. Each item's context menu copies its link, and its tooltip says where
+it goes.
+
+`ReportMateKit` holds the logic: `DashboardInsightsDocument` reads the insights
+endpoint and turns each item's `link: {path, params}` into a `reportmate://`
+link, `DashboardLinks` builds the dashboard's other links, and
+`ReportLinkFilter` reads each report's parameters and applies them as row
+predicates. On a
+report, a parameter that matches a widget selects it, the rest narrow the rows
+and appear as removable chips under the header, and Copy Link carries both.
+
+| Report | Parameters |
+|---|---|
+| `/devices` | `status`, `search`, `platform`, `tool`, `level` (named above the list; it has no log levels to narrow by) |
+| `/system` | `osVersion`, `uptime`, `pending`, `deferred=1`, `edition`, `os=unsupported\|windows10`, `patch=behind\|latest` |
+| `/security` | `encryption=off`, `firewall=off`, `antivirus=off`, `sip=off`, `secureBoot=off`, `threats=1`, `certs=expired\|expiring`, `cve=critical\|exploited`, `certSearch`, `certStatus` |
+| `/management` | `provider`, `enrolled=0\|1`, `enrollmentType`, `platform=macOS\|Windows` (this report only; the global toggle is `platform=mac\|win`), `lastSeen=24h\|1-7d\|7d+` |
+| `/management/logs` | `tool`, `level=error\|warning`, `hours=24\|168`, `message` (the management tools' logs across the fleet) |
+| `/hardware` | `arch`, `storage=low\|lt5\|5-10\|10-20\|20+`, `capacity=le256\|512\|1t\|2t+`, `platform=macOS\|Windows`, `memory=le8`, `type=laptop\|desktop`, `processor` |
+| `/installs` | `filter` (`errors`, `warnings`, `pending`), `agent=munki\|cimian`, `item`, `stale=1`, `view` |
+| `/events/failures` | `hours`, `reason`, `outcome` |
+| `/identity` | `admins=extra\|2\|3\|4+`, `auth=modern\|standard\|legacy`, `admin=<account>`, `join=entra\|domain\|hybrid\|workgroup`, `directory=` (Cloud Joined, Domain Joined, Standard, Unjoined, Trusted, Unconfirmed, Broken, as labels or kebab keys; and psso, bound, unbound), `platform=macOS\|Windows`, `usage` |
+| `/device/<serial>` | `tab=management&tool=<tool>&level=error\|warning` opens the log viewer on that tool, errors (or warnings) only |
+| `/applications` | `type=usage&apps=&period=`; `/applications/usage/<app>?days=30` |
+| `/network` | `connection=wired\|wifi`, `signal=weak`, `quality=poor`, `vpn=1` |
+| `/peripherals` | `kind=printers\|displays`, `room` |
+
+Each card is its own request, `GET /api/v1/dashboard/insights/{card}?platform=all|macOS|Windows`
+(App Usage: `/dashboard/insights/appUsage?platform=&usages=&catalogs=&days=30`),
+answered as `{card, platform, includeArchived, generatedAt, data}` from the API's
+per-card SQL cache. The cards load four at a time and each paints as it answers;
+where the server has no per-card endpoints the combined `/dashboard/insights` is
+used. The dashboard asks again at most every five minutes and when the platform
+toggle changes, and never pulls the bulk reports (on 2026-10-22 clients doing that held the API at its
+memory limit). Cards show skeletons until the first answer. A card the server
+could not compute, or a failed request, shows its error with Retry, which asks
+again. Check-in counts and reasons cover every platform; the card says so when
+the toggle is set.
 
 ## Parity matrix
 
@@ -155,7 +274,7 @@ where the native counterpart lives.
 
 | Web page | Native view | Status |
 |---|---|---|
-| `/dashboard` (fleet status donut, error and warning counters, new clients, recent events with type filter, platform distribution with drill-downs and filters, macOS and Windows version donuts with drill-down) | `Views/Dashboard/DashboardView.swift`, `RecentEventsWidget.swift`, `InsightWidgets.swift` | Complete, plus a second tier the web does not have: System Health (uptime buckets, pending and deferred updates), Security Posture (encryption, firewall, antivirus, SIP, Secure Boot compliance, threats, expired certificates, critical CVEs), Management (MDM enrollment and providers) and Hardware (architecture, low storage, low memory, laptops), each built from the bulk report its page reads and linking to it. They load two at a time after the dashboard payload, retry once on a 5xx, and refresh every five minutes. Opens the Web PubSub event stream through `/negotiate` and shows Live, Reconnecting or Polling like the web page; polls every 30 s underneath either way. If the negotiate call fails or the hub is not configured the feed stays on polling. Version donuts link to the System report's OS version filter. |
+| `/dashboard` (fleet status donut, error and warning counters, new clients, recent events with type filter, platform distribution with drill-downs and filters, macOS and Windows version donuts with drill-down) | `Views/Dashboard/DashboardView.swift`, `RecentEventsWidget.swift`, `InsightWidgets.swift` | Complete, plus the twelve insight cards of the shared widget spec, read from the cached `/dashboard/insights` endpoint (see Dashboard widgets and their links). Opens the Web PubSub event stream through `/negotiate` and shows Live, Reconnecting or Polling like the web page; polls every 30 s underneath either way. If the negotiate call fails or the hub is not configured the feed stays on polling. Version donuts link to the System report's OS version filter. |
 | `/devices` (search, Selections accordion, sortable table, status and inventory pills, `?status=` from the dashboard) | `Views/Devices/DevicesView.swift` | Complete. Adds a Registered column. |
 | `/device/[serial]` header and tabs: Info, Installs, Applications, Hardware, Network, Security, Management (with logs), Identity, Peripherals, System, Events | `Views/Device/DeviceDetailView.swift`, `Views/Device/Tabs/*` | Complete for all tabs, including the management log viewer (MDM root first, structured line parsers for the convention, CMTrace, Intune daemon, Munki, syslog and ISO-stamped logs, level toggles with counts, tag pills, JSON tails as a tree, tool version with a fallback to the installs module), the security certificate and CVE tables, launchd and scheduled task tables, and the identity session analytics. |
 | `/events` (date range, kind chips with System and Info shown alone, search, infinite scroll, live refresh, expanded rows with run summary, details, raw payload copy and search) | `Views/Events/EventsView.swift`, `EventRows.swift` | Complete. |
@@ -166,6 +285,7 @@ where the native counterpart lives.
 | `/applications/coverage` (usage telemetry collection health) | `Views/Reports/ApplicationCoverageView.swift` | Complete; reachable from the Usage report's Coverage button. |
 | `/system` (OS version filter widget, uptime and pending update buckets, Windows edition, activation and license widgets) | `Views/Reports/SystemReportView.swift` | Complete. |
 | `/management` (providers, enrollment status and type widgets, enrollment table) | `Views/Reports/ManagementReportView.swift` | Complete. |
+| `/management/logs` (the management tools' logs across the fleet: per tool with a trend, common messages, devices; Management's header is a two-segment control, Device Management Service \| Management Tools Logs, where the title goes, with the subtitle following; Management stays the highlighted section, with no nav or Reports entry of its own) | `Views/Reports/ManagementLogsReportView.swift` | New with the dashboard work. Reads `/api/v1/management/logs/fleet`; on a server without it, the dashboard card's last 24 hours with one example device per message. |
 | `/identity` (directory and authentication donuts with drill-downs, admin accounts, admins and utilization reports) | `Views/Reports/IdentityReportView.swift` | Complete.  Reads FastAPI's raw row shape (the web's own API route flattens it), so directory, auth and user counts fill without the Next.js layer. |
 | `/hardware` (architecture, chip, processor, graphics, memory and storage widgets) | `Views/Reports/HardwareReportView.swift` | Complete. |
 | `/peripherals` (kind and printer widgets) | `Views/Reports/PeripheralsReportView.swift` | Complete. |
@@ -232,7 +352,7 @@ assembly; admin actions are hidden for the local report.
 ```
 Sources/ReportMateKit/          shared library, no UI
 ├── API/ReportMateAPI.swift     every endpoint the app calls
-├── Auth/                       Keychain store, Entra token source
+├── Auth/                       Entra token source (az)
 ├── Config/AppConfiguration     base URL and credential
 ├── JSON/JSONValue              the tree every reader walks
 ├── Models/                     devices, events, settings document

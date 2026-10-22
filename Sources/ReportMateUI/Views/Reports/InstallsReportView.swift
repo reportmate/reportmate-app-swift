@@ -6,7 +6,7 @@ import ReportMateKit
 /// `app/installs/page.tsx`.
 struct InstallsReportView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = InstallsReportModel()
+    private var model: InstallsReportModel { appState.pages.installs }
 
     enum ConfigColumn { case device, total, installed, pending, errors, warnings, removed, manifest, lastSeen, version }
     enum InstallColumn { case device, manifest, name, version, status, lastSeen }
@@ -33,7 +33,13 @@ struct InstallsReportView: View {
         var q: [String: String] = [:]
         switch model.itemsStatusFilter { case .error: q["filter"] = "errors"; case .warning: q["filter"] = "warnings"; case .pending: q["filter"] = "pending"; case .success: q["filter"] = "success"; case nil: break }
         if model.statusView == .messages, model.itemsStatusFilter != nil { q["view"] = "messages" }
-        if !model.selectedInstalls.isEmpty { q["items"] = model.selectedInstalls.joined(separator: ",") }
+        if model.selectedInstalls.count == 1, let item = model.selectedInstalls.first { q["item"] = item }
+        else if !model.selectedInstalls.isEmpty { q["items"] = model.selectedInstalls.joined(separator: ",") }
+        if !model.installs.isEmpty, q["filter"] == nil {
+            switch model.installStatusFilter { case .error: q["filter"] = "errors"; case .warning: q["filter"] = "warnings"; default: break }
+        }
+        if model.staleOnly { q["stale"] = "1" }
+        if let agent = model.agentFilter { q["agent"] = agent }
         if !model.selections.catalogs.isEmpty { q["catalogs"] = model.selections.catalogs.sorted().joined(separator: ",") }
         if !model.selections.usages.isEmpty { q["usages"] = model.selections.usages.sorted().joined(separator: ",") }
         if !model.searchQuery.isEmpty { q["q"] = model.searchQuery }
@@ -49,7 +55,7 @@ struct InstallsReportView: View {
                     .padding(.horizontal, 16).padding(.top, 8)
             }
             if model.filtersLoading {
-                LoadingView(message: model.loadingMessage.isEmpty ? "Loading managed installs data..." : model.loadingMessage)
+                ReportSkeleton(widgets: 5, columns: [220, 70, 70, 70, 70, nil, 120]).skeletonTimeout(fillsPage: true) { Task { await model.loadFilters(api: appState.api, force: true) } }
             } else {
                 ScrollView {
                     VStack(spacing: 0) {
@@ -58,6 +64,7 @@ struct InstallsReportView: View {
                         DeviceFiltersView(options: model.filterOptions(platform), selections: $m.selections, expanded: $m.selectionsExpanded)
                         if model.isGeneratingReport { itemPicker }
                         if !model.isGeneratingReport { searchRow }
+                        if model.staleOnly || model.agentFilter != nil { staleBar }
                         if model.loading { reportProgress }
                         if !model.loading, model.hasGeneratedReport, model.installs.isEmpty, !model.isConfigReport { noResults }
                         if !model.installs.isEmpty, !model.isConfigReport { installsTable }
@@ -76,17 +83,26 @@ struct InstallsReportView: View {
         .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
             guard let link = appState.consumeDeepLink(for: .installs) else { return }
             model.searchQuery = link.query["q"] ?? ""
-            model.selectStatus(Self.category(link.query["filter"]))
+            model.staleOnly = link.query["stale"] == "1"
+            model.agentFilter = ["munki", "cimian"].contains(link.query["agent"] ?? "") ? link.query["agent"] : nil
+            // `item` (the dashboard's top-item links) opens that item's report, where
+            // `filter` narrows the records rather than opening the status drill-down.
+            let item = link.query["item"]
+            let itemStatus: InstallStatusClass? = item == nil ? nil : link.query["filter"] == "errors" ? .error : link.query["filter"] == "warnings" ? .warning : nil
+            model.selectStatus(item == nil ? Self.category(link.query["filter"]) : nil)
             model.statusView = link.query["view"] == "messages" ? .messages : .devices
             // items, catalogs and usages take comma-separated lists; fleets stays
             // unbound because the installs rows never carry one.
             func list(_ key: String) -> [String] { (link.query[key] ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
-            let items = list("items"), catalogs = list("catalogs"), usages = list("usages")
+            let items = list("items") + list("item"), catalogs = list("catalogs"), usages = list("usages")
             if !items.isEmpty || !catalogs.isEmpty || !usages.isEmpty {
                 model.selectedInstalls = items
                 model.selections.catalogs = Set(catalogs)
                 model.selections.usages = Set(usages)
-                Task { await model.generateReport(api: appState.api) }
+                Task {
+                    await model.generateReport(api: appState.api)
+                    if let itemStatus { model.installStatusFilter = itemStatus }
+                }
             }
             if model.itemsStatusFilter != nil { model.selectionsExpanded = false }
         }
@@ -98,6 +114,36 @@ struct InstallsReportView: View {
             model.selectStatus(category)
             model.selectionsExpanded = false
         }
+    }
+
+    /// The `?stale=1` and `?agent=` filters as removable chips.
+    private var staleBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal.decrease.circle").foregroundStyle(.secondary).accessibilityHidden(true)
+            if model.staleOnly {
+                linkChip(ReportLinkFilter.label(key: "stale", value: "1") + " (\(model.staleSerials.count))") { model.staleOnly = false }
+            }
+            if let agent = model.agentFilter {
+                linkChip(ReportLinkFilter.label(key: "agent", value: agent)) { model.agentFilter = nil }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+
+    private func linkChip(_ text: String, remove: @escaping () -> Void) -> some View {
+        Button(action: remove) {
+            HStack(spacing: 4) {
+                Text(text).appFont(.caption, weight: .medium)
+                Image(systemName: "xmark").appFont(.caption2)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Color.accentColor.opacity(0.14), in: Capsule())
+            .foregroundStyle(Color.accentColor)
+        }
+        .buttonStyle(.plain)
+        .help("Remove this filter")
+        .accessibilityLabel("Remove filter \(text)")
     }
 
     // MARK: Header
@@ -118,14 +164,6 @@ struct InstallsReportView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Managed Software Update Reporting").appFont(.title3, weight: .semibold)
                 Text(subtitle).appFont(.caption).foregroundStyle(.secondary)
-            }
-            if model.filtersLoading {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(model.loadingMessage.isEmpty ? "Loading managed installs data..." : model.loadingMessage).appFont(.caption2).foregroundStyle(.secondary)
-                    ProgressView().progressViewStyle(.linear).tint(.green)
-                }
-                .frame(maxWidth: 320)
-                .padding(.leading, 12)
             }
             Spacer()
             if !model.loading, !model.filtersLoading {
@@ -273,7 +311,7 @@ struct InstallsReportView: View {
         let manifestTotal = max(manifests.reduce(0) { $0 + $1.count }, 1)
         let munki = InstallsReport.versionCounts(devices, cimian: false)
         let cimian = InstallsReport.versionCounts(devices, cimian: true)
-        func pct(_ n: Int, _ total: Int) -> Int { Int((Double(n) / Double(max(total, 1)) * 100).rounded()) }
+        func pct(_ n: Int, _ total: Int) -> Int { ((Double(n) / Double(max(total, 1)) * 100).rounded()).safeInt }
         return LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12, alignment: .top)], alignment: .leading, spacing: 12) {
             DistributionBarsWidget(title: "Software Repos", rows: repos.map { .init(key: $0.repo, label: repoDisplay($0.repo), count: $0.count, percentage: pct($0.count, repoTotal)) },
                                    emptyText: "No software repos found", tone: .blue, selected: model.selectedSoftwareRepo, showPercent: false) { repo in
@@ -421,7 +459,7 @@ struct InstallsReportView: View {
             HStack {
                 Text(model.loadingMessage).appFont(.callout, weight: .medium)
                 Spacer()
-                Text("\(Int((model.reportProgress * 100).rounded()))%").appFont(.caption).foregroundStyle(.secondary)
+                Text("\(((model.reportProgress * 100).rounded()).safeInt)%").appFont(.caption).foregroundStyle(.secondary)
             }
             ProgressView(value: model.reportProgress).progressViewStyle(.linear)
             Text("Processing \(model.selectedInstalls.count) item\(model.selectedInstalls.count == 1 ? "" : "s") across \(model.filters.devicesWithData > 0 ? String(model.filters.devicesWithData) : "all") devices")

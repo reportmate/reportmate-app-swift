@@ -7,7 +7,8 @@ import ReportMateKit
 /// Port of `app/identity/page.tsx`.
 struct IdentityReportView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = FleetReportModel(path: "/identity")
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/identity") }
 
     enum Column { case device, directory, auth, users, loggedIn, lastSeen }
     enum TokenFilter { case withToken, missingToken }
@@ -31,6 +32,15 @@ struct IdentityReportView: View {
         [directoryFilter, authFilter, adminAccountFilter.map { "Admin: \($0)" }, showAdminsReport ? "Admins Report" : nil,
          tokenFilter.map { $0 == .withToken ? "SecureToken: holders" : "SecureToken: missing" },
          bootstrapFilter.map { $0 == .escrowed ? "Bootstrap: escrowed" : "Bootstrap: not escrowed" }].compactMap { $0 }
+    }
+
+    /// The widget filters as link parameters, for Copy Link.
+    private var identityWidgetQuery: [String: String] {
+        var q: [String: String] = [:]
+        if let directoryFilter { q["directory"] = directoryFilter }
+        if let authFilter { q["auth"] = authFilter.lowercased() }
+        if let adminAccountFilter { q["admin"] = adminAccountFilter }
+        return q
     }
 
     private func clearWidgetFilters() {
@@ -87,7 +97,19 @@ struct IdentityReportView: View {
                     filtered(rows).map { p in [p.row.deviceName, p.row.serialNumber, p.i.platformText, String(p.i.totalUsers), String(p.i.adminUsers), String(p.i.currentlyLoggedIn), p.row.json["lastSeen"].string ?? ""] }
                 }
             },
-            widgets: { rows in widgets(rows.map(i)) }
+            widgets: { rows in widgets(rows.map(i)) },
+            linking: ReportLinking(absorb: { f in
+                clearWidgetFilters()
+                // A Directory Services class or trust state selects the Directory Services widget.
+                let d = f.values("directory")
+                if d.count == 1, let label = IdentityDirectory.label(d[0]) { _ = f.take("directory"); directoryFilter = label }
+                // `auth` and `admin` select the Authentication and Administrator Accounts widgets.
+                let auth = f.values("auth")
+                if auth.count == 1 { _ = f.take("auth"); authFilter = auth[0].prefix(1).uppercased() + auth[0].dropFirst().lowercased() }
+                let admin = f.values("admin")
+                if admin.count == 1 { _ = f.take("admin"); adminAccountFilter = admin[0] }
+            }, matches: { row, f in f.matches(identity: IdentityReportRow(json: row.json), platform: row.platform) },
+            widgetQuery: identityWidgetQuery)
         ) { rows in
             let pairs = filtered(rows)
             VStack(spacing: 0) {
@@ -103,9 +125,9 @@ struct IdentityReportView: View {
 
     private func widgets(_ all: [IdentityReportRow]) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            directoryWidget(all).frame(width: 320)
-            authWidget(all).frame(width: 300)
-            adminsWidget(all).frame(width: 320)
+            directoryWidget(all).reportWidgetWidth(320)
+            authWidget(all).reportWidgetWidth(300)
+            adminsWidget(all).reportWidgetWidth(320)
         }
     }
 

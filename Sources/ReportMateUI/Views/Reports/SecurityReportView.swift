@@ -5,7 +5,8 @@ import ReportMateKit
 /// posture table. Port of `app/security/page.tsx`.
 struct SecurityReportView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = FleetReportModel(path: "/security")
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/security") }
 
     enum Column { case device, encryption, protection, detection, firewall, tampering, remote, certificates, cve }
     @State private var sortColumn: Column = .device
@@ -105,7 +106,8 @@ struct SecurityReportView: View {
                     }
                 }, label: "Export")
             },
-            widgets: { rows in widgets(rows.map(s)) }
+            widgets: { rows in widgets(rows.map(s)) },
+            linking: linking
         ) { rows in
             VStack(spacing: 0) {
                 ActiveFiltersBar(labels: widgetFilters, clear: clearWidgetFilters)
@@ -142,13 +144,49 @@ struct SecurityReportView: View {
         }
     }
 
+    /// Link parameters that match a donut select it; the rest (antivirus, SIP, Secure Boot,
+    /// expiring certificates, exploited CVEs) narrow the rows. `certSearch` runs the
+    /// certificate search and filters the table to that certificate.
+    private var linking: ReportLinking {
+        var q: [String: String] = [:]
+        if encryptionFilter == "Not Encrypted" { q["encryption"] = "off" }
+        if firewallFilter == "Disabled" { q["firewall"] = "off" }
+        if detectionFilter == "Threats Detected" { q["threats"] = "1" }
+        if certFilter == "Has Expired" { q["certs"] = "expired" }
+        if cveFilter == "Critical" { q["cve"] = "critical" }
+        if let selectedCertName {
+            q["certSearch"] = selectedCertName
+            if certStatus != "all" { q["certStatus"] = certStatus }
+        }
+        return ReportLinking(absorb: { f in
+            clearWidgetFilters()
+            selectedCertName = nil
+            if f.params["encryption"] == "off" { _ = f.take("encryption"); encryptionFilter = "Not Encrypted" }
+            if f.params["firewall"] == "off" { _ = f.take("firewall"); firewallFilter = "Disabled" }
+            if f.params["threats"] == "1" { _ = f.take("threats"); detectionFilter = "Threats Detected" }
+            if f.params["certs"] == "expired" { _ = f.take("certs"); certFilter = "Has Expired" }
+            if f.params["cve"] == "critical" { _ = f.take("cve"); cveFilter = "Critical" }
+            let name = f.take("certSearch").joined(separator: ",")
+            let status = f.take("certStatus").first
+            if !name.isEmpty {
+                certQuery = name
+                certStatus = status ?? "all"
+                certSearchExpanded = true
+                Task {
+                    await searchCertificates()
+                    selectedCertName = certGroups.first { $0.commonName == name }?.commonName ?? certGroups.first?.commonName
+                }
+            }
+        }, matches: { row, f in f.matches(security: SecurityReportRow(json: row.json, platform: row.platform)) }, widgetQuery: q)
+    }
+
     private func donutData(_ all: [SecurityReportRow], _ label: (SecurityReportRow) -> String) -> [(label: String, value: Int)] {
         countLabels(all.map(label)).map { ($0.label, $0.count) }
     }
 
     private func widgets(_ all: [SecurityReportRow]) -> some View {
         let green = Color.green, red = Color.red, amber = Color.orange, gray = Color.secondary.opacity(0.5), blue = Color.blue
-        return LazyVGrid(columns: Array(repeating: GridItem(.fixed(250), spacing: 12), count: 4), spacing: 12) {
+        return UniformGrid(minColumnWidth: 230, maxColumns: 8, spacing: 12) {
             MiniDonutWidget(title: "Encryption", data: donutData(all, \.encryptionLabel), colors: ["Encrypted": green, "Not Encrypted": red], selected: $encryptionFilter)
             // The API carries antivirus fields for Windows only (false on a Mac), so
             // the Protection figure describes the devices that report it, not the fleet.

@@ -4,8 +4,23 @@ import ReportMateKit
 
 /// Device management: enrollment and certificate cards, tool logs, profiles
 /// and managed preferences. Port of `ManagementTab.tsx`.
+/// A link's `tool` and `level` for the log viewer: `log:<tool>:<level>` on the device route.
+struct ManagementLogFocus: Hashable {
+    let tool: String
+    let level: String
+
+    init?(filter: String) {
+        let parts = filter.split(separator: ":", maxSplits: 2).map(String.init)
+        guard parts.count == 3, parts[0] == "log", !parts[1].isEmpty else { return nil }
+        tool = parts[1]
+        level = parts[2]
+    }
+}
+
 struct ManagementTabView: View {
     let device: DeviceDetail
+    /// Opens the log viewer on this tool and level.
+    var logFocus: ManagementLogFocus? = nil
     @State private var profileSearch = ""
     @State private var policySearch = ""
     @State private var expandedProfiles: Set<String> = []
@@ -22,7 +37,7 @@ struct ManagementTabView: View {
                     enrollmentCard(m).frame(maxWidth: .infinity)
                     if m.isEnrolled { certificateCard(m).frame(width: 340) }
                 }
-                if let logs = m.logs, !logs.roots.isEmpty { ManagementLogsSection(serialNumber: device.serialNumber, logs: logs, installs: device.asJSON["modules"]["installs"]) }
+                if let logs = m.logs, !logs.roots.isEmpty { ManagementLogsSection(serialNumber: device.serialNumber, logs: logs, installs: device.asJSON["modules"]["installs"], focus: logFocus) }
                 if !m.profiles.isEmpty { profilesSection(m) }
                 if m.isMac, !m.managedPolicies.isEmpty { policiesSection(m) }
             }
@@ -519,6 +534,8 @@ struct ManagementLogsSection: View {
     let logs: LogsInfo
     /// The installs module: a root's version falls back to its tool's installed version here.
     var installs: JSONValue = .null
+    /// A link's tool and level: that tool's tab, errors (or warnings) only.
+    var focus: ManagementLogFocus? = nil
 
     enum TailState { case loading, loaded(LogsInfo.Root), error(String) }
 
@@ -563,7 +580,15 @@ struct ManagementLogsSection: View {
                 if let root = roots.first(where: { $0.tool == activeTool }) { rootDetail(root) }
             }
         }
-        .onAppear { if activeTool == nil { activeTool = roots.first?.tool } }
+        .onAppear {
+            if let focus, roots.contains(where: { $0.tool == focus.tool }) {
+                activeTool = focus.tool
+                levelFilter = LogsInfo.LevelFilter()
+                if focus.level == "warning" { levelFilter.warnings = true } else { levelFilter.errors = true }
+            } else if activeTool == nil {
+                activeTool = roots.first?.tool
+            }
+        }
         .onChange(of: serialNumber) { tails = [:]; activeTool = roots.first?.tool }
         .task(id: "\(activeTool ?? "")-\(retryNonce)") { await loadIfNeeded() }
     }
@@ -695,7 +720,7 @@ struct ManagementLogsSection: View {
                             } else if case .error(let msg) = state {
                                 Text("Failed to load: \(msg)").appFont(.caption2).foregroundStyle(.secondary).padding(10)
                             } else {
-                                Text("Loading...").appFont(.caption2).foregroundStyle(.secondary).padding(10)
+                                SkeletonRows(count: 4).padding(10).skeletonAccessibility().skeletonTimeout()
                             }
                             if !withoutTails.isEmpty {
                                 Text("NOT TAILED").appFont(.caption2, weight: .medium).foregroundStyle(.tertiary).padding(.horizontal, 10).padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading).background(Color.subtleBackground.opacity(0.6))
@@ -750,7 +775,7 @@ struct ManagementLogsSection: View {
                     Divider()
                     Group {
                         if state == nil || { if case .loading = state { return true }; return false }() {
-                            Text("Loading log...").appFont(.callout).foregroundStyle(.secondary).padding(24).frame(maxWidth: .infinity)
+                            VStack(alignment: .leading, spacing: 8) { ForEach(0..<10, id: \.self) { i in SkeletonLine(fraction: [0.95, 0.7, 0.85, 0.6, 0.9][i % 5], height: 9) } }.padding(16).frame(maxWidth: .infinity).skeletonAccessibility("Loading log").skeletonTimeout()
                         } else if case .error(let msg) = state {
                             VStack(spacing: 10) {
                                 Text("Failed to load log: \(msg)").appFont(.callout).foregroundStyle(.red)

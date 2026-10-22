@@ -4,7 +4,9 @@ import ReportMateKit
 /// Fleet management report: providers, enrollment status and type widgets
 /// over the enrollment table. Port of `app/management/page.tsx`.
 struct ManagementReportView: View {
-    @State private var model = FleetReportModel(path: "/management")
+    @Environment(AppState.self) private var appState
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/management") }
 
     enum Column { case device, provider, status, type, deviceId }
     @State private var sortColumn: Column = .device
@@ -40,7 +42,15 @@ struct ManagementReportView: View {
     }
 
     var body: some View {
-        FleetReportContainer(
+        if appState.pages.managementMode == .logs {
+            ManagementLogsReportView()
+        } else {
+            enrollment
+        }
+    }
+
+    private var enrollment: some View {
+        var container = FleetReportContainer(
             section: .management, model: model, activeFilterCount: [providerFilter, statusFilter, typeFilter].compactMap { $0 }.count, clearFilters: { providerFilter = nil; statusFilter = nil; typeFilter = nil }, subtitle: "Enrollment status and type, providers, and configurations", searchPlaceholder: "Search devices",
             searchKeys: { row in
                 let d = ManagementReportRow(json: row.json)
@@ -51,13 +61,30 @@ struct ManagementReportView: View {
                     filtered(rows).map { p in [p.row.deviceName, p.row.serialNumber, p.row.inventory.assetTag ?? "", p.m.provider, p.m.enrollmentStatus, p.m.enrollmentType, p.row.inventory.usage ?? "", p.row.inventory.catalog ?? "", p.row.inventory.location ?? ""] }
                 }
             },
-            widgets: { rows in widgets(rows.map(m)) }
+            widgets: { rows in widgets(rows.map(m)) },
+            linking: linking
         ) { rows in
             VStack(spacing: 0) {
                 ActiveFiltersBar(labels: widgetFilters) { providerFilter = nil; statusFilter = nil; typeFilter = nil }
                 table(filtered(rows))
             }
         }
+        container.titleControl = AnyView(ManagementViewSwitch())
+        return container
+    }
+
+    /// `?provider=` and `?enrollmentType=` select the widget rows; `?enrolled=` narrows the rows.
+    private var linking: ReportLinking {
+        var q: [String: String] = [:]
+        if let providerFilter { q["provider"] = providerFilter }
+        if let typeFilter { q["enrollmentType"] = typeFilter }
+        return ReportLinking(absorb: { f in
+            providerFilter = nil; typeFilter = nil; statusFilter = nil
+            let providers = f.values("provider")
+            if providers.count == 1 { providerFilter = f.take("provider").first }
+            let types = f.values("enrollmentType")
+            if types.count == 1 { typeFilter = f.take("enrollmentType").first }
+        }, matches: { row, f in f.matches(management: ManagementReportRow(json: row.json), platform: row.platform, lastSeen: row.lastSeen) }, widgetQuery: q)
     }
 
     private func widgets(_ all: [ManagementReportRow]) -> some View {
@@ -68,9 +95,9 @@ struct ManagementReportView: View {
         // own slice so the percentages are shares of every device the header counts.
         let types = countLabels(all.map { $0.bootstrapMethod ?? "Not Enrolled" }).sorted { (order.firstIndex(of: $0.label) ?? 99) < (order.firstIndex(of: $1.label) ?? 99) }.map { ($0.label, $0.count) }
         return HStack(alignment: .top, spacing: 12) {
-            SingleCountListWidget(title: "Providers", counts: providers, selected: $providerFilter, emptyText: "No data available").frame(width: 300)
-            MiniDonutWidget(title: "Enrollment Status", data: statuses, colors: ["Enrolled": .green, "Pending": .orange, "Unenrolled": .red, "Not Enrolled": .red, "Error": .red], selected: $statusFilter).frame(width: 300)
-            MiniDonutWidget(title: "Enrollment Type", data: types, colors: ["Automated": .green, "User Approved": .cyan, "Manual": .red, "Not Enrolled": Color.secondary.opacity(0.5), "Other": Color.secondary.opacity(0.5)], selected: $typeFilter).frame(width: 300)
+            SingleCountListWidget(title: "Providers", counts: providers, selected: $providerFilter, emptyText: "No data available").reportWidgetWidth(300)
+            MiniDonutWidget(title: "Enrollment Status", data: statuses, colors: ["Enrolled": .green, "Pending": .orange, "Unenrolled": .red, "Not Enrolled": .red, "Error": .red], selected: $statusFilter).reportWidgetWidth(300)
+            MiniDonutWidget(title: "Enrollment Type", data: types, colors: ["Automated": .green, "User Approved": .cyan, "Manual": .red, "Not Enrolled": Color.secondary.opacity(0.5), "Other": Color.secondary.opacity(0.5)], selected: $typeFilter).reportWidgetWidth(300)
         }
     }
 

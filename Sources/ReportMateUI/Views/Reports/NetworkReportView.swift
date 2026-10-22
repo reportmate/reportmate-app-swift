@@ -3,7 +3,9 @@ import ReportMateKit
 
 /// Fleet network report. Port of `app/network/page.tsx`.
 struct NetworkReportView: View {
-    @State private var model = FleetReportModel(path: "/network")
+    @Environment(AppState.self) private var appState
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/network") }
 
     enum Column { case device, ip, mac, network }
     enum Connection { case wired, wireless, vpn }
@@ -58,10 +60,33 @@ struct NetworkReportView: View {
                     }
                 }
             },
-            widgets: { rows in widgets(rows.map(n)) }
+            widgets: { rows in widgets(rows.map(n)) },
+            linking: linking
         ) { rows in
             table(filtered(rows))
         }
+    }
+
+    /// `?connection=wired|wifi` and `?vpn=1` select the Wired, Wireless or VPN pill;
+    /// `?signal=weak` and `?quality=poor` narrow the rows.
+    private var linking: ReportLinking {
+        var q: [String: String] = [:]
+        if connection == .wired { q["connection"] = "wired" }
+        if connection == .wireless { q["connection"] = "wifi" }
+        if connection == .vpn { q["vpn"] = "1" }
+        return ReportLinking(absorb: { f in
+            speedFilter = nil
+            connection = nil
+            let c = f.values("connection")
+            if c.count == 1, let only = c.first?.lowercased(), only == "wired" || only == "wifi" {
+                _ = f.take("connection")
+                connection = only == "wired" ? .wired : .wireless
+            }
+            if f.params["vpn"] == "1", connection == nil {
+                _ = f.take("vpn")
+                connection = .vpn
+            }
+        }, matches: { row, f in f.matches(network: NetworkReportRow(json: row.json)) }, widgetQuery: q)
     }
 
     private func widgets(_ all: [NetworkReportRow]) -> some View {
@@ -75,25 +100,25 @@ struct NetworkReportView: View {
                 statRow("On", all.filter { $0.wirelessState == .on }.count, .yellow)
                 statRow("Connected", all.filter { $0.wirelessState == .connected }.count, .green)
             }
-            .frame(width: 220)
+            .reportWidgetWidth(220)
             ReportWidgetBox(title: "Wireless Networks") {
                 if names.isEmpty { Text("No networks detected").appFont(.caption).foregroundStyle(.tertiary) }
                 ForEach(names.prefix(5), id: \.label) { statRow($0.label, $0.count, nil) }
             }
-            .frame(width: 240)
+            .reportWidgetWidth(240)
             SingleCountListWidget(title: "Network Quality", counts: NetworkReportRow.Speed.allCases.compactMap { s in
                 let count = all.filter { $0.speed == s }.count
                 if s == .nodata, count == 0 { return nil }
                 return (s.label, count, speedColor(s))
             }, selected: Binding(get: { speedFilter?.label }, set: { label in speedFilter = NetworkReportRow.Speed.allCases.first { $0.label == label } }))
-            .frame(width: 220)
+            .reportWidgetWidth(220)
             ReportWidgetBox(title: "Signal Quality") {
                 statRow("Excellent", all.filter { $0.signal == .excellent }.count, .green)
                 statRow("Good", all.filter { $0.signal == .good }.count, .teal)
                 statRow("Fair", all.filter { $0.signal == .fair }.count, .yellow)
                 statRow("Poor", all.filter { $0.signal == .poor }.count, .red)
             }
-            .frame(width: 220)
+            .reportWidgetWidth(220)
         }
     }
 
@@ -152,7 +177,7 @@ struct NetworkReportView: View {
         }
     }
 
-    private func trim(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(v) }
+    private func trim(_ v: Double) -> String { v == v.rounded() ? String((v).safeInt) : String(v) }
 
     private func monoCell(_ value: String?, width: CGFloat) -> some View {
         HStack(spacing: 4) {

@@ -142,7 +142,7 @@ struct SystemTabView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         Group {
-                            if let kb = u.kbNumber, let url = URL(string: "https://support.microsoft.com/help/\(kb.replacingOccurrences(of: "KB", with: ""))") {
+                            if let kb = u.kbNumber, let url = SafeLink.url(base: "https://support.microsoft.com/help/", component: kb.replacingOccurrences(of: "KB", with: "")) {
                                 Link(kb, destination: url).appFont(.caption, design: .monospaced)
                             } else { Text("-").foregroundStyle(.tertiary) }
                         }
@@ -153,7 +153,7 @@ struct SystemTabView: View {
                             if u.cves.isEmpty { Text("-").foregroundStyle(.tertiary) } else {
                                 FlowLayout(spacing: 4) {
                                     ForEach(u.cves.prefix(2), id: \.self) { cve in
-                                        if let url = URL(string: "https://msrc.microsoft.com/update-guide/vulnerability/\(cve)") {
+                                        if let url = SafeLink.url(base: "https://msrc.microsoft.com/update-guide/vulnerability/", component: cve) {
                                             Link(cve, destination: url).appFont(.caption2, design: .monospaced).foregroundStyle(.red)
                                         }
                                     }

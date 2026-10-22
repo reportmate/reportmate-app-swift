@@ -19,15 +19,9 @@ struct TopNavBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if onDevicePage {
-                // On one device the page's own tabs are the point; the fleet reports
-                // repeat the same module names, so they fold into the menu as on a
-                // narrow window.
-                HStack(spacing: 4) {
-                    ForEach(AppSection.fleet) { tab($0) }
-                    reportsMenu
-                }
-            } else if inline, !fitsRow {
+            // The same tabs on every page, a device page included: the bar never changes
+            // shape on navigation, so the toolbar never re-lays itself out mid-transition.
+            if inline, !fitsRow {
                 HStack(spacing: 4) {
                     ForEach(AppSection.fleet) { tab($0) }
                     if compact {
@@ -64,20 +58,13 @@ struct TopNavBar: View {
         .overlay(alignment: .bottom) { if !inline, !fitsRow { Divider() } }
     }
 
-    private var onDevicePage: Bool {
-        switch appState.currentRoute {
-        case .device, .localDevice: return true
-        default: return false
-        }
-    }
-
     private func select(_ section: AppSection) {
         appState.path = NavigationPath()
         appState.section = section
     }
 
     private func tab(_ section: AppSection) -> some View {
-        let active = appState.section == section
+        let active = appState.highlightedSection == section
         return Button { select(section) } label: {
             HStack(spacing: 5) {
                 Image(systemName: section.systemImage).appFont(fixed: 11)
@@ -101,7 +88,7 @@ struct TopNavBar: View {
     }
 
     private var reportsMenu: some View {
-        let current = appState.section.isReport ? appState.section : nil
+        let current = appState.highlightedSection.flatMap { $0.isReport ? $0 : nil }
         return Menu {
             ForEach(AppSection.reports) { section in
                 Button { select(section) } label: { Label(section.title, systemImage: section.systemImage) }

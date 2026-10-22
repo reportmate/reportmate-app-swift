@@ -445,9 +445,9 @@ struct SecurityTabView: View {
         return card("Firewall", icon: "square.grid.3x3", tone: .blue) {
             if s.isMac {
                 status("Global State", s.firewallEnabled, on: "On", off: "Off", severity: s.severity("firewall", s.firewallEnabled))
-                status("Stealth Mode", SecurityInfo.on(fw["stealthMode"]), neutral: true)
+                status("Stealth Mode", s.firewallStealthMode, neutral: true)
                 status("Logging", SecurityInfo.on(fw["loggingEnabled"]), neutral: true)
-                status("Allow Signed Apps", SecurityInfo.on(fw["allowSignedSoftware"]), on: "Allowed", off: "Blocked", neutral: true)
+                status("Allow Signed Apps", s.firewallAllowsSigned, on: "Allowed", off: "Blocked", neutral: true)
             } else {
                 groupTitle("Windows Firewall")
                 row("Profile", fw["profile"].nonEmptyString ?? "Domain/Private/Public")
@@ -702,7 +702,7 @@ struct SecurityTabView: View {
                             HStack(spacing: 4) { Text("Release:").appFont(.caption, weight: .medium); Text(name).appFont(.caption) }
                             if let d = release.releaseDate { HStack(spacing: 4) { Text("Date:").appFont(.caption, weight: .medium); Text(TimeFormatting.shortDate(d)).appFont(.caption) } }
                             if let days = release.daysSincePreviousRelease { HStack(spacing: 4) { Text("Days since last:").appFont(.caption, weight: .medium); Text("\(days)").appFont(.caption) } }
-                            if let info = release.securityInfo, let url = URL(string: info) { Link("Apple Security Notes →", destination: url).appFont(.caption) }
+                            if let url = SafeLink.url(release.securityInfo) { Link("Apple Security Notes →", destination: url).appFont(.caption) }
                         }
                         .foregroundStyle(.secondary)
                     }
@@ -731,7 +731,7 @@ struct SecurityTabView: View {
                     ForEach(filtered) { c in
                         HStack(spacing: 12) {
                             Group {
-                                if let u = c.url, let url = URL(string: u) { Link(c.cve, destination: url).appFont(.caption, design: .monospaced) }
+                                if let url = SafeLink.url(c.url) { Link(c.cve, destination: url).appFont(.caption, design: .monospaced) }
                                 else { Text(c.cve).appFont(.caption, design: .monospaced) }
                             }
                             .frame(width: 160, alignment: .leading)

@@ -24,11 +24,20 @@ public enum ChipNames {
     }
 }
 
-/// Builds CSV text the way the web export buttons do.
+/// Builds CSV text the way the web export buttons do. Every cell goes through `cell`,
+/// the app's only CSV writer, because the cells are device-reported text.
 public enum CSVText {
     public static func encode(headers: [String], rows: [[String]]) -> String {
-        func esc(_ s: String) -> String { "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
-        return ([headers.map(esc).joined(separator: ",")] + rows.map { $0.map(esc).joined(separator: ",") }).joined(separator: "\n")
+        ([headers.map(cell).joined(separator: ",")] + rows.map { $0.map(cell).joined(separator: ",") }).joined(separator: "\n")
+    }
+
+    /// One quoted CSV cell, safe to open in a spreadsheet. A value starting with `=`, `+`,
+    /// `-`, `@`, a tab or a carriage return would run as a formula there (a device can
+    /// name itself `=HYPERLINK(…)`), so it gets a leading `'`; quotes are doubled.
+    public static func cell(_ value: String) -> String {
+        var v = value
+        if let first = v.unicodeScalars.first, ["=", "+", "-", "@", "\t", "\r"].contains(Character(first)) { v = "'" + v }
+        return "\"" + v.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 
     public static func dateStamp(_ date: Date = Date()) -> String {
@@ -176,7 +185,7 @@ public struct HardwareReportRow: Sendable, Hashable {
         guard gb > 0 else { return "Unknown" }
         let sizes: [Double] = [2, 4, 8, 12, 16, 24, 32, 36, 48, 64, 96, 128, 192, 256, 384, 512]
         let best = sizes.min { abs(gb - $0) < abs(gb - $1) } ?? sizes[0]
-        return "\(Int(best)) GB"
+        return "\((best).safeInt) GB"
     }
 
     public var memoryText: String {
@@ -186,9 +195,9 @@ public struct HardwareReportRow: Sendable, Hashable {
         if bytes > 0 {
             if bytes >= 1_000_000_000 {
                 let gb = (bytes / 1_073_741_824 * 10).rounded() / 10
-                return gb == gb.rounded() ? "\(Int(gb)) GB" : "\(gb) GB"
+                return gb == gb.rounded() ? "\((gb).safeInt) GB" : "\(gb) GB"
             }
-            return "\(Int((bytes / 1_048_576).rounded())) MB"
+            return "\(((bytes / 1_048_576).rounded()).safeInt) MB"
         }
         if let s = memory.string { return s.replacingOccurrences(of: ".0 GB", with: " GB") }
         return "Unknown"
@@ -222,7 +231,7 @@ public struct HardwareReportRow: Sendable, Hashable {
         if storage.isNull { return ("No drives", nil) }
         if let s = storage.string { return (s, nil) }
         guard let drives = storage.array else {
-            if let n = storage.double { return (n >= 1_000_000_000_000 ? String(format: "%.1f TB", n / 1_099_511_627_776) : "\(Int((n / 1_073_741_824).rounded())) GB", nil) }
+            if let n = storage.double { return (n >= 1_000_000_000_000 ? String(format: "%.1f TB", n / 1_099_511_627_776) : "\(((n / 1_073_741_824).rounded()).safeInt) GB", nil) }
             return ("Unknown", nil)
         }
         if drives.isEmpty { return ("No drives", nil) }
@@ -230,9 +239,9 @@ public struct HardwareReportRow: Sendable, Hashable {
         guard total > 0 else { return ("\(drives.count) drives", nil) }
         let gb = total / 1_073_741_824
         let totalText: String
-        if gb >= 3500 { totalText = "4 TB" } else if gb >= 1700 { totalText = "2 TB" } else if gb >= 900 { totalText = "1 TB" } else if gb >= 450 { totalText = "512 GB" } else { totalText = "\(Int(gb.rounded())) GB" }
+        if gb >= 3500 { totalText = "4 TB" } else if gb >= 1700 { totalText = "2 TB" } else if gb >= 900 { totalText = "1 TB" } else if gb >= 450 { totalText = "512 GB" } else { totalText = "\((gb.rounded()).safeInt) GB" }
         let freeGB = free / 1_073_741_824
-        let freeText: String? = free > 0 ? (freeGB >= 900 ? String(format: "%.1f TB", freeGB / 1024) : "\(Int(freeGB.rounded())) GB") : nil
+        let freeText: String? = free > 0 ? (freeGB >= 900 ? String(format: "%.1f TB", freeGB / 1024) : "\((freeGB.rounded()).safeInt) GB") : nil
         return (totalText, freeText)
     }
 }
@@ -318,6 +327,17 @@ public struct NetworkReportRow: Sendable, Hashable {
         return .unknown
     }
 
+    /// A Low network-quality rating (or, with no overall rating, a Low download or
+    /// upload rating), the rule the dashboard's Connectivity Problems card counts.
+    public var isPoorQuality: Bool {
+        let raw = json["raw"].isNull ? json["modules"]["network"] : json["raw"]
+        let nq = raw["networkQuality"]
+        guard nq.object != nil else { return false }
+        let rating = (nq["rating"].string ?? "").lowercased()
+        if !rating.isEmpty { return rating == "low" }
+        return (nq.firstString("dlRating", "dl_rating") ?? "").lowercased() == "low" || (nq.firstString("ulRating", "ul_rating") ?? "").lowercased() == "low"
+    }
+
     public var isWired: Bool { let ct = (info.connectionType ?? "").lowercased(); return ct.contains("ethernet") || ct.contains("wired") }
     public var isWireless: Bool { let ct = (info.connectionType ?? "").lowercased(); return ct.contains("wireless") || ct.contains("wifi") }
     public var ssid: String? { info.ssid ?? info.activeWifiSsid ?? info.raw["networkName"].nonEmptyString }
@@ -393,6 +413,7 @@ public struct SecurityReportRow: Sendable, Hashable {
     public var certificateCount: Int? { json["certificateCount"].int }
     public var cveCount: Int { json["cveCount"].int ?? 0 }
     public var criticalCveCount: Int { json["criticalCveCount"].int ?? 0 }
+    public var activelyExploitedCveCount: Int { json["activelyExploitedCveCount"].int ?? 0 }
     public var autoLoginUser: String? { json["autoLoginUser"].nonEmptyString }
 
     public var encryptionLabel: String { encryptionEnabled ? "Encrypted" : "Not Encrypted" }
@@ -581,6 +602,12 @@ public struct IdentityReportRow: Sendable, Hashable {
     public var trustStatus: String?
     public var authMethod: String?
     public var sessionSummary: SessionSummary?
+    /// Joined to Active Directory (bound, or `isDomainJoined`).
+    public var domainJoined: Bool
+    /// Joined to Entra ID (`azureAd.joined`, or a Platform SSO registration on a Mac).
+    public var entraJoined: Bool
+    /// The inventory usage ("Shared", "Assigned").
+    public var usage: String?
 
     /// Reads both shapes: the flat row the web's `/api/v1/identity` route hands its
     /// page, and the FastAPI row it is built from (`summary`, `directoryServices`,
@@ -606,6 +633,9 @@ public struct IdentityReportRow: Sendable, Hashable {
         let ssoRegistered = json["platformSSORegistered"].boolish || json["platformSSOUsers"]["deviceRegistered"].boolish
         let domainJoined = json["domainJoined"].boolish || ad["bound"].boolish || ad["isDomainJoined"].boolish
         let entraJoined = json["entraJoined"].boolish || entra["joined"].boolish || ssoRegistered
+        self.domainJoined = domainJoined
+        self.entraJoined = entraJoined
+        usage = json["usage"].nonEmptyString ?? json["inventory"]["usage"].nonEmptyString
         adBound = json["adBound"].boolish || ad["bound"].boolish
         ldapBound = json["ldapBound"].boolish || ds["ldap"]["bound"].boolish
         usernames = json["users"].elements.compactMap { $0["username"].nonEmptyString }
@@ -740,7 +770,7 @@ public struct SystemReportRow: Sendable, Hashable {
     /// `formatUptime`: "3d 4h", "5h 12m", "45m".
     public var uptimeText: String? {
         guard let s = uptime, s > 0 else { return nil }
-        let days = Int(s / 86_400), hours = Int(s.truncatingRemainder(dividingBy: 86_400) / 3600), mins = Int(s.truncatingRemainder(dividingBy: 3600) / 60)
+        let days = (s / 86_400).safeInt, hours = (s.truncatingRemainder(dividingBy: 86_400) / 3600).safeInt, mins = (s.truncatingRemainder(dividingBy: 3600) / 60).safeInt
         if days > 0 { return "\(days)d \(hours)h" }
         if hours > 0 { return "\(hours)h \(mins)m" }
         return "\(mins)m"

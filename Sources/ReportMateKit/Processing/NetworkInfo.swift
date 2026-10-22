@@ -351,20 +351,20 @@ public struct NetworkInfo: Sendable, Hashable {
                       m.numberOfRanges > 1, let r = Range(m.range(at: 1), in: output) else { return nil }
                 return String(output[r])
             }
-            if let v = match(#"Uplink capacity:\s*([\d.]+)\s*Mbps"#).flatMap(Double.init) { q.uplinkCapacity = "\(Int(v.rounded())) Mbps" }
-            if let v = match(#"Downlink capacity:\s*([\d.]+)\s*Mbps"#).flatMap(Double.init) { q.downlinkCapacity = "\(Int(v.rounded())) Mbps" }
+            if let v = match(#"Uplink capacity:\s*([\d.]+)\s*Mbps"#).flatMap(Double.init) { q.uplinkCapacity = "\((v.rounded()).safeInt) Mbps" }
+            if let v = match(#"Downlink capacity:\s*([\d.]+)\s*Mbps"#).flatMap(Double.init) { q.downlinkCapacity = "\((v.rounded()).safeInt) Mbps" }
             q.uplinkResponsiveness = match(#"Uplink Responsiveness:\s*(\w+)"#)
             q.downlinkResponsiveness = match(#"Downlink Responsiveness:\s*(\w+)"#)
-            if let v = match(#"Idle Latency:\s*([\d.]+)\s*milliseconds"#).flatMap(Double.init) { q.idleLatency = "\(Int(v.rounded())) ms" }
+            if let v = match(#"Idle Latency:\s*([\d.]+)\s*milliseconds"#).flatMap(Double.init) { q.idleLatency = "\((v.rounded()).safeInt) ms" }
             networkQuality = q
         } else if !nq.isNull, nq.firstDouble("dlThroughput", "dl_throughput", "ulThroughput", "ul_throughput") != nil || nq["rating"].string != nil {
             var q = Quality()
-            if let dl = nq.firstDouble("dlThroughput", "dl_throughput") { q.downlinkCapacity = "\(Int(dl.rounded())) Mbps" }
-            if let ul = nq.firstDouble("ulThroughput", "ul_throughput") { q.uplinkCapacity = "\(Int(ul.rounded())) Mbps" }
+            if let dl = nq.firstDouble("dlThroughput", "dl_throughput") { q.downlinkCapacity = "\((dl.rounded()).safeInt) Mbps" }
+            if let ul = nq.firstDouble("ulThroughput", "ul_throughput") { q.uplinkCapacity = "\((ul.rounded()).safeInt) Mbps" }
             q.downlinkResponsiveness = nq.firstString("dlRating", "dl_rating")
             q.uplinkResponsiveness = nq.firstString("ulRating", "ul_rating")
-            if let l = nq.firstDouble("idleLatency", "idle_latency") { q.idleLatency = "\(Int(l.rounded())) ms" }
-            if let j = nq["jitter"].double { q.jitter = "\(Int(j.rounded())) ms" }
+            if let l = nq.firstDouble("idleLatency", "idle_latency") { q.idleLatency = "\((l.rounded()).safeInt) ms" }
+            if let j = nq["jitter"].double { q.jitter = "\((j.rounded()).safeInt) ms" }
             q.serverName = nq["serverName"].nonEmptyString
             q.source = nq["source"].nonEmptyString
             networkQuality = q

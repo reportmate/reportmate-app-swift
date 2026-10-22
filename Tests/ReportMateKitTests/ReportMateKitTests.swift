@@ -749,11 +749,102 @@ final class ScriptedURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     @Test func onlyInheritedPassphraseConfigsAreUpgraded() async {
-        var saved = AppConfiguration(baseURL: "https://api.example.invalid", authMethod: .passphrase, passphrase: "SAMPLE")
-        saved.inheritedFromRunner = false
-        #expect(await saved.preferringEntra() == saved)
+        let offline: @Sendable (String) async throws -> AuthConfig = { _ in
+            Issue.record("discovery should not run")
+            return AuthConfig(oidcEnabled: false, audience: nil, issuers: [])
+        }
+        var typed = AppConfiguration(baseURL: "https://api.example.invalid", authMethod: .passphrase, passphrase: "SAMPLE")
+        typed.credentialSource = .environment
+        #expect(await typed.resolvingEntra(discover: offline) == typed)
         let keyed = AppConfiguration(baseURL: "https://api.example.invalid", authMethod: .apiKey, apiKey: "rm_SAMPLE")
-        #expect(await keyed.preferringEntra() == keyed)
+        #expect(await keyed.resolvingEntra(discover: offline) == keyed)
+    }
+
+    @Test func entraWithoutAudienceTakesTheAdvertisedOne() async {
+        var config = AppConfiguration(baseURL: "https://api.example.invalid", authMethod: .entraBearer)
+        config.inheritedFromRunner = true
+        #expect(config.needsEntraResolution && !config.isConfigured)
+        let resolved = await config.resolvingEntra { _ in AuthConfig(oidcEnabled: true, audience: "api://sample", issuers: []) }
+        #expect(resolved.oidcAudience == "api://sample" && resolved.isConfigured && !resolved.needsEntraResolution)
+    }
+
+    @Test func typedURLDoesNotAdoptAnAudienceSilently() async {
+        let config = AppConfiguration(baseURL: "https://api.example.invalid", authMethod: .entraBearer)
+        let resolved = await config.resolvingEntra { _ in
+            Issue.record("discovery should not run for a typed URL")
+            return AuthConfig(oidcEnabled: true, audience: "api://sample", issuers: [])
+        }
+        #expect(resolved == config)
+    }
+
+    @Test func advertisedFirstPartyAudiencesAreRefused() async {
+        var config = AppConfiguration(baseURL: "https://api.example.invalid", authMethod: .entraBearer)
+        config.inheritedFromRunner = true
+        for audience in ["https://graph.microsoft.com", "https://management.azure.com/", "https://vault.azure.net", "00000003-0000-0000-c000-000000000000", "26c197e0-3c53-4c52-b104-2f84b1669105"] {
+            let resolved = await config.resolvingEntra { _ in AuthConfig(oidcEnabled: true, audience: audience, issuers: []) }
+            #expect(resolved == config)
+        }
+        #expect(AppConfiguration.isAcceptableAudience("api://SAMPLE"))
+    }
+
+    @Test func discoveryNeedsHTTPS() async {
+        var config = AppConfiguration(baseURL: "http://api.example.invalid", authMethod: .entraBearer)
+        config.inheritedFromRunner = true
+        let resolved = await config.resolvingEntra { _ in
+            Issue.record("discovery should not run over http")
+            return AuthConfig(oidcEnabled: true, audience: "api://sample", issuers: [])
+        }
+        #expect(resolved == config)
+        #expect(AppConfiguration.isTrustedDiscoveryURL("http://localhost:8000"))
+    }
+}
+
+@Suite struct ConfigurationSourceTests {
+    private func defaults() -> UserDefaults {
+        let name = "reportmate-test-\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: name)!
+        d.removePersistentDomain(forName: name)
+        return d
+    }
+
+    private var runnerWithPassphrase: AppConfiguration {
+        var runner = AppConfiguration(baseURL: "https://api.example.org", authMethod: .passphrase, passphrase: "SAMPLE")
+        runner.credentialSource = .runner
+        return runner
+    }
+
+    @Test func defaultsToEntraWithNothingStored() {
+        let config = AppConfiguration.load(defaults: defaults(), managed: [:], runner: AppConfiguration(baseURL: "https://api.example.org"), environment: [:])
+        #expect(config.authMethod == .entraBearer && config.inheritedFromRunner && config.needsEntraResolution)
+    }
+
+    @Test func runnerPassphraseWaitsForEntraResolution() {
+        let config = AppConfiguration.load(defaults: defaults(), managed: [:], runner: runnerWithPassphrase, environment: [:])
+        #expect(config.authMethod == .passphrase && config.credentialSource == .runner && config.needsEntraResolution)
+    }
+
+    @Test func savedEntraChoiceIgnoresTheRunnerPassphrase() {
+        let d = defaults()
+        var saved = AppConfiguration(baseURL: "https://api.example.org", authMethod: .entraBearer, oidcAudience: "api://sample")
+        saved.inheritedFromRunner = true
+        saved.save(defaults: d)
+        let config = AppConfiguration.load(defaults: d, managed: [:], runner: runnerWithPassphrase, environment: [:])
+        #expect(config.authMethod == .entraBearer && config.passphrase.isEmpty && config.isConfigured && !config.needsEntraResolution)
+        #expect(d.string(forKey: AppConfiguration.baseURLDefaultsKey) == nil, "an inherited URL is not saved")
+    }
+
+    @Test func secretsComeOnlyFromEnvironmentOrProfile() {
+        let d = defaults()
+        let typed = AppConfiguration(baseURL: "https://api.example.org", authMethod: .apiKey, apiKey: "rm_SAMPLE_secret", passphrase: "SAMPLE_pass")
+        typed.save(defaults: d)
+        let stored = d.dictionaryRepresentation().values.compactMap { $0 as? String }
+        #expect(!stored.contains("rm_SAMPLE_secret") && !stored.contains("SAMPLE_pass"))
+        let fromProfile = AppConfiguration.load(defaults: d, managed: ["ApiKey": "rm_SAMPLE_profile"], runner: nil, environment: [:])
+        #expect(fromProfile.apiKey == "rm_SAMPLE_profile" && fromProfile.credentialSource == .managedProfile && fromProfile.isConfigured)
+        let fromEnv = AppConfiguration.load(defaults: d, managed: [:], runner: nil, environment: ["REPORTMATE_API_KEY": "rm_SAMPLE_env"])
+        #expect(fromEnv.apiKey == "rm_SAMPLE_env" && fromEnv.credentialSource == .environment)
+        let none = AppConfiguration.load(defaults: d, managed: [:], runner: nil, environment: [:])
+        #expect(none.apiKey.isEmpty && !none.isConfigured)
     }
 }
 

@@ -64,7 +64,7 @@ struct VersionDistributionStrip: View {
     }
 
     private func versionRow(card: VersionCard, version: String, count: Int) -> some View {
-        let pct = card.total > 0 ? Int((Double(count) / Double(card.total) * 100).rounded()) : 0
+        let pct = card.total > 0 ? ((Double(count) / Double(card.total) * 100).rounded()).safeInt : 0
         let on = selected.contains(ApplicationsReport.versionFilter(app: card.name, version: version))
         return Button { toggle(version, card.name) } label: {
             VStack(spacing: 3) {
@@ -192,7 +192,7 @@ struct StackedBarWidget: View {
                         RoundedRectangle(cornerRadius: 2).fill(UsagePalette.color(i)).frame(width: 10, height: 10)
                         Text(item.label).appFont(.caption).lineLimit(1).truncationMode(.middle).help(item.label)
                         Spacer()
-                        Text("\(metric.format(item.value)) (\(Int((item.value / total * 100).rounded()))%)").appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        Text("\(metric.format(item.value)) (\(((item.value / total * 100).rounded()).safeInt)%)").appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
                 }
             }

@@ -7,7 +7,7 @@ import ReportMateKit
 /// application names. Port of `app/applications/page.tsx`.
 struct ApplicationsReportView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = ApplicationsReportModel()
+    private var model: ApplicationsReportModel { appState.pages.applications }
 
     enum UsageColumn { case name, activeHours, totalHours, launchCount, deviceCount, userCount, lastUsed }
     enum VersionsColumn { case application, version, usage, catalog, area, location, device }
@@ -149,7 +149,7 @@ struct ApplicationsReportView: View {
                 .background(Color.subtleBackground, in: RoundedRectangle(cornerRadius: 8))
                 .frame(width: 260)
                 HStack(spacing: 8) {
-                    if model.loading { ProgressView().controlSize(.small) }
+                    if model.loading { Text("Updating…").appFont(.caption).foregroundStyle(.secondary) }
                     if model.reportType == .usage, model.utilization != nil { periodPicker }
                     actionButtons
                     exportButton
@@ -245,18 +245,19 @@ struct ApplicationsReportView: View {
 
     // MARK: Loading and builder
 
+    /// The chip cloud and the report as skeletons while the filters load (60-90 s the first time).
     private var filtersProgress: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("Loading applications data from all devices...").appFont(.callout, weight: .medium)
-                Spacer()
+        VStack(alignment: .leading, spacing: 12) {
+            Text(model.loadingMessage.isEmpty ? "Loading applications from every device; the first load takes a minute or so." : model.loadingMessage)
+                .appFont(.caption).foregroundStyle(.secondary)
+            FlowLayout(spacing: 6) {
+                ForEach(0..<48, id: \.self) { i in SkeletonBlock(width: CGFloat([70, 110, 90, 140, 60, 100, 80, 120][i % 8]), height: 22, radius: 11) }
             }
-            ProgressView().progressViewStyle(.linear)
-            Text(model.loadingMessage.isEmpty ? "First load may take 60-90 seconds" : model.loadingMessage).appFont(.caption).foregroundStyle(.secondary)
+            .skeletonAccessibility("Loading applications")
+            SkeletonTableRows(rows: 8, columns: [nil, 120, 120, 120])
         }
-        .frame(maxWidth: 560)
-        .padding(.vertical, 32)
-        .frame(maxWidth: .infinity)
+        .padding(16)
+        .skeletonTimeout(fillsPage: true) { Task { await model.loadFilters(api: appState.api, force: true) } }
     }
 
     private var builder: some View {
@@ -467,7 +468,7 @@ struct ApplicationsReportView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(ApplicationsReport.duration(seconds: app.totalSeconds)).appFont(.callout).foregroundStyle(.secondary)
                 Text(String(format: "%.1f hours", app.totalHours)).appFont(.caption2).foregroundStyle(.secondary)
-                if let ratio = app.activeRatio { Pill("\(Int((ratio * 100).rounded()))% active", tone: .gray) }
+                if let ratio = app.activeRatio { Pill("\(((ratio * 100).rounded()).safeInt)% active", tone: .gray) }
             }
             .frame(width: 130, alignment: .leading)
             Text(app.launchCount.formatted()).appFont(.callout).monospacedDigit().frame(width: 90, alignment: .leading)

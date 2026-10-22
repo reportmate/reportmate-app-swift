@@ -53,12 +53,11 @@ struct ContentView: View {
             // One row, like the web header: platform toggle on the left, search dead
             // centre, the sections on the right. Fixed items only: a fit-to-width
             // view inside a toolbar item makes the whole toolbar overflow.
-            // The dashboard is the app's front door: it carries the app icon and name
-            // where the web shows its logo and wordmark.
-            if appState.section == .dashboard, appState.path.isEmpty {
-                ToolbarItem(placement: .navigation) {
-                    Image(nsImage: AppLogo.image).resizable().aspectRatio(contentMode: .fit).frame(height: 24)
-                }
+            // The app icon where the web shows its logo, on every page: an item that comes
+            // and goes with the page makes the toolbar re-lay itself out mid-transition,
+            // drawing the search field over the section tabs for a moment.
+            ToolbarItem(placement: .navigation) {
+                Image(nsImage: AppLogo.image).resizable().aspectRatio(contentMode: .fit).frame(height: 24)
             }
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 10) {
@@ -181,7 +180,14 @@ struct ContentView: View {
 
     @ViewBuilder
     private var sectionView: some View {
-        if !appState.isConfigured {
+        if appState.connectionResolving {
+            // The page's skeleton while the credential settles; nothing is requested yet.
+            switch appState.section {
+            case .dashboard: DashboardView(placeholder: true)
+            case .devices, .events: VStack(spacing: 0) { SkeletonTableRows(rows: 18, columns: [240, 110, 140, nil, 120]); Spacer(minLength: 0) }.skeletonTimeout(fillsPage: true)
+            default: ReportSkeleton().skeletonTimeout(fillsPage: true)
+            }
+        } else if !appState.isConfigured {
             NotConfiguredView()
         } else {
             switch appState.section {
@@ -281,12 +287,12 @@ private struct SharedTasks: ViewModifier {
     func body(content: Content) -> some View {
         content
             .task { kiosk.attach(appState) }
-            .task { await appState.preferEntraIfAvailable() }
+            .task { await appState.resolveConnection() }
             // ⌘K (and the Find Device menu item) puts the cursor in the toolbar search.
             .onChange(of: appState.showSearch) { _, wants in
                 if wants { searchFocused.wrappedValue = true; appState.showSearch = false }
             }
-            .task(id: appState.configuration) {
+            .task(id: appState.isConfigured ? appState.configuration : nil) {
                 guard appState.isConfigured else { return }
                 await appState.loadSettings()
                 await appState.loadDevices()

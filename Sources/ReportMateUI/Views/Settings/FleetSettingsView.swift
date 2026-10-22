@@ -58,6 +58,8 @@ final class FleetSettingsStore {
     var status: String?
     var saving = false
     private var loadedOnce = false
+    /// No answer from the API yet: the tabs draw their layout as placeholders.
+    var awaiting: Bool { response == nil && status == nil }
 
     /// The API has no saved document yet, or setup never finished.
     var isFirstTime: Bool {
@@ -143,11 +145,15 @@ struct FleetSettingsView: View {
                         .appFont(.callout)
                     Spacer()
                     if let webSettingsURL {
-                        Button("Open in Web") { NSWorkspace.shared.open(webSettingsURL) }.buttonStyle(.borderedProminent)
+                        Button("Open in Web") { if let url = SafeLink.url(webSettingsURL) { NSWorkspace.shared.open(url) } }.buttonStyle(.borderedProminent)
                     }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 8)
                 .background(Color.blue.opacity(0.08))
+            }
+            if store.awaiting, section != .maintenance {
+                // Nothing for ten seconds after the placeholders appear, then "Still loading…".
+                Color.clear.frame(height: 0).skeletonTimeout { Task { await store.load(appState) } }
             }
             Group {
                 switch section {
@@ -159,6 +165,9 @@ struct FleetSettingsView: View {
                 }
             }
             .disabled(readOnly && section != .kiosk)
+            // The editors over the defaults, greyed into placeholders until the API answers.
+            .redacted(reason: store.awaiting && section != .maintenance ? .placeholder : [])
+            .modifier(ShimmerWhile(active: store.awaiting && section != .maintenance))
         }
         .task { await store.loadIfNeeded(appState) }
         .sheet(isPresented: $showWizard) {
@@ -430,7 +439,7 @@ struct KioskSettingsEditor: View {
                 }
                 Picker("Zoom", selection: $settings.kiosk.zoom) {
                     ForEach((Self.zoomSteps.contains(settings.kiosk.zoom) ? Self.zoomSteps : (Self.zoomSteps + [settings.kiosk.zoom]).sorted()), id: \.self) { z in
-                        Text("\(Int((z * 100).rounded()))%").tag(z)
+                        Text("\(((z * 100).rounded()).safeInt)%").tag(z)
                     }
                 }
                 Stepper("Idle timeout: \(settings.kiosk.idleMinutes == 0 ? "never" : "\(settings.kiosk.idleMinutes) min")", value: $settings.kiosk.idleMinutes, in: 0...240)

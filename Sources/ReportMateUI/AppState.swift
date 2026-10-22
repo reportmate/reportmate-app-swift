@@ -16,6 +16,11 @@ final class AppState {
     /// Set when the last API call failed with 401/403, shown in the toolbar.
     var authProblem: String?
 
+    // MARK: Page models
+
+    /// Each page's data, kept across navigation (see `PageModels`).
+    private(set) var pages = PageModels()
+
     // MARK: Navigation
 
     var section: AppSection = .dashboard {
@@ -104,7 +109,8 @@ final class AppState {
     }
 
     /// `configuration` replaces the saved connection for this session; nil loads it
-    /// from the Keychain, the environment and the runner as the app always has.
+    /// from the app's preferences, the environment, a managed profile and the runner.
+    /// The app never reads or writes the Keychain.
     init(configuration supplied: AppConfiguration? = nil, embedded: Bool = false) {
         self.embedded = embedded
         let config = supplied ?? AppConfiguration.load()
@@ -113,29 +119,42 @@ final class AppState {
         if supplied == nil { config.exportConnection() }
         configuration = config
         api = ReportMateAPI(configuration: config)
+        connectionResolving = config.needsEntraResolution
         platformFilter = PlatformFilter(rawValue: UserDefaults.standard.string(forKey: "platformFilter") ?? "") ?? .all
         includeArchived = UserDefaults.standard.bool(forKey: "includeArchived")
     }
 
-    /// An admin Mac that only inherited the runner's endpoint and passphrase moves
-    /// to Entra sign-in when the API advertises it and az can mint a token: no
-    /// shared secret in the app, and reportmateutil follows through connection.json.
-    func preferEntraIfAvailable() async {
-        let upgraded = await configuration.preferringEntra()
-        guard upgraded != configuration else { return }
-        try? update(configuration: upgraded)
+    /// True until the connection has settled on its credential (see
+    /// `AppConfiguration.needsEntraResolution`). Pages wait for it, so no request goes
+    /// out with an inherited passphrase that Entra is about to replace.
+    private(set) var connectionResolving = false
+
+    /// Settle the credential before the first request: an Entra sign-in takes the
+    /// audience the API advertises, and an admin Mac that only inherited the runner's
+    /// endpoint and passphrase moves to Entra when az can mint a token. No shared
+    /// secret in the app, and reportmateutil follows through connection.json.
+    func resolveConnection() async {
+        guard configuration.needsEntraResolution else { connectionResolving = false; return }
+        connectionResolving = true
+        defer { connectionResolving = false }
+        let resolved = await configuration.resolvingEntra()
+        guard resolved != configuration else { return }
+        update(configuration: resolved)
     }
 
-    var isConfigured: Bool { configuration.isConfigured }
+    var isConfigured: Bool { configuration.isConfigured && !connectionResolving }
 
-    func update(configuration: AppConfiguration) throws {
-        try configuration.save()
+    func update(configuration: AppConfiguration) {
+        configuration.save()
         self.configuration = configuration
         api = ReportMateAPI(configuration: configuration)
         authProblem = nil
         devices = []
         devicesLoadedAt = nil
         settingsLoaded = false
+        let width = pages.dashboardWidth
+        pages = PageModels()
+        pages.dashboardWidth = width
         refreshRequested += 1
     }
 
@@ -171,7 +190,13 @@ final class AppState {
         // The web header carries the global platform toggle as ?platform=mac|win on
         // every page, and leaves it off for All; a link without it keeps the current
         // choice, as the web does.
-        switch link.query["platform"]?.lowercased() {
+        // `platform=macOS|Windows` on Management, Hardware or Identity is that report's own
+        // filter (the card links use it), not the toggle, so it leaves the toggle alone.
+        let reportPlatform: Bool = {
+            if case .report(let name) = link.target, ReportLinkFilter.reportPlatformReports.contains(name) { return ["macOS", "Windows"].contains(link.query["platform"] ?? "") }
+            return false
+        }()
+        switch reportPlatform ? nil : link.query["platform"]?.lowercased() {
         case "mac", "macos": platformFilter = .macOS
         case "win", "windows": platformFilter = .windows
         case "all": platformFilter = .all
@@ -183,10 +208,18 @@ final class AppState {
         case .device(let serial, let tab):
             if section == .dashboard || section == .devices { section = .devices }
             path = NavigationPath()
-            open(device: serial, tab: tab.flatMap(DeviceTab.init(rawValue:)), filter: link.query["filter"])
+            // `tool` and `level` (the Management Tools Errors links) focus the log viewer on the
+            // Management tab; they travel as the route's filter, `log:<tool>:<level>`.
+            let logFocus = link.query["tool"].map { "log:\($0):\(link.query["level"] ?? "error")" }
+            open(device: serial, tab: tab.flatMap(DeviceTab.init(rawValue:)), filter: logFocus ?? link.query["filter"])
         case .events, .eventsFailures: section = .events; pendingDeepLink = link
         case .report(let name):
+            if name == "management" { pages.managementMode = .enrollment }
             if let s = AppSection(rawValue: name) { section = s; pendingDeepLink = link }
+        case .managementLogs:
+            pages.managementMode = .logs
+            section = .management
+            pendingDeepLink = link
         case .applicationUsage(let app):
             section = .applications
             let list: (String) -> [String] = { link.query[$0]?.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) } ?? [] }
@@ -212,6 +245,8 @@ final class AppState {
     /// A link to what is on screen: the pushed route, else the section with its filters.
     var currentDeepLink: DeepLink {
         var link = pageDeepLink
+        // A page that carries its own `platform` filter (Management, Hardware, Identity) keeps it.
+        guard link.query["platform"] == nil else { return link }
         switch platformFilter {
         case .macOS: link.query["platform"] = "mac"
         case .windows: link.query["platform"] = "win"
@@ -226,7 +261,10 @@ final class AppState {
             switch route {
             case .device(let serial, let tab, let filter):
                 var q: [String: String] = [:]
-                if let filter { q["filter"] = filter }
+                if let filter, filter.hasPrefix("log:") {
+                    let parts = filter.split(separator: ":", maxSplits: 2).map(String.init)
+                    if parts.count == 3 { q["tool"] = parts[1]; q["level"] = parts[2] }
+                } else if let filter { q["filter"] = filter }
                 return DeepLink(target: .device(serial: serial, tab: tab?.rawValue), query: q)
             case .applicationUsage(let app, let days, let usages, let catalogs, let locations):
                 var q = ["days": String(days)]
@@ -246,7 +284,18 @@ final class AppState {
         case .dashboard: return DeepLink(target: .dashboard)
         case .devices: return DeepLink(target: .devices, query: linkQuery)
         case .events: return DeepLink(target: linkQuery["failures"] == "1" ? .eventsFailures : .events, query: linkQuery.filter { $0.key != "failures" })
+        case .management where pages.managementMode == .logs: return DeepLink(target: .managementLogs, query: linkQuery)
         default: return DeepLink(target: .report(section.rawValue), query: linkQuery)
+        }
+    }
+
+    /// The section the top bar highlights. A device page belongs to no section, as on
+    /// the web, where `/device/<serial>` highlights no tab; a drill-down such as one
+    /// application's usage stays under its report.
+    var highlightedSection: AppSection? {
+        switch currentRoute {
+        case .device, .localDevice: return nil
+        default: return section
         }
     }
 

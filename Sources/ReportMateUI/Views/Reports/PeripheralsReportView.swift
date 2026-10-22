@@ -3,7 +3,9 @@ import ReportMateKit
 
 /// Fleet peripherals report. Port of `app/peripherals/page.tsx`.
 struct PeripheralsReportView: View {
-    @State private var model = FleetReportModel(path: "/peripherals")
+    @Environment(AppState.self) private var appState
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/peripherals") }
 
     enum Column { case device, total, lastSeen }
     @State private var sortColumn: Column = .device
@@ -41,7 +43,12 @@ struct PeripheralsReportView: View {
             section: .peripherals, model: model, activeFilterCount: selectedKinds.count + (printerFilter == nil ? 0 : 1) + (usbTypeFilter == nil ? 0 : 1), clearFilters: { selectedKinds = []; printerFilter = nil; usbTypeFilter = nil }, subtitle: "USB, Bluetooth, and other connected devices", searchPlaceholder: "Search peripherals...",
             searchKeys: { row in [row.deviceName, row.serialNumber, PeripheralsReportRow(json: row.json).searchableText] },
             toolbar: { _ in EmptyView() },
-            widgets: { rows in widgets(base(rows).map(\.p)) }
+            widgets: { rows in widgets(base(rows).map(\.p)) },
+            linking: ReportLinking(absorb: { f in
+                printerFilter = nil; usbTypeFilter = nil
+                selectedKinds = Set(f.take("kind"))
+            }, matches: { row, f in f.matches(peripherals: PeripheralsReportRow(json: row.json), room: row.inventory.location) },
+            widgetQuery: selectedKinds.isEmpty ? [:] : ["kind": selectedKinds.sorted().joined(separator: ",")])
         ) { rows in
             VStack(spacing: 0) {
                 kindPills(rows)
@@ -77,8 +84,8 @@ struct PeripheralsReportView: View {
         let printers = countLabels(all.flatMap(\.printerNames))
         let usb = countLabels(all.flatMap(\.usbTypes))
         return HStack(alignment: .top, spacing: 12) {
-            SingleCountListWidget(title: "Printers (\(printers.reduce(0) { $0 + $1.count }))", counts: printers.map { ($0.label, $0.count, Color.purple) }, selected: $printerFilter, emptyText: "No printers found").frame(width: 360)
-            SingleCountListWidget(title: "USB Devices (\(usb.reduce(0) { $0 + $1.count }))", counts: usb.map { ($0.label, $0.count, Color.green) }, selected: $usbTypeFilter, emptyText: "No USB devices found").frame(width: 360)
+            SingleCountListWidget(title: "Printers (\(printers.reduce(0) { $0 + $1.count }))", counts: printers.map { ($0.label, $0.count, Color.purple) }, selected: $printerFilter, emptyText: "No printers found").reportWidgetWidth(360)
+            SingleCountListWidget(title: "USB Devices (\(usb.reduce(0) { $0 + $1.count }))", counts: usb.map { ($0.label, $0.count, Color.green) }, selected: $usbTypeFilter, emptyText: "No USB devices found").reportWidgetWidth(360)
         }
     }
 

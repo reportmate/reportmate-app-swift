@@ -126,10 +126,17 @@ final class DeviceDetailModel {
         notFound = false
         let resolved = await appState.resolveIdentifier(serial) ?? serial
         do {
-            if let info = try await api.deviceInfo(resolved) {
+            if var info = try await api.deviceInfo(resolved) {
+                let fresh = info.loadedModules
+                // A device shown before keeps its modules on screen while they refresh.
+                if let existing = device {
+                    for name in existing.loadedModules where !info.loadedModules.contains(name) {
+                        if let module = ModuleName(rawValue: name), let value = existing.modules[name] { info.setModule(module, value) }
+                    }
+                }
                 device = info
                 loading = false
-                await loadRemainingModules(api: api, serial: resolved)
+                await loadRemainingModules(api: api, serial: resolved, skip: fresh)
             } else if let full = try await api.device(resolved) {
                 device = full
                 loading = false
@@ -144,8 +151,10 @@ final class DeviceDetailModel {
         }
     }
 
-    private func loadRemainingModules(api: ReportMateAPI, serial: String) async {
-        let needed = ModuleName.fetchable.filter { !(device?.loadedModules.contains($0.rawValue) ?? false) }
+    /// Every module the info call did not carry, kept ones included: those stay on
+    /// screen and are replaced in place.
+    private func loadRemainingModules(api: ReportMateAPI, serial: String, skip: Set<String>) async {
+        let needed = ModuleName.fetchable.filter { !skip.contains($0.rawValue) }
         await withTaskGroup(of: (ModuleName, Result<JSONValue, Error>).self) { group in
             for module in needed {
                 loadingModules.insert(module)
@@ -193,7 +202,8 @@ struct DeviceDetailView: View {
     var initialFilter: String?
     var isLocal = false
 
-    @State private var model: DeviceDetailModel
+    /// Kept by `AppState` (the last dozen devices), so going back to a device shows it at once.
+    private var model: DeviceDetailModel { appState.pages.device(serial, isLocal: isLocal) }
     @State private var tab: DeviceTab
     @State private var installsFilter: String?
     @State private var showDeleteConfirm = false
@@ -204,7 +214,6 @@ struct DeviceDetailView: View {
         self.initialTab = initialTab
         self.initialFilter = initialFilter
         self.isLocal = isLocal
-        _model = State(initialValue: DeviceDetailModel(serial: serial, isLocal: isLocal))
         _tab = State(initialValue: initialTab ?? .info)
         _installsFilter = State(initialValue: initialFilter)
     }
@@ -212,7 +221,15 @@ struct DeviceDetailView: View {
     var body: some View {
         Group {
             if model.loading, model.device == nil {
-                LoadingView(message: "Loading device…")
+                // The page as it will look: header, the real tab bar (tabs can be chosen
+                // while it loads) and the chosen tab's layout.
+                VStack(spacing: 0) {
+                    DeviceHeaderSkeleton()
+                    tabBar
+                    LoadProgressBar()
+                    ScrollView { DeviceTabSkeleton(tab: tab).padding(16) }
+                        .skeletonTimeout(fillsPage: true) { Task { await model.load(api: appState.api, appState: appState) } }
+                }
             } else if model.notFound {
                 EmptyStateView(title: isLocal ? "No local report" : "Device not found",
                                message: isLocal ? "The runner has not written a report to \(LocalReportStore.defaultCache.path) yet." : "No device matches “\(serial)”. It may have been deleted or never registered.",
@@ -224,6 +241,14 @@ struct DeviceDetailView: View {
                 VStack(spacing: 0) {
                     DeviceHeaderView(device: device, model: model, onArchiveToggle: { Task { await toggleArchive(device) } }, onDelete: { showDeleteConfirm = true })
                     tabBar
+                    if !model.loadingModules.isEmpty {
+                        let total = ModuleName.fetchable.count
+                        LoadProgressBar(loaded: total - model.loadingModules.count, total: total,
+                                        updating: model.loadingModules.allSatisfy { device.loadedModules.contains($0.rawValue) })
+                    }
+                    if let error = model.error, !model.loading {
+                        RefreshFailedBanner(message: error) { Task { await model.load(api: appState.api, appState: appState) } }
+                    }
                     if let adminError { ErrorBanner(message: adminError).padding(.horizontal, 16).padding(.top, 8) }
                     tabContent(device)
                 }
@@ -250,7 +275,7 @@ struct DeviceDetailView: View {
                         HStack(spacing: 6) {
                             Image(systemName: t.systemImage).appFont(fixed: 12)
                             Text(t.title).appFont(.callout, weight: active ? .semibold : .regular)
-                            if loading { ProgressView().controlSize(.mini) }
+                            if loading { SkeletonCircle(size: 7).accessibilityLabel("Loading") }
                         }
                         .padding(.horizontal, 12).padding(.vertical, 9)
                         .foregroundStyle(active ? t.tone.color : Color.secondary)
@@ -290,15 +315,15 @@ struct DeviceDetailView: View {
     @ViewBuilder
     private func moduleTab(_ tab: DeviceTab, module: ModuleName, device: DeviceDetail) -> some View {
         if model.loadingModules.contains(module), !device.loadedModules.contains(module.rawValue) {
-            LoadingView(message: "Loading \(tab.title.lowercased()) data…")
+            DeviceTabSkeleton(tab: tab).skeletonTimeout { Task { await model.reloadModule(module, api: appState.api) } }
         } else if let err = model.moduleErrors[module], !device.loadedModules.contains(module.rawValue) {
             ErrorBanner(message: err) { Task { await model.reloadModule(module, api: appState.api) } }
         } else {
             switch tab {
-            case .installs: InstallsTabView(device: device, initialFilter: installsFilter)
+            case .installs: InstallsTabView(device: device, initialFilter: installsFilter?.hasPrefix("log:") == true ? nil : installsFilter)
             case .applications: ApplicationsTabView(device: device)
             case .system: SystemTabView(device: device)
-            case .management: ManagementTabView(device: device)
+            case .management: ManagementTabView(device: device, logFocus: installsFilter.flatMap(ManagementLogFocus.init(filter:)))
             case .identity: IdentityTabView(device: device)
             case .hardware: HardwareTabView(device: device)
             case .peripherals: PeripheralsTabView(device: device)
@@ -376,12 +401,6 @@ struct DeviceHeaderView: View {
                 }
             }
             Spacer()
-            if !model.loadingModules.isEmpty {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading \(model.loadingModules.count) modules…").appFont(.caption).foregroundStyle(.secondary)
-                }
-            }
             if !model.isLocal {
             Menu {
                 Button(device.archived ? "Unarchive Device" : "Archive Device", action: onArchiveToggle)
@@ -414,7 +433,7 @@ struct DeviceEventsTabView: View {
                     EventTypeFilterMenu(hidden: $hidden, defaultHidden: [])
                 })
                 if model.eventsLoading, !model.eventsLoaded {
-                    LoadingView(message: "Loading events…").frame(height: 200)
+                    SkeletonTableRows(rows: 8, columns: [24, nil, 160]).skeletonTimeout { Task { await model.loadEvents(api: appState.api) } }
                 } else if bundled.isEmpty {
                     EmptyStateView(title: "No events", message: "This device has not reported any events yet.", systemImage: "clock")
                 } else {

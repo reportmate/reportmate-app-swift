@@ -71,7 +71,7 @@ public struct HardwareInfo: Sendable, Hashable {
 
         public var usedPercent: Int {
             guard capacityBytes > 0 else { return 0 }
-            return min(100, max(0, Int(((capacityBytes - freeBytes) / capacityBytes * 100).rounded())))
+            return min(100, max(0, (((capacityBytes - freeBytes) / capacityBytes * 100).rounded()).safeInt))
         }
     }
 
@@ -275,7 +275,7 @@ public struct HardwareInfo: Sendable, Hashable {
                               chargePercent: bat.firstDouble("percentRemaining", "chargePercent", "percent") ?? 0,
                               health: bat["health"].nonEmptyString, condition: bat.firstString("condition", "state"),
                               isCharging: bat["charging"].boolish || bat["isCharging"].boolish,
-                              estimatedRuntime: minutes > 0 ? "\(Int(minutes)) min" : bat["estimatedRuntime"].nonEmptyString,
+                              estimatedRuntime: minutes > 0 ? "\((minutes).safeInt) min" : bat["estimatedRuntime"].nonEmptyString,
                               designCapacity: bat.firstDouble("designedCapacity", "designCapacity"), currentCapacity: bat["currentCapacity"].double,
                               maxCapacity: bat["maxCapacity"].double)
         } else {

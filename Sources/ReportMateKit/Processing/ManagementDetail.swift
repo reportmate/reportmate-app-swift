@@ -289,7 +289,7 @@ public struct ManagementDetail: Sendable, Hashable {
     public enum ExpiryTone: Sendable { case expired, soon, fine, unknown }
     public static func expiryTone(_ date: Date?, now: Date = Date()) -> ExpiryTone {
         guard let date else { return .unknown }
-        let days = Int(ceil(date.timeIntervalSince(now) / 86_400))
+        let days = (ceil(date.timeIntervalSince(now) / 86_400)).safeInt
         if days < 0 { return .expired }
         if days < 30 { return .soon }
         return .fine

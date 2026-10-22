@@ -2,142 +2,311 @@ import SwiftUI
 import Charts
 import ReportMateKit
 
-/// The dashboard's second tier: one card per module report, built from the
-/// same bulk reports the report pages read. The dashboard payload itself
-/// carries devices and events only, so these load after it, in parallel, and
-/// show a placeholder until each report answers.
+/// The dashboard's insight cards, from the API's cached insights endpoints. The
+/// API computes every card in SQL and caches it, so the dashboard never pulls the
+/// bulk reports (which held the API at its memory limit).
+///
+/// Where the API serves one card per request (`/dashboard/insights/{card}`), the
+/// cards load in parallel and each paints as soon as it answers; otherwise one
+/// request (`/dashboard/insights`) brings them all. A 404 means the server does
+/// not have the endpoint yet, and the cards say so at once rather than waiting.
 @MainActor
 @Observable
 final class DashboardInsightsModel {
-    var security: [ReportRow] = []
-    var management: [ReportRow] = []
-    var hardware: [ReportRow] = []
-    var system: [ReportRow] = []
-    var loading: Set<String> = []
-    var errors: [String: String] = [:]
-    var loadedAt: Date?
+    /// Each card's section, filled as the cards answer. A card that failed holds `{"error": …}`.
+    private(set) var cards: [String: InsightCardData] = [:]
+    private(set) var loading = false
+    /// The request for every card failed and there is nothing to show.
+    private(set) var error: String?
+    private var loadedKey: String?
+    private var loadedAt: Date?
+    private var inFlightKey: String?
+    private var generation = 0
+    /// Whether this server serves one card per request; learnt on the first load.
+    private var perCard: [String: Bool] = [:]
 
-    func load(api: ReportMateAPI, force: Bool = false) async {
-        if !force, let loadedAt, Date().timeIntervalSince(loadedAt) < 300 { return }
-        loading = ["security", "management", "hardware", "system"]
-        // Two at a time: each bulk report takes the API ten seconds or more, and
-        // four at once had the gateway answer 503 for the last one. A 5xx or a
-        // dropped connection gets one retry after a short pause.
-        await withTaskGroup(of: (String, Result<JSONValue, Error>).self) { group in
-            let paths = ["/security", "/management", "/hardware", "/system"]
-            var next = paths.makeIterator()
-            func fetch(_ path: String) async -> (String, Result<JSONValue, Error>) {
-                for attempt in 0..<2 {
-                    do { return (path, .success(try await api.fleetReport(path))) }
-                    catch {
-                        let retry: Bool
-                        switch error as? APIError {
-                        case .http(let status, _, _): retry = status >= 500
-                        case .transport: retry = true
-                        default: retry = false
-                        }
-                        if !retry || attempt == 1 { return (path, .failure(error)) }
-                        try? await Task.sleep(for: .seconds(3))
+    static let refreshInterval: TimeInterval = 300
+    static let notDeployed = "Not available on this server yet"
+    /// The eleven cards plus App Usage, for "Loading n of 12".
+    static let cardCount = DashboardInsightsDocument.cardKeys.count + 1
+
+    // MARK: App Usage
+
+    /// The App Usage card's Usage and Catalog chips; each combination is its own cached answer.
+    var appUsageUsages: Set<String> = []
+    var appUsageCatalogs: Set<String> = []
+    private var appUsageKey: String?
+    private var appUsageAt: Date?
+    private(set) var appUsageLoading = false
+
+    /// `/dashboard/insights/appUsage` for the chips' combination; it fills `cards["appUsage"]`.
+    func loadAppUsage(api: ReportMateAPI, platform: PlatformFilter, force: Bool = false) async {
+        let p = DashboardInsightsDocument.platformParameter(platform)
+        let usages = appUsageUsages.sorted(), catalogs = appUsageCatalogs.sorted()
+        let key = "\(api.configuration.normalizedBaseURL)|\(p)|\(usages)|\(catalogs)"
+        if !force, key == appUsageKey, let appUsageAt, Date().timeIntervalSince(appUsageAt) < Self.refreshInterval { return }
+        if appUsageLoading, !force { return }
+        appUsageLoading = true
+        defer { appUsageLoading = false }
+        let query: [String: String?] = ["platform": p, "days": "30",
+                                        "usages": usages.isEmpty ? nil : usages.joined(separator: ","),
+                                        "catalogs": catalogs.isEmpty ? nil : catalogs.joined(separator: ",")]
+        let result = await Self.fetchCard(DashboardInsightsDocument.appUsageKey, api: api, query: query)
+        apply(result, to: DashboardInsightsDocument.appUsageKey)
+        if case .card = result { appUsageKey = key; appUsageAt = Date() }
+    }
+
+    var hasData: Bool { !cards.isEmpty }
+    /// Cards that have answered, with data or an error, for "Loading n of 12".
+    var answered: Int { cards.count }
+    func card(_ key: String) -> InsightCardData? { cards[key] }
+
+    /// Fetch unless the cards for this connection and platform are under five minutes old.
+    func load(api: ReportMateAPI, platform: PlatformFilter, includeArchived: Bool, force: Bool = false) async {
+        let p = DashboardInsightsDocument.platformParameter(platform)
+        let base = api.configuration.normalizedBaseURL
+        let key = "\(base)|\(p)|\(includeArchived)"
+        if !force, key == loadedKey, let loadedAt, Date().timeIntervalSince(loadedAt) < Self.refreshInterval { return }
+        if !force, inFlightKey == key { return }
+        if key != loadedKey {
+            // Another platform or connection: its cards are not these.
+            cards = [:]
+            error = nil
+        }
+        generation += 1
+        let mine = generation
+        inFlightKey = key
+        loading = true
+        defer { if mine == generation { loading = false; inFlightKey = nil } }
+        let query: [String: String?] = ["platform": p, "includeArchived": includeArchived ? "true" : nil]
+
+        if perCard[base] != false {
+            let keys = DashboardInsightsDocument.cardKeys
+            // The first card tells whether the server has per-card endpoints.
+            let first = await Self.fetchCard(keys[0], api: api, query: query)
+            guard mine == generation else { return }
+            if case .notFound = first, perCard[base] == nil {
+                perCard[base] = false
+            } else {
+                perCard[base] = true
+                apply(first, to: keys[0])
+                await withTaskGroup(of: (String, CardResult).self) { group in
+                    var next = keys.dropFirst().makeIterator()
+                    for _ in 0..<4 { if let k = next.next() { group.addTask { (k, await Self.fetchCard(k, api: api, query: query)) } } }
+                    while let (k, result) = await group.next() {
+                        guard mine == generation else { group.cancelAll(); return }
+                        if let more = next.next() { group.addTask { (more, await Self.fetchCard(more, api: api, query: query)) } }
+                        apply(result, to: k)
                     }
                 }
-                return (path, .failure(APIError.transport("gave up")))
-            }
-            for _ in 0..<2 { if let path = next.next() { group.addTask { await fetch(path) } } }
-            while let (path, result) = await group.next() {
-                if let more = next.next() { group.addTask { await fetch(more) } }
-                let key = String(path.dropFirst())
-                switch result {
-                case .success(let json):
-                    let rows = FleetReportModel.extractRows(json).map(ReportRow.init(json:))
-                    errors[key] = nil
-                    switch key {
-                    case "security": security = rows
-                    case "management": management = rows
-                    case "hardware": hardware = rows
-                    default: system = rows
-                    }
-                case .failure(let error): errors[key] = error.localizedDescription
-                }
-                loading.remove(key)
+                guard mine == generation else { return }
+                error = nil
+                loadedKey = key
+                loadedAt = Date()
+                return
             }
         }
-        loadedAt = Date()
+
+        // One request for every card.
+        do {
+            let json = try await Self.retrying { try await api.getJSON("/dashboard/insights", query: query) }
+            guard mine == generation else { return }
+            guard json["cards"].object != nil else {
+                error = json.isNull ? Self.notDeployed : "The server's insights answer had no cards."
+                return
+            }
+            let doc = DashboardInsightsDocument(json: json)
+            cards = doc.cards
+            error = nil
+            loadedKey = key
+            loadedAt = Date()
+        } catch {
+            guard mine == generation else { return }
+            self.error = error.localizedDescription
+        }
+    }
+
+    enum CardResult: Sendable {
+        case card(JSONValue)
+        case notFound
+        case failed(String)
+    }
+
+    private func apply(_ result: CardResult, to key: String) {
+        switch result {
+        case .card(let json): cards[key] = InsightCardData(json: json)
+        case .notFound: cards[key] = InsightCardData(json: .object(["error": .string(Self.notDeployed)]))
+        case .failed(let message):
+            // A failed refresh keeps the card's last good answer.
+            if cards[key] == nil || cards[key]?.error != nil { cards[key] = InsightCardData(json: .object(["error": .string(message)])) }
+        }
+    }
+
+    nonisolated private static func fetchCard(_ key: String, api: ReportMateAPI, query: [String: String?]) async -> CardResult {
+        let result = await fetchOne(key, api: api, query: query)
+        // A server from before the API renamed this card answers under the old key.
+        if case .notFound = result, let old = DashboardInsightsDocument.renamedKeys[key] {
+            return await fetchOne(old, api: api, query: query)
+        }
+        return result
+    }
+
+    nonisolated private static func fetchOne(_ key: String, api: ReportMateAPI, query: [String: String?]) async -> CardResult {
+        do {
+            let json = try await retrying { try await api.getJSON("/dashboard/insights/\(key)", query: query) }
+            if json.isNull { return .notFound }
+            // `{card, platform, includeArchived, generatedAt, data}`; `data` is the card or `{"error": …}`.
+            return .card(DashboardInsightsDocument.card(fromEnvelope: json).json)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// One more try after a pause for a 5xx or a dropped connection.
+    nonisolated private static func retrying<T: Sendable>(_ work: @Sendable () async throws -> T) async throws -> T {
+        do { return try await work() } catch {
+            let retry: Bool
+            switch error as? APIError {
+            case .http(let status, _, _): retry = status >= 500
+            case .transport: retry = true
+            default: retry = false
+            }
+            guard retry else { throw error }
+            try? await Task.sleep(for: .seconds(3))
+            return try await work()
+        }
     }
 }
 
-/// Card chrome shared by the insight widgets: header, then the body or a
-/// placeholder while the report loads.
-private struct InsightCard<Content: View>: View {
+// MARK: - Card chrome
+
+/// Asks the insights model to fetch again; the dashboard supplies it.
+private struct InsightsRetryKey: EnvironmentKey {
+    static let defaultValue: @MainActor @Sendable () -> Void = {}
+}
+
+extension EnvironmentValues {
+    var insightsRetry: @MainActor @Sendable () -> Void {
+        get { self[InsightsRetryKey.self] }
+        set { self[InsightsRetryKey.self] = newValue }
+    }
+}
+
+/// Card chrome shared by the insight cards: a header that opens the report
+/// unfiltered, then the card's section of the insights document. Until the first
+/// answer it shows a skeleton; a card the server could not compute, or a failed
+/// request, shows the error with Retry.
+struct InsightCard<Content: View>: View {
+    let key: String
     let title: String
     let subtitle: String
     let systemImage: String
     let tone: Tone
-    let section: AppSection
-    let loading: Bool
-    let error: String?
-    let empty: Bool
-    @ViewBuilder var content: Content
+    let link: DeepLink
+    @ViewBuilder var content: (InsightCardData) -> Content
     @Environment(AppState.self) private var appState
+    @Environment(DashboardInsightsModel.self) private var insights
+    @Environment(\.insightsRetry) private var retry
 
     var body: some View {
+        let data = insights.card(key)
         Card {
             VStack(alignment: .leading, spacing: 0) {
-                CardHeader(title, subtitle: subtitle, systemImage: systemImage, tone: tone) { appState.section = section }
+                CardHeader(title, subtitle: subtitle, systemImage: systemImage, tone: tone) { appState.follow(link) }
+                    .help(appState.describe(link))
+                    .linkContextMenu(link)
+                    .accessibilityAddTraits(.isButton)
                 Group {
-                    if let error, empty {
-                        Text(error).appFont(.caption).foregroundStyle(.secondary).padding(16)
-                    } else if loading, empty {
-                        HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Loading…").appFont(.caption).foregroundStyle(.secondary) }.padding(16)
-                    } else if empty {
-                        Text("No data").appFont(.caption).foregroundStyle(.tertiary).padding(16)
+                    if let data, let error = data.error {
+                        failure(error)
+                    } else if let data {
+                        content(data).padding(16)
+                    } else if let error = insights.error, !insights.loading {
+                        failure(error)
                     } else {
-                        content.padding(16)
+                        InsightBodySkeleton().padding(16).skeletonTimeout(retry: retry)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
-                Spacer(minLength: 0)
             }
         }
     }
+
+    private func failure(_ message: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Label(message, systemImage: "exclamationmark.triangle").appFont(.caption).foregroundStyle(.secondary).lineLimit(3)
+            Spacer(minLength: 8)
+            Button("Retry") { retry() }.controlSize(.small).disabled(insights.loading)
+        }
+        .padding(16)
+    }
 }
 
-/// "Label … bar … n of N" compliance row.
-private struct ComplianceRow: View {
+/// An item that links when the server gave it a link, and is plain text otherwise.
+struct MaybeInsightLink<Label: View>: View {
+    let link: DeepLink?
+    @ViewBuilder var label: Label
+    var body: some View {
+        if let link { InsightLink(link: link) { label } } else { label.padding(.horizontal, 4).padding(.vertical, 2) }
+    }
+}
+
+/// "Label … bar … n of N" compliance row; the link opens the devices that fall short.
+struct ComplianceRow: View {
     let label: String
     let on: Int
     let total: Int
+    let link: DeepLink?
 
     var body: some View {
         let pct = total == 0 ? 0 : Double(on) / Double(total)
         let tone: Tone = pct >= 0.9 ? .green : pct >= 0.7 ? .yellow : .red
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(label).appFont(.callout)
-                Spacer()
-                Text("\(on) of \(total)").appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
-                Text("\(Int((pct * 100).rounded()))%").appFont(.caption, weight: .medium).foregroundStyle(tone.color).monospacedDigit().frame(width: 38, alignment: .trailing)
-            }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.secondary.opacity(0.12))
-                    Capsule().fill(tone.color).frame(width: max(0, geo.size.width * pct))
+        MaybeInsightLink(link: link) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(label).appFont(.callout)
+                    Spacer()
+                    Text("\(on) of \(total)").appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    Text("\(((pct * 100).rounded()).safeInt)%").appFont(.caption, weight: .medium).foregroundStyle(tone.color).monospacedDigit().frame(width: 38, alignment: .trailing)
                 }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.secondary.opacity(0.12))
+                        Capsule().fill(tone.color).frame(width: max(0, geo.size.width * pct))
+                    }
+                }
+                .frame(height: 6)
             }
-            .frame(height: 6)
         }
     }
 }
 
-/// Ring plus legend, the dashboard's small donut.
-private struct InsightDonut: View {
-    let data: [(label: String, count: Int, color: Color)]
+/// One slice of an insight donut, with the link its legend row opens, and any
+/// sub-rows that legend row discloses (Domain Joined's trust states).
+struct InsightSlice: Identifiable {
+    var id: String { label }
+    let label: String
+    let count: Int
+    let color: Color
+    var link: DeepLink? = nil
+    var children: [InsightSlice] = []
+}
+
+/// Ring plus legend, the dashboard's small donut. Each legend row opens its slice;
+/// a row with sub-rows is a disclosure group, collapsed at first, whose chevron
+/// only toggles and whose label still opens the slice. Zero slices and sub-rows are
+/// left out.
+struct InsightDonut: View {
+    let data: [InsightSlice]
     var center: String? = nil
+    @State private var expanded: Set<String> = []
 
     var body: some View {
+        let data = data.filter { $0.count > 0 }
         let total = data.reduce(0) { $0 + $1.count }
         HStack(alignment: .center, spacing: 14) {
             ZStack {
-                Chart(data, id: \.label) { item in
+                Chart(data) { item in
                     SectorMark(angle: .value("Count", item.count), innerRadius: .ratio(0.64), angularInset: 1)
                         .foregroundStyle(item.color)
                 }
@@ -145,205 +314,117 @@ private struct InsightDonut: View {
                 .frame(width: 96, height: 96)
                 if let center { Text(center).appFont(.callout, weight: .semibold).monospacedDigit() }
             }
-            VStack(alignment: .leading, spacing: 5) {
-                ForEach(data, id: \.label) { item in
-                    HStack(spacing: 6) {
-                        Circle().fill(item.color).frame(width: 9, height: 9)
-                        Text(item.label).appFont(.callout).lineLimit(1)
-                        Spacer(minLength: 6)
-                        Text("\(item.count)").appFont(.callout, weight: .medium).monospacedDigit()
-                        Text(total == 0 ? "" : "\(Int((Double(item.count) / Double(total) * 100).rounded()))%").appFont(.caption).foregroundStyle(.tertiary).monospacedDigit().frame(width: 34, alignment: .trailing)
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(data) { item in
+                    let children = item.children.filter { $0.count > 0 }
+                    if children.isEmpty {
+                        legendRow(item, total: total)
+                    } else {
+                        DisclosureGroup(isExpanded: Binding(get: { expanded.contains(item.id) },
+                                                            set: { if $0 { expanded.insert(item.id) } else { expanded.remove(item.id) } })) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                ForEach(children) { child in legendRow(child, total: total, small: true) }
+                            }
+                            .padding(.leading, 6)
+                        } label: {
+                            legendRow(item, total: total)
+                        }
                     }
                 }
             }
         }
     }
+
+    @ViewBuilder
+    private func legendRow(_ item: InsightSlice, total: Int, small: Bool = false) -> some View {
+        let row = HStack(spacing: 6) {
+            Circle().fill(item.color).frame(width: small ? 7 : 9, height: small ? 7 : 9)
+            Text(item.label).appFont(small ? .caption : .callout).lineLimit(1)
+            Spacer(minLength: 6)
+            Text("\(item.count)").appFont(small ? .caption : .callout, weight: .medium).monospacedDigit()
+            Text(total == 0 ? "" : "\(((Double(item.count) / Double(total) * 100).rounded()).safeInt)%").appFont(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 34, alignment: .trailing)
+        }
+        if let link = item.link { InsightLink(link: link) { row } } else { row.padding(.horizontal, 4).padding(.vertical, 2) }
+    }
 }
 
-/// Small "n label" stat chip under a donut.
-private struct StatChip: View {
+/// Small "n label" stat chip that opens the devices it counts.
+struct StatChip: View {
     let value: Int
     let label: String
     let tone: Tone
-    var body: some View {
-        HStack(spacing: 6) {
-            Text("\(value)").appFont(.callout, weight: .semibold).foregroundStyle(value == 0 ? Color.secondary : tone.color).monospacedDigit()
-            Text(label).appFont(.caption).foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 10).padding(.vertical, 5)
-        .background(Color.subtleBackground, in: Capsule())
-        .overlay(Capsule().stroke(Color.cardBorder))
-    }
-}
-
-// MARK: - Security posture
-
-struct SecurityPostureWidget: View {
-    let rows: [ReportRow]
-    let loading: Bool
-    let error: String?
+    let link: DeepLink?
 
     var body: some View {
-        let s = rows.map { SecurityReportRow(json: $0.json, platform: $0.platform) }
-        let macs = s.filter { !$0.isWindows }
-        let wins = s.filter(\.isWindows)
-        let protectors = s.filter(\.reportsProtection)
-        InsightCard(title: "Security Posture", subtitle: "Fleet-wide protections in place", systemImage: "lock.shield", tone: .green, section: .security, loading: loading, error: error, empty: rows.isEmpty) {
-            VStack(alignment: .leading, spacing: 12) {
-                ComplianceRow(label: "Disk encryption", on: s.filter(\.encryptionEnabled).count, total: s.count)
-                ComplianceRow(label: "Firewall", on: s.filter(\.firewallEnabled).count, total: s.count)
-                if !protectors.isEmpty {
-                    ComplianceRow(label: "Antivirus protection", on: protectors.filter(\.antivirusEnabled).count, total: protectors.count)
-                }
-                if !macs.isEmpty {
-                    let sipRows = macs.filter { $0.sipEnabled != nil }
-                    if !sipRows.isEmpty { ComplianceRow(label: "System Integrity Protection", on: sipRows.filter { $0.sipEnabled == true }.count, total: sipRows.count) }
-                }
-                if !wins.isEmpty {
-                    ComplianceRow(label: "Secure Boot", on: wins.filter(\.secureBootEnabled).count, total: wins.count)
-                }
-                HStack(spacing: 8) {
-                    StatChip(value: s.filter { $0.activeThreatCount > 0 }.count, label: "with threats", tone: .red)
-                    StatChip(value: s.filter { $0.certLabel == "Has Expired" }.count, label: "expired certs", tone: .yellow)
-                    StatChip(value: s.filter { $0.criticalCveCount > 0 }.count, label: "critical CVEs", tone: .orange)
-                }
-                .padding(.top, 2)
+        MaybeInsightLink(link: link) {
+            HStack(spacing: 6) {
+                Text("\(value)").appFont(.callout, weight: .semibold).foregroundStyle(value == 0 ? Color.secondary : tone.color).monospacedDigit()
+                Text(label).appFont(.caption).foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(Color.subtleBackground, in: Capsule())
+            .overlay(Capsule().stroke(Color.cardBorder))
         }
     }
 }
 
-// MARK: - Management
-
-struct ManagementInsightWidget: View {
-    let rows: [ReportRow]
-    let loading: Bool
-    let error: String?
-
-    private struct Stats { let total: Int; let enrolled: Int; let top: [(key: String, value: Int)] }
-    private var stats: Stats {
-        let m = rows.map { ManagementReportRow(json: $0.json) }
-        var providers: [String: Int] = [:]
-        for row in m where row.isEnrolled { providers[row.provider.isEmpty ? "Unknown" : row.provider, default: 0] += 1 }
-        let top = providers.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.prefix(4).map { (key: $0.key, value: $0.value) }
-        return Stats(total: m.count, enrolled: m.filter(\.isEnrolled).count, top: top)
-    }
+/// "Label … bar … n" row for ranked lists (providers, failing items, reasons).
+struct InsightBarRow: View {
+    let label: String
+    let count: Int
+    let max: Int
+    let tone: Tone
+    let link: DeepLink?
+    var valueText: String? = nil
 
     var body: some View {
-        let st = stats
-        let enrolled = st.enrolled, top = st.top
-        let max = top.first?.value ?? 1
-        InsightCard(title: "Management", subtitle: "MDM enrollment across the fleet", systemImage: "checkmark.shield", tone: .purple, section: .management, loading: loading, error: error, empty: rows.isEmpty) {
-            VStack(alignment: .leading, spacing: 14) {
-                InsightDonut(data: [("Enrolled", enrolled, .green), ("Not Enrolled", st.total - enrolled, Color.secondary.opacity(0.35))], center: "\(st.total == 0 ? 0 : Int((Double(enrolled) / Double(st.total) * 100).rounded()))%")
-                if !top.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("PROVIDERS").appFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-                        ForEach(Array(top), id: \.key) { name, count in
-                            HStack(spacing: 8) {
-                                Text(name).appFont(.callout).lineLimit(1)
-                                Spacer()
-                                Capsule().fill(Tone.purple.color.opacity(0.35)).frame(width: CGFloat(count) / CGFloat(max) * 70, height: 6)
-                                Text("\(count)").appFont(.callout, weight: .medium).monospacedDigit()
-                            }
-                        }
+        MaybeInsightLink(link: link) {
+            HStack(spacing: 8) {
+                Text(label).appFont(.callout).lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading)
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.secondary.opacity(0.12))
+                        Capsule().fill(tone.color.opacity(0.75)).frame(width: max == 0 ? 0 : geo.size.width * CGFloat(count) / CGFloat(max))
                     }
                 }
+                .frame(width: 70, height: 6)
+                Text(valueText ?? "\(count)").appFont(.callout, weight: .medium).monospacedDigit().frame(minWidth: 30, alignment: .trailing)
             }
         }
     }
 }
 
-// MARK: - Hardware
-
-struct HardwareInsightWidget: View {
-    let rows: [ReportRow]
-    let loading: Bool
-    let error: String?
-
-    private static func family(_ row: ReportRow, _ hw: HardwareReportRow) -> String {
-        let arch = hw.architecture.lowercased()
-        let proc = hw.processorName.lowercased()
-        if row.platform == .windows {
-            return arch.contains("arm") || proc.contains("snapdragon") || proc.contains("qualcomm") ? "ARM64" : "x64"
-        }
-        if arch.contains("arm") || hw.chipName != nil || proc.contains("apple") { return "Apple Silicon" }
-        return arch.isEmpty && proc.isEmpty ? "Unknown" : "Intel"
-    }
-
-    private struct Stats { let count: Int; let data: [(label: String, count: Int, color: Color)]; let lowStorage: Int; let lowMemory: Int; let laptops: Int }
-    private var stats: Stats {
-        let pairs = rows.map { ($0, HardwareReportRow(json: $0.json)) }
-        var families: [String: Int] = [:]
-        for (row, hw) in pairs { families[Self.family(row, hw), default: 0] += 1 }
-        let palette: [String: Color] = ["Apple Silicon": .blue, "Intel": .indigo, "ARM64": .teal, "x64": .cyan, "Unknown": Color.secondary.opacity(0.35)]
-        let data = families.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.map { (label: $0.key, count: $0.value, color: palette[$0.key] ?? .gray) }
-        return Stats(
-            count: pairs.count, data: data,
-            lowStorage: pairs.filter { $0.1.storageTotalBytes > 0 && $0.1.storageFreeBytes > 0 && $0.1.storageFreeBytes / $0.1.storageTotalBytes < 0.1 }.count,
-            lowMemory: pairs.filter { $0.1.memoryBytes > 0 && $0.1.memoryBytes <= 8 * 1024 * 1024 * 1024 }.count,
-            laptops: pairs.filter { $0.1.deviceType.lowercased().contains("laptop") || $0.1.deviceType.lowercased().contains("notebook") }.count)
-    }
+/// A big figure with a caption, for the headline counts on a card.
+struct InsightFigure: View {
+    let value: Int?
+    let label: String
+    let tone: Tone
+    let link: DeepLink?
 
     var body: some View {
-        let st = stats
-        InsightCard(title: "Hardware", subtitle: "Architecture, memory and storage", systemImage: "cpu", tone: .teal, section: .hardware, loading: loading, error: error, empty: rows.isEmpty) {
-            VStack(alignment: .leading, spacing: 14) {
-                InsightDonut(data: st.data, center: "\(st.count)")
-                HStack(spacing: 8) {
-                    StatChip(value: st.lowStorage, label: "under 10% free", tone: .red)
-                    StatChip(value: st.lowMemory, label: "8 GB or less", tone: .yellow)
-                    StatChip(value: st.laptops, label: "laptops", tone: .blue)
-                }
+        MaybeInsightLink(link: link) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value.map(String.init) ?? "–").appFont(.title2, weight: .bold).foregroundStyle((value ?? 0) == 0 ? Color.secondary : tone.color).monospacedDigit()
+                Text(label).appFont(.caption).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
 
-// MARK: - System health
-
-struct SystemInsightWidget: View {
-    let rows: [ReportRow]
-    let loading: Bool
-    let error: String?
-
-    private struct Stats { let buckets: [String: Int]; let pending: Int; let deferred: Int }
-    private var stats: Stats {
-        let s = rows.map { SystemReportRow(json: $0.json) }
-        var buckets: [String: Int] = [:]
-        for row in s { if let b = SystemReportView.uptimeBucket(row.uptime) { buckets[b, default: 0] += 1 } }
-        return Stats(buckets: buckets, pending: s.filter { $0.pendingUpdatesCount > 0 }.count, deferred: s.filter { $0.deferredUpdatesCount > 0 }.count)
-    }
-
+/// Small caps heading inside a card.
+struct InsightHeading: View {
+    let text: String
+    init(_ text: String) { self.text = text }
     var body: some View {
-        let st = stats
-        let order = SystemReportView.uptimeBuckets.map(\.0.label)
-        let buckets = st.buckets
-        let max = buckets.values.max() ?? 1
-        InsightCard(title: "System Health", subtitle: "Uptime and pending updates", systemImage: "gearshape.2", tone: .orange, section: .system, loading: loading, error: error, empty: rows.isEmpty) {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("UPTIME").appFont(.caption2, weight: .semibold).foregroundStyle(.secondary)
-                    ForEach(order, id: \.self) { label in
-                        let count = buckets[label] ?? 0
-                        HStack(spacing: 8) {
-                            Text(label).appFont(.callout).frame(width: 96, alignment: .leading)
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Color.secondary.opacity(0.12))
-                                    Capsule().fill(Tone.orange.color).frame(width: max == 0 ? 0 : geo.size.width * CGFloat(count) / CGFloat(max))
-                                }
-                            }
-                            .frame(height: 8)
-                            Text("\(count)").appFont(.callout, weight: .medium).monospacedDigit().frame(width: 40, alignment: .trailing)
-                        }
-                    }
-                }
-                HStack(spacing: 8) {
-                    StatChip(value: st.pending, label: "with pending updates", tone: .yellow)
-                    StatChip(value: st.deferred, label: "with deferred updates", tone: .orange)
-                }
-            }
-        }
+        Text(text.uppercased()).appFont(.caption2, weight: .semibold).foregroundStyle(.secondary).padding(.horizontal, 4)
     }
 }
+
+/// Wraps chips onto as many lines as they need.
+struct InsightChips<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View { FlowLayout(spacing: 6) { content } }
+}
+

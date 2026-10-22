@@ -6,8 +6,12 @@ import Foundation
 /// Applications page. Every JavaScript `replace` there runs without the `g`
 /// flag, so each pattern here replaces its first match only.
 public enum AppNameNormalizer {
+    /// App names are device-reported; nothing longer is a real name, and the cap keeps
+    /// every pattern below linear-time in practice.
+    static let maxLength = 256
+
     public static func normalize(_ appName: String) -> String {
-        var n = appName.trimmingCharacters(in: .whitespacesAndNewlines)
+        var n = String(appName.prefix(maxLength)).trimmingCharacters(in: .whitespacesAndNewlines)
         if n.isEmpty { return "" }
         if n.contains("${{") || n.contains("}}") { return "" }
         if n == "Unknown" || n == "N/A" { return "" }
@@ -42,12 +46,12 @@ public enum AppNameNormalizer {
         if n.hasPrefix("HP ") || n.contains("HP ") { return "HP Software" }
 
         // Trailing version numbers.
-        n = replaceFirst(n, #"\s+v?\d+(\.\d+)*(\.\d+)*(\.\d+)*$"#)
+        n = replaceFirst(n, #"\s+v?\d+(?:\.\d+)*$"#)
         n = replaceFirst(n, #"\s+\d{4}(\.\d+)*$"#)
         n = replaceFirst(n, #"\s+-\s+\d+(\.\d+)*$"#)
-        n = replaceFirst(n, #"\s+\(\d+(\.\d+)*(\.\d+)*\)$"#)
+        n = replaceFirst(n, #"\s+\(\d+(?:\.\d+)*\)$"#)
         n = replaceFirst(n, #"\s+build\s+\d+"#)
-        n = replaceFirst(n, #"\s+\d+(\.\d+)*(\.\d+)*(\.\d+)*$"#)
+        n = replaceFirst(n, #"\s+\d+(?:\.\d+)*$"#)
         // Versions in the middle.
         n = replaceFirst(n, #"\s+\d{4}\.\d{2}-\d+"#)
         n = replaceFirst(n, #"\s+\d{1,2}\.\d+\.\d+"#)
@@ -360,7 +364,7 @@ public struct UtilizationSummary: Sendable, Hashable {
     /// The header line under "Applications Usage Report".
     public var headline: String {
         var parts = ["\(totalAppsTracked.formatted()) apps", "\(uniqueDevices.formatted()) devices"]
-        if let active = totalActiveHours { parts.append("\(Int(active.rounded()).formatted()) active hours") }
+        if let active = totalActiveHours { parts.append("\((active.rounded()).safeInt.formatted()) active hours") }
         parts.append("\(totalLaunches.formatted()) launches")
         parts.append("\(uniqueUsers.formatted()) unique users")
         if let none = noActiveUseAppCount, none > 0 { parts.append("\(none.formatted()) with no active use") }
@@ -532,7 +536,7 @@ public enum ApplicationsReport {
     /// `formatDuration`: `0m`, `45m`, `3h`, `3h 20m`.
     public static func duration(seconds: Double) -> String {
         guard seconds > 0 else { return "0m" }
-        let h = Int(seconds / 3600), m = Int(seconds.truncatingRemainder(dividingBy: 3600) / 60)
+        let h = (seconds / 3600).safeInt, m = (seconds.truncatingRemainder(dividingBy: 3600) / 60).safeInt
         if h == 0 { return "\(m)m" }
         if m == 0 { return "\(h)h" }
         return "\(h)h \(m)m"
@@ -554,7 +558,7 @@ public enum UsageMetric: String, Sendable, CaseIterable, Identifiable {
     public var id: String { rawValue }
     public var label: String { self == .hours ? "Hours" : "Launches" }
     public func format(_ value: Double) -> String {
-        self == .hours ? "\(Int(value.rounded()))h" : Int(value.rounded()).formatted()
+        self == .hours ? "\((value.rounded()).safeInt)h" : (value.rounded()).safeInt.formatted()
     }
 }
 
@@ -707,7 +711,7 @@ public struct UsageByDeviceReport: Sendable {
     }
 
     public var headline: String {
-        "\(summary.deviceCount) devices · \(Int(summary.totalUsageHours.rounded()).formatted()) hours · \(summary.totalLaunches.formatted()) launches · \(summary.uniqueUsers) unique users"
+        "\(summary.deviceCount) devices · \((summary.totalUsageHours.rounded()).safeInt.formatted()) hours · \(summary.totalLaunches.formatted()) launches · \(summary.uniqueUsers) unique users"
     }
 }
 

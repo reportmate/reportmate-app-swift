@@ -93,7 +93,7 @@ struct InstallsTabView: View {
         guard let date = FlexibleDate.parse(timestamp) else { return "unknown" }
         let diff = Date().timeIntervalSince(date)
         if diff < 0 { return "just now" }
-        let minutes = Int(diff / 60), hours = minutes / 60, days = hours / 24
+        let minutes = (diff / 60).safeInt, hours = minutes / 60, days = hours / 24
         if diff < 60 { return "just now" }
         if minutes < 60 { return "\(minutes)m ago" }
         if hours < 24 { return minutes % 60 > 0 ? "\(hours)h \(minutes % 60)m ago" : "\(hours)h ago" }
@@ -130,7 +130,7 @@ struct RunLogDisclosure: View {
                 if expanded {
                     Divider()
                     if loading {
-                        LoadingView(message: "Loading run log…").frame(height: 120)
+                        VStack(alignment: .leading, spacing: 8) { ForEach(0..<6, id: \.self) { i in SkeletonLine(fraction: [0.9, 0.7, 0.8, 0.5, 0.75, 0.6][i], height: 9) } }.padding(12).skeletonAccessibility("Loading run log").skeletonTimeout()
                     } else {
                         HStack {
                             HStack(spacing: 6) {

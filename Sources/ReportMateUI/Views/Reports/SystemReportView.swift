@@ -6,7 +6,8 @@ import ReportMateKit
 /// uptime and pending-update widgets over the OS table. Port of `app/system/page.tsx`.
 struct SystemReportView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = FleetReportModel(path: "/system")
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/system") }
 
     enum Column { case device, os, version, updates, edition, activation, uptime, lastSeen }
     @State private var sortColumn: Column = .device
@@ -17,6 +18,7 @@ struct SystemReportView: View {
     @State private var licenseSources: Set<String> = []
     @State private var uptimeBuckets: Set<String> = []
     @State private var pendingBuckets: Set<String> = []
+    @State private var currencyCache = OSCurrencyCache()
 
     struct Bucket { let key: String; let label: String; let tone: Tone }
     static let uptimeBuckets: [(Bucket, ClosedRange<Double>)] = [
@@ -116,23 +118,43 @@ struct SystemReportView: View {
                 CSVExportButton(filename: "system-report", headers: ["Device Name", "Serial Number", "Asset Tag", "OS", "Version", "Build", "Edition", "Activation", "License Source", "Time Zone", "Locale", "Uptime", "Boot Time", "Last Seen"]) {
                     filtered(rows).map { p in
                         let d = p.s
-                        let up = d.uptime.map { "\(Int($0 / 86_400))d \(Int($0.truncatingRemainder(dividingBy: 86_400) / 3600))h" } ?? ""
+                        let up = d.uptime.map { "\(($0 / 86_400).safeInt)d \(($0.truncatingRemainder(dividingBy: 86_400) / 3600).safeInt)h" } ?? ""
                         return [p.row.deviceName, p.row.serialNumber, p.row.inventory.assetTag ?? "", d.osDisplayName, d.osVersion ?? "", d.buildNumber ?? "", d.edition ?? "", d.activationLabel ?? "", d.licenseSource ?? "", d.timeZone ?? "", d.locale ?? "", up, d.bootTime ?? "", p.row.json["lastSeen"].string ?? ""]
                     }
                 }
             },
-            widgets: { rows in widgets(rows) }
+            widgets: { rows in widgets(rows) },
+            linking: linking
         ) { rows in
             table(filtered(rows))
         }
-        .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
-            guard let link = appState.consumeDeepLink(for: .system) else { return }
-            osVersionFilter = link.query["osVersion"]
-        }
-        .onChange(of: osVersionFilter, initial: true) { _, v in appState.linkQuery = v.map { ["osVersion": $0] } ?? [:] }
         .onReceive(NotificationCenter.default.publisher(for: .systemVersionFilter)) { note in
             if let v = note.object as? String { osVersionFilter = v }
         }
+    }
+
+    /// OS version, uptime, pending and edition parameters select their widgets; deferred
+    /// updates, unsupported macOS, Windows 10 and "behind the latest patch" narrow the rows,
+    /// judged against every row the report loaded.
+    private var linking: ReportLinking {
+        var q: [String: String] = [:]
+        if let osVersionFilter { q["osVersion"] = osVersionFilter }
+        let up = uptimeBuckets.compactMap { SystemBuckets.uptime(label: $0)?.key }.sorted()
+        if !up.isEmpty { q["uptime"] = up.joined(separator: ",") }
+        let pend = pendingBuckets.compactMap { SystemBuckets.pending(label: $0)?.key }.sorted()
+        if !pend.isEmpty { q["pending"] = pend.joined(separator: ",") }
+        if !editions.isEmpty { q["edition"] = editions.sorted().joined(separator: ",") }
+        let cache = currencyCache
+        let all = model.rows
+        return ReportLinking(absorb: { f in
+            let versions = f.values("osVersion")
+            osVersionFilter = nil
+            activations = []; licenseSources = []
+            if versions.count == 1 { osVersionFilter = f.take("osVersion").first }
+            uptimeBuckets = Set(f.take("uptime").compactMap { SystemBuckets.uptime(key: $0)?.label })
+            pendingBuckets = Set(f.take("pending").compactMap { SystemBuckets.pending(key: $0)?.label })
+            editions = Set(f.take("edition"))
+        }, matches: { row, f in f.matches(system: SystemReportRow(json: row.json), currency: cache.currency(all)) }, widgetQuery: q)
     }
 
     // MARK: Widgets
@@ -157,19 +179,19 @@ struct SystemReportView: View {
         let windows = all.filter { !$0.isMac }
         return HStack(alignment: .top, spacing: 12) {
             if appState.platformFilter != .macOS {
-                OSVersionFilterWidget(title: "Windows Versions", tone: .blue, nodes: FleetStats.osVersions(sums, platform: .windows), selected: $osVersionFilter).frame(width: 300)
+                OSVersionFilterWidget(title: "Windows Versions", tone: .blue, nodes: FleetStats.osVersions(sums, platform: .windows), selected: $osVersionFilter).reportWidgetWidth(300)
             }
             if appState.platformFilter != .windows {
-                OSVersionFilterWidget(title: "macOS Versions", tone: .red, nodes: FleetStats.osVersions(sums, platform: .macOS), selected: $osVersionFilter).frame(width: 300)
+                OSVersionFilterWidget(title: "macOS Versions", tone: .red, nodes: FleetStats.osVersions(sums, platform: .macOS), selected: $osVersionFilter).reportWidgetWidth(300)
             }
             if isWindowsOnly {
-                DonutToggleWidget(title: "Edition", data: countLabels(windows.compactMap(\.edition)), selected: $editions, palette: [.indigo, .blue, .purple, .teal, .cyan]).frame(width: 220)
-                DonutToggleWidget(title: "Activation", data: countLabels(windows.compactMap(\.activationLabel)), selected: $activations, palette: [.green, .red]).frame(width: 200)
-                CountListWidget(title: "License Source", counts: countLabels(windows.compactMap(\.licenseSource)), selected: $licenseSources, tone: .orange).frame(width: 240)
+                DonutToggleWidget(title: "Edition", data: countLabels(windows.compactMap(\.edition)), selected: $editions, palette: [.indigo, .blue, .purple, .teal, .cyan]).reportWidgetWidth(220)
+                DonutToggleWidget(title: "Activation", data: countLabels(windows.compactMap(\.activationLabel)), selected: $activations, palette: [.green, .red]).reportWidgetWidth(200)
+                CountListWidget(title: "License Source", counts: countLabels(windows.compactMap(\.licenseSource)), selected: $licenseSources, tone: .orange).reportWidgetWidth(240)
             }
-            bucketWidget("Uptime Distribution", buckets: Self.uptimeBuckets.map(\.0), counts: forBuckets.compactMap { Self.uptimeBucket($0.uptime) }, selected: $uptimeBuckets).frame(width: 240)
+            bucketWidget("Uptime Distribution", buckets: Self.uptimeBuckets.map(\.0), counts: forBuckets.compactMap { Self.uptimeBucket($0.uptime) }, selected: $uptimeBuckets).reportWidgetWidth(240)
             bucketWidget("Pending Updates", buckets: Self.pendingBuckets.map(\.0), counts: forBuckets.compactMap { Self.pendingBucket($0.pendingUpdatesCount) }, selected: $pendingBuckets,
-                         footer: forBuckets.reduce(0) { $0 + $1.deferredUpdatesCount } > 0 ? "\(forBuckets.reduce(0) { $0 + $1.deferredUpdatesCount }) deferred" : nil).frame(width: 240)
+                         footer: forBuckets.reduce(0) { $0 + $1.deferredUpdatesCount } > 0 ? "\(forBuckets.reduce(0) { $0 + $1.deferredUpdatesCount }) deferred" : nil).reportWidgetWidth(240)
         }
     }
 
@@ -321,5 +343,21 @@ struct OSVersionFilterWidget: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// The fleet's OS currency, worked out once per load of the report's rows.
+@MainActor
+final class OSCurrencyCache {
+    private var key: [String] = []
+    private var value = OSCurrency(rows: [])
+
+    func currency(_ rows: [ReportRow]) -> OSCurrency {
+        let k = [String(rows.count), rows.first?.id ?? "", rows.last?.id ?? ""]
+        if k != key {
+            value = OSCurrency(rows: rows.map { SystemReportRow(json: $0.json) })
+            key = k
+        }
+        return value
     }
 }

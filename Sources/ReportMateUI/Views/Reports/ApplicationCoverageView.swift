@@ -178,7 +178,7 @@ struct ApplicationCoverageView: View {
             if let error {
                 ErrorBanner(message: error) { Task { await load() } }.padding()
             } else if data == nil {
-                LoadingView(message: "Loading…").frame(height: 160)
+                SkeletonTableRows(rows: 8, columns: [220, nil, 120, 120]).skeletonTimeout { Task { await load() } }
             } else if rows.isEmpty {
                 EmptyStateView(title: "No devices match the current filter.", message: "", systemImage: "checkmark.circle").frame(height: 160)
             } else {
