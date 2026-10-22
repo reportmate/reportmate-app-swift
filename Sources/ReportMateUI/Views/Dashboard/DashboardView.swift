@@ -251,31 +251,34 @@ struct DashboardView: View {
                 activityColumn.frame(maxWidth: .infinity)
             }
         } else if contentWidth >= Self.desktopBreakpoint {
-            // Desktop: fleet status, the first four insights, events and charts;
-            // cards 5–12 four across underneath.
+            // Desktop: three independent stacks, never a row underneath them (a row there
+            // leaves gaps beside a tall column 1). Column 2 keeps its cards; column 3's are
+            // dealt alternately into column 2 and the events column.
             let unit = max(Self.columnMinimum, (contentWidth - 40) / 4)
-            VStack(alignment: .leading, spacing: 20) {
-                HStack(alignment: .top, spacing: 20) {
-                    statusColumn.frame(width: unit).fixedSize(horizontal: false, vertical: true)
-                    insightStack(Self.column2, newClients: true).frame(width: unit).fixedSize(horizontal: false, vertical: true)
-                    activityColumn.frame(maxWidth: .infinity)
-                }
-                insightGrid(Self.column3, maxColumns: 4)
+            let (toInsights, toActivity) = Self.deal(Self.column3)
+            HStack(alignment: .top, spacing: 20) {
+                statusColumn.frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                insightStack(Self.column2 + toInsights, newClients: true).frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                activityColumn(extra: toActivity).frame(maxWidth: .infinity)
             }
         } else {
-            VStack(alignment: .leading, spacing: 20) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 20) {
-                        VStack(spacing: 20) { statusColumn; newClientsCard }.frame(width: Self.columnMinimum)
-                        activityColumn
-                    }
+            // Two stacks, every insight card dealt alternately into them; one stack when narrow.
+            let (left, right) = Self.deal(Self.column2 + Self.column3)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 20) {
                     VStack(spacing: 20) {
                         statusColumn
                         newClientsCard
-                        activityColumn
+                        ForEach(left, id: \.self) { card($0) }
                     }
+                    .frame(width: Self.columnMinimum)
+                    activityColumn(extra: right)
                 }
-                insightGrid(Self.column2 + Self.column3, maxColumns: 2)
+                VStack(spacing: 20) {
+                    statusColumn
+                    newClientsCard
+                    activityColumn(extra: Self.column2 + Self.column3)
+                }
             }
         }
     }
@@ -302,18 +305,27 @@ struct DashboardView: View {
         }
     }
 
-    private var activityColumn: some View {
-        Group {
+    private var activityColumn: some View { activityColumn(extra: []) }
+
+    /// Recent Events, Platform Distribution and the OS versions, then any insight cards
+    /// dealt to this stack on a narrower window.
+    private func activityColumn(extra: [String]) -> some View {
+        VStack(spacing: 20) {
             if awaitingData {
                 DashboardActivitySkeleton().skeletonTimeout(retry: reloadDashboard)
             } else {
-                VStack(spacing: 20) {
-                    RecentEventsWidget(events: events, connectionStatus: model.connectionStatus, lastUpdate: model.lastUpdate)
-                    PlatformDistributionWidget(devices: devices)
-                    osVersionRow
-                }
+                RecentEventsWidget(events: events, connectionStatus: model.connectionStatus, lastUpdate: model.lastUpdate)
+                PlatformDistributionWidget(devices: devices)
+                osVersionRow
             }
+            ForEach(extra, id: \.self) { card($0) }
         }
+    }
+
+    /// Cards dealt alternately into two stacks: first, third, … and second, fourth, …
+    static func deal(_ cards: [String]) -> (first: [String], second: [String]) {
+        let indexed = cards.enumerated()
+        return (indexed.filter { $0.offset % 2 == 0 }.map(\.element), indexed.filter { $0.offset % 2 == 1 }.map(\.element))
     }
 
     private func insightStack(_ cards: [String], newClients: Bool = false) -> some View {
@@ -329,12 +341,6 @@ struct DashboardView: View {
             SkeletonCard { SkeletonRows(count: 6) }.skeletonTimeout(retry: reloadDashboard)
         } else {
             NewClientsWidget(devices: devices)
-        }
-    }
-
-    private func insightGrid(_ cards: [String], maxColumns: Int) -> some View {
-        UniformGrid(minColumnWidth: 320, maxColumns: maxColumns, spacing: 20, fillsHeight: false) {
-            ForEach(cards, id: \.self) { card($0) }
         }
     }
 

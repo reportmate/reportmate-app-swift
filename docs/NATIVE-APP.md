@@ -176,9 +176,10 @@ re-flow as the window is resized:
   them: column 2 is New Clients, Directory Services, User Accounts, Connectivity Problems,
   Protection Gaps and Expiring Certificates; column 3 is Update Debt, Storage, App
   Usage, Software Risk and Uptime Overview (1fr each, the wide one 2fr). From 1500 pt
-  there are three columns, column 2 as on the wide layout and column 3's cards four
-  across underneath. Below that the cards sit in a two-column grid in the same
-  order. No card has a platform control
+  there are three columns, with column 3's cards dealt alternately into column 2
+  and the events column. Below that there are two columns, with every insight card
+  dealt alternately into them, and one column when narrow. At every width the
+  dashboard is independent column stacks, never a row of cards beneath them. No card has a platform control
   of its own; every card follows the toolbar toggle. The web app switches at
   1680 and 2200 px.
 - Report widget rows stretch to fill the window, and scroll sideways only when
