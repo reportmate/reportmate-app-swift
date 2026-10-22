@@ -348,3 +348,59 @@ struct RefreshFailedBanner: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+// MARK: - Ten-second limit
+
+/// A skeleton never shows for more than ten seconds. After that it gives way to
+/// "Still loading… · Retry", so a slow or stuck request reads as one rather than
+/// as a page that is about to appear. Errors and 404s never reach this: they
+/// replace the skeleton the moment they come back.
+struct TimedSkeleton<Content: View>: View {
+    var retry: (() -> Void)? = nil
+    var fillsPage = false
+    @ViewBuilder var content: Content
+    @State private var stalled = false
+    @State private var attempt = 0
+
+    static var limit: Duration { .seconds(10) }
+
+    var body: some View {
+        Group {
+            if stalled {
+                StillLoadingView(retry: retry.map { r in { stalled = false; attempt += 1; r() } })
+                    .frame(maxWidth: .infinity, maxHeight: fillsPage ? .infinity : nil, alignment: .top)
+            } else {
+                content
+            }
+        }
+        .task(id: attempt) {
+            try? await Task.sleep(for: Self.limit)
+            if !Task.isCancelled { stalled = true }
+        }
+    }
+}
+
+extension View {
+    /// Swap this skeleton for "Still loading… · Retry" after ten seconds.
+    func skeletonTimeout(fillsPage: Bool = false, retry: (() -> Void)? = nil) -> some View {
+        TimedSkeleton(retry: retry, fillsPage: fillsPage) { self }
+    }
+}
+
+/// The state a skeleton turns into after ten seconds without data.
+struct StillLoadingView: View {
+    var retry: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "hourglass").foregroundStyle(.secondary).accessibilityHidden(true)
+            Text("Still loading…").appFont(.callout).foregroundStyle(.secondary)
+            if let retry {
+                Button("Retry", action: retry).controlSize(.small)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .accessibilityElement(children: .combine)
+    }
+}

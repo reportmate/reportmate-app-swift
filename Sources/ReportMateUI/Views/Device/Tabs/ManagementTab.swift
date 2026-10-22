@@ -695,7 +695,7 @@ struct ManagementLogsSection: View {
                             } else if case .error(let msg) = state {
                                 Text("Failed to load: \(msg)").appFont(.caption2).foregroundStyle(.secondary).padding(10)
                             } else {
-                                SkeletonRows(count: 4).padding(10).skeletonAccessibility()
+                                SkeletonRows(count: 4).padding(10).skeletonAccessibility().skeletonTimeout()
                             }
                             if !withoutTails.isEmpty {
                                 Text("NOT TAILED").appFont(.caption2, weight: .medium).foregroundStyle(.tertiary).padding(.horizontal, 10).padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading).background(Color.subtleBackground.opacity(0.6))
@@ -750,7 +750,7 @@ struct ManagementLogsSection: View {
                     Divider()
                     Group {
                         if state == nil || { if case .loading = state { return true }; return false }() {
-                            VStack(alignment: .leading, spacing: 8) { ForEach(0..<10, id: \.self) { i in SkeletonLine(fraction: [0.95, 0.7, 0.85, 0.6, 0.9][i % 5], height: 9) } }.padding(16).frame(maxWidth: .infinity).skeletonAccessibility("Loading log")
+                            VStack(alignment: .leading, spacing: 8) { ForEach(0..<10, id: \.self) { i in SkeletonLine(fraction: [0.95, 0.7, 0.85, 0.6, 0.9][i % 5], height: 9) } }.padding(16).frame(maxWidth: .infinity).skeletonAccessibility("Loading log").skeletonTimeout()
                         } else if case .error(let msg) = state {
                             VStack(spacing: 10) {
                                 Text("Failed to load log: \(msg)").appFont(.callout).foregroundStyle(.red)

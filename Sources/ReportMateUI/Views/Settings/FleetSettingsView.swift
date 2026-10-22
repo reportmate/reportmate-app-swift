@@ -151,6 +151,10 @@ struct FleetSettingsView: View {
                 .padding(.horizontal, 16).padding(.vertical, 8)
                 .background(Color.blue.opacity(0.08))
             }
+            if store.awaiting, section != .maintenance {
+                // Nothing for ten seconds after the placeholders appear, then "Still loading…".
+                Color.clear.frame(height: 0).skeletonTimeout { Task { await store.load(appState) } }
+            }
             Group {
                 switch section {
                 case .general: GeneralSettingsSection(settings: $store.settings, save: save, reload: reload, status: store.status, saving: store.saving)

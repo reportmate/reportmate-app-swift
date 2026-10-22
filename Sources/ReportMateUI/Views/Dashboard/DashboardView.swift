@@ -176,7 +176,7 @@ struct DashboardView: View {
                 Spacer()
             } else {
                 VStack(spacing: 0) {
-                    if let failure = model.refreshError ?? (insights.document != nil ? insights.error : nil) {
+                    if let failure = model.refreshError ?? (insights.hasData ? insights.error : nil) {
                         RefreshFailedBanner(message: failure, updatedAt: model.lastUpdate) {
                             Task { await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: false) }
                             Task { await loadInsights(force: true) }
@@ -220,15 +220,14 @@ struct DashboardView: View {
         }
     }
 
-    /// Sources loaded of total on the first load; a sweep marked Updating while kept data refreshes.
+    /// A sweep until the dashboard payload lands, then "Loading n of 12" as the cards answer; a sweep marked Updating while kept data refreshes.
     @ViewBuilder
     private var progressBar: some View {
-        let total = 2
-        let loaded = (model.data != nil ? 1 : 0) + (insights.document != nil || insights.error != nil ? 1 : 0)
-        if !placeholder, loaded < total {
-            LoadProgressBar(loaded: loaded, total: total)
-        } else if placeholder {
+        let total = DashboardInsightsModel.cardCount
+        if placeholder || model.data == nil, model.error == nil {
             LoadProgressBar()
+        } else if insights.loading, insights.answered < total, insights.error == nil {
+            LoadProgressBar(loaded: insights.answered, total: total)
         } else if model.refreshing || insights.loading {
             LoadProgressBar(updating: true)
         }
@@ -278,13 +277,17 @@ struct DashboardView: View {
         }
     }
 
+    private func reloadDashboard() {
+        Task { await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: true) }
+    }
+
     /// Until the dashboard payload arrives the columns draw as skeletons in the same layout.
     private var awaitingData: Bool { placeholder || model.data == nil }
 
     private var statusColumn: some View {
         Group {
             if awaitingData {
-                DashboardStatusSkeleton()
+                DashboardStatusSkeleton().skeletonTimeout(retry: reloadDashboard)
             } else {
                 VStack(spacing: 20) {
                     StatusWidget(devices: devices)
@@ -298,7 +301,7 @@ struct DashboardView: View {
     private var activityColumn: some View {
         Group {
             if awaitingData {
-                DashboardActivitySkeleton()
+                DashboardActivitySkeleton().skeletonTimeout(retry: reloadDashboard)
             } else {
                 VStack(spacing: 20) {
                     RecentEventsWidget(events: events, connectionStatus: model.connectionStatus, lastUpdate: model.lastUpdate)

@@ -215,7 +215,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
             if !linkFilter.isEmpty { linkFilterBar }
             DeviceFiltersView(options: DeviceFilterOptions(devices: summaries), selections: $selections, expanded: $filtersExpanded)
             if model.loading, model.rows.isEmpty {
-                ReportSkeleton(widgets: widgets == nil ? 0 : 4)
+                ReportSkeleton(widgets: widgets == nil ? 0 : 4).skeletonTimeout(fillsPage: true) { Task { await model.load(api: appState.api, query: query, force: true) } }
             } else if let error = model.error, model.rows.isEmpty {
                 ErrorBanner(message: error) { Task { await model.load(api: appState.api, query: query, force: true) } }.padding()
                 Spacer()

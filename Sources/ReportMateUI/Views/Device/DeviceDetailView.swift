@@ -228,6 +228,7 @@ struct DeviceDetailView: View {
                     tabBar
                     LoadProgressBar()
                     ScrollView { DeviceTabSkeleton(tab: tab).padding(16) }
+                        .skeletonTimeout(fillsPage: true) { Task { await model.load(api: appState.api, appState: appState) } }
                 }
             } else if model.notFound {
                 EmptyStateView(title: isLocal ? "No local report" : "Device not found",
@@ -314,7 +315,7 @@ struct DeviceDetailView: View {
     @ViewBuilder
     private func moduleTab(_ tab: DeviceTab, module: ModuleName, device: DeviceDetail) -> some View {
         if model.loadingModules.contains(module), !device.loadedModules.contains(module.rawValue) {
-            DeviceTabSkeleton(tab: tab)
+            DeviceTabSkeleton(tab: tab).skeletonTimeout { Task { await model.reloadModule(module, api: appState.api) } }
         } else if let err = model.moduleErrors[module], !device.loadedModules.contains(module.rawValue) {
             ErrorBanner(message: err) { Task { await model.reloadModule(module, api: appState.api) } }
         } else {
@@ -432,7 +433,7 @@ struct DeviceEventsTabView: View {
                     EventTypeFilterMenu(hidden: $hidden, defaultHidden: [])
                 })
                 if model.eventsLoading, !model.eventsLoaded {
-                    SkeletonTableRows(rows: 8, columns: [24, nil, 160])
+                    SkeletonTableRows(rows: 8, columns: [24, nil, 160]).skeletonTimeout { Task { await model.loadEvents(api: appState.api) } }
                 } else if bundled.isEmpty {
                     EmptyStateView(title: "No events", message: "This device has not reported any events yet.", systemImage: "clock")
                 } else {

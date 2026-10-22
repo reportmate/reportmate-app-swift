@@ -2,36 +2,48 @@ import SwiftUI
 import Charts
 import ReportMateKit
 
-/// The dashboard's insight cards, from one cached endpoint:
-/// `GET /api/v1/dashboard/insights?platform=…`. The API computes every card in
-/// SQL and caches it for five minutes, so the dashboard makes one request per
-/// poll instead of pulling the bulk reports (which held the API at its memory
-/// limit). Cards show skeletons until the first answer.
+/// The dashboard's insight cards, from the API's cached insights endpoints. The
+/// API computes every card in SQL and caches it, so the dashboard never pulls the
+/// bulk reports (which held the API at its memory limit).
+///
+/// Where the API serves one card per request (`/dashboard/insights/{card}`), the
+/// cards load in parallel and each paints as soon as it answers; otherwise one
+/// request (`/dashboard/insights`) brings them all. A 404 means the server does
+/// not have the endpoint yet, and the cards say so at once rather than waiting.
 @MainActor
 @Observable
 final class DashboardInsightsModel {
-    private(set) var document: DashboardInsightsDocument?
+    /// Each card's section, filled as the cards answer. A card that failed holds `{"error": …}`.
+    private(set) var cards: [String: InsightCardData] = [:]
     private(set) var loading = false
-    /// The request itself failed and there is no document to show.
+    /// The request for every card failed and there is nothing to show.
     private(set) var error: String?
     private var loadedKey: String?
     private var loadedAt: Date?
     private var inFlightKey: String?
     private var generation = 0
+    /// Whether this server serves one card per request; learnt on the first load.
+    private var perCard: [String: Bool] = [:]
 
     static let refreshInterval: TimeInterval = 300
+    static let notDeployed = "Not available on this server yet"
+    static let cardCount = DashboardInsightsDocument.cardKeys.count
 
-    func card(_ key: String) -> InsightCardData? { document?.card(key) }
+    var hasData: Bool { !cards.isEmpty }
+    /// Cards that have answered, with data or an error, for "Loading n of 12".
+    var answered: Int { cards.count }
+    func card(_ key: String) -> InsightCardData? { cards[key] }
 
-    /// Fetch unless the document for this connection and platform is under five minutes old.
+    /// Fetch unless the cards for this connection and platform are under five minutes old.
     func load(api: ReportMateAPI, platform: PlatformFilter, includeArchived: Bool, force: Bool = false) async {
         let p = DashboardInsightsDocument.platformParameter(platform)
-        let key = "\(api.configuration.normalizedBaseURL)|\(p)|\(includeArchived)"
+        let base = api.configuration.normalizedBaseURL
+        let key = "\(base)|\(p)|\(includeArchived)"
         if !force, key == loadedKey, let loadedAt, Date().timeIntervalSince(loadedAt) < Self.refreshInterval { return }
         if !force, inFlightKey == key { return }
         if key != loadedKey {
             // Another platform or connection: its cards are not these.
-            document = nil
+            cards = [:]
             error = nil
         }
         generation += 1
@@ -40,27 +52,94 @@ final class DashboardInsightsModel {
         loading = true
         defer { if mine == generation { loading = false; inFlightKey = nil } }
         let query: [String: String?] = ["platform": p, "includeArchived": includeArchived ? "true" : nil]
-        for attempt in 0..<2 {
-            do {
-                let json = try await api.getJSON("/dashboard/insights", query: query)
+
+        if perCard[base] != false {
+            let keys = DashboardInsightsDocument.cardKeys
+            // The first card tells whether the server has per-card endpoints.
+            let first = await Self.fetchCard(keys[0], api: api, query: query)
+            guard mine == generation else { return }
+            if case .notFound = first, perCard[base] == nil {
+                perCard[base] = false
+            } else {
+                perCard[base] = true
+                apply(first, to: keys[0])
+                await withTaskGroup(of: (String, CardResult).self) { group in
+                    var next = keys.dropFirst().makeIterator()
+                    for _ in 0..<4 { if let k = next.next() { group.addTask { (k, await Self.fetchCard(k, api: api, query: query)) } } }
+                    while let (k, result) = await group.next() {
+                        guard mine == generation else { group.cancelAll(); return }
+                        if let more = next.next() { group.addTask { (more, await Self.fetchCard(more, api: api, query: query)) } }
+                        apply(result, to: k)
+                    }
+                }
                 guard mine == generation else { return }
-                document = DashboardInsightsDocument(json: json)
                 error = nil
                 loadedKey = key
                 loadedAt = Date()
                 return
-            } catch {
-                guard mine == generation else { return }
-                let retry: Bool
-                switch error as? APIError {
-                case .http(let status, _, _): retry = status >= 500
-                case .transport: retry = true
-                default: retry = false
-                }
-                if retry, attempt == 0 { try? await Task.sleep(for: .seconds(3)); continue }
-                self.error = error.localizedDescription
+            }
+        }
+
+        // One request for every card.
+        do {
+            let json = try await Self.retrying { try await api.getJSON("/dashboard/insights", query: query) }
+            guard mine == generation else { return }
+            guard json["cards"].object != nil else {
+                error = json.isNull ? Self.notDeployed : "The server's insights answer had no cards."
                 return
             }
+            let doc = DashboardInsightsDocument(json: json)
+            cards = doc.cards
+            error = nil
+            loadedKey = key
+            loadedAt = Date()
+        } catch {
+            guard mine == generation else { return }
+            self.error = error.localizedDescription
+        }
+    }
+
+    enum CardResult: Sendable {
+        case card(JSONValue)
+        case notFound
+        case failed(String)
+    }
+
+    private func apply(_ result: CardResult, to key: String) {
+        switch result {
+        case .card(let json): cards[key] = InsightCardData(json: json)
+        case .notFound: cards[key] = InsightCardData(json: .object(["error": .string(Self.notDeployed)]))
+        case .failed(let message):
+            // A failed refresh keeps the card's last good answer.
+            if cards[key] == nil || cards[key]?.error != nil { cards[key] = InsightCardData(json: .object(["error": .string(message)])) }
+        }
+    }
+
+    nonisolated private static func fetchCard(_ key: String, api: ReportMateAPI, query: [String: String?]) async -> CardResult {
+        do {
+            let json = try await retrying { try await api.getJSON("/dashboard/insights/\(key)", query: query) }
+            if json.isNull { return .notFound }
+            // The card on its own, or wrapped as {card: …} or {cards: {key: …}}.
+            if json["cards"][key].object != nil { return .card(json["cards"][key]) }
+            if json["card"].object != nil { return .card(json["card"]) }
+            return .card(json)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// One more try after a pause for a 5xx or a dropped connection.
+    nonisolated private static func retrying<T: Sendable>(_ work: @Sendable () async throws -> T) async throws -> T {
+        do { return try await work() } catch {
+            let retry: Bool
+            switch error as? APIError {
+            case .http(let status, _, _): retry = status >= 500
+            case .transport: retry = true
+            default: retry = false
+            }
+            guard retry else { throw error }
+            try? await Task.sleep(for: .seconds(3))
+            return try await work()
         }
     }
 }
@@ -111,7 +190,7 @@ struct InsightCard<Content: View>: View {
                     } else if let error = insights.error, !insights.loading {
                         failure(error)
                     } else {
-                        InsightBodySkeleton().padding(16)
+                        InsightBodySkeleton().padding(16).skeletonTimeout(retry: retry)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)

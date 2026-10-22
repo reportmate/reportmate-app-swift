@@ -184,8 +184,8 @@ struct ContentView: View {
             // The page's skeleton while the credential settles; nothing is requested yet.
             switch appState.section {
             case .dashboard: DashboardView(placeholder: true)
-            case .devices, .events: VStack(spacing: 0) { SkeletonTableRows(rows: 18, columns: [240, 110, 140, nil, 120]); Spacer(minLength: 0) }
-            default: ReportSkeleton()
+            case .devices, .events: VStack(spacing: 0) { SkeletonTableRows(rows: 18, columns: [240, 110, 140, nil, 120]); Spacer(minLength: 0) }.skeletonTimeout(fillsPage: true)
+            default: ReportSkeleton().skeletonTimeout(fillsPage: true)
             }
         } else if !appState.isConfigured {
             NotConfiguredView()

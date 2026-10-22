@@ -196,6 +196,12 @@ arrive (a device page counts its modules), a sweep when the count is unknown,
 and "Updating" while kept data refreshes. When a background refresh fails, the
 last good data stays with a one-line "Couldn't refresh" note, when it last
 updated, and Retry; the full error state is for a page with nothing to show yet.
+A skeleton never shows for more than ten seconds: after that it turns into
+"Still loading… · Retry". An error replaces it the moment it comes back, and an
+insights endpoint the server does not have yet (404) says "Not available on this
+server yet" at once. Where the API serves one card per request
+(`/dashboard/insights/{card}`), the cards load in parallel and each paints as it
+answers, with "Loading n of 12" across the top; otherwise one request brings them all.
 The top bar keeps every section tab on a device page too.
 
 ### Dashboard widgets and their links

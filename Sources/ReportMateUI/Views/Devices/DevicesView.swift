@@ -37,7 +37,7 @@ struct DevicesView: View {
             }
             DeviceFiltersView(options: options, selections: $selections, expanded: $filtersExpanded)
             if appState.devicesLoading, appState.devices.isEmpty {
-                SkeletonTableRows(rows: 18, columns: [240, 110, 140, nil, 120, 110])
+                SkeletonTableRows(rows: 18, columns: [240, 110, 140, nil, 120, 110]).skeletonTimeout(fillsPage: true) { Task { await appState.loadDevices(force: true) } }
                 Spacer(minLength: 0)
             } else if let error = appState.devicesError, appState.devices.isEmpty {
                 ErrorBanner(message: error) { Task { await appState.loadDevices(force: true) } }.padding()

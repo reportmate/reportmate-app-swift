@@ -54,7 +54,7 @@ struct InstallsReportView: View {
                     .padding(.horizontal, 16).padding(.top, 8)
             }
             if model.filtersLoading {
-                ReportSkeleton(widgets: 5, columns: [220, 70, 70, 70, 70, nil, 120])
+                ReportSkeleton(widgets: 5, columns: [220, 70, 70, 70, 70, nil, 120]).skeletonTimeout(fillsPage: true) { Task { await model.loadFilters(api: appState.api, force: true) } }
             } else {
                 ScrollView {
                     VStack(spacing: 0) {

@@ -277,7 +277,7 @@ struct InstallHealthCard: View {
                 Button("Retry") { retry() }.controlSize(.small)
             }
         } else {
-            SkeletonBars(count: 4).skeletonAccessibility("Loading install items")
+            SkeletonBars(count: 4).skeletonAccessibility("Loading install items").skeletonTimeout(retry: retry)
         }
     }
 }

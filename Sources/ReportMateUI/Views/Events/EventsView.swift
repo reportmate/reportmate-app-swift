@@ -168,6 +168,7 @@ struct EventsView: View {
             chips
             LoadProgressBar()
             SkeletonTableRows(rows: 18, columns: [24, nil, 200, 120])
+                .skeletonTimeout(fillsPage: true) { Task { await model.reload(api: appState.api) } }
             Spacer(minLength: 0)
         } else if let error = model.error, model.events.isEmpty {
             ErrorBanner(message: error) { Task { await model.reload(api: appState.api) } }.padding()
@@ -187,7 +188,7 @@ struct EventsView: View {
                         EventsTableView(events: filtered, style: .feed, autoFetchRows: 80, maxRows: 2000, onNearEnd: { model.loadMore(api: appState.api) })
                     }
                     if model.loadingMore {
-                        SkeletonTableRows(rows: 3, columns: [24, nil, 200, 120], header: false)
+                        SkeletonTableRows(rows: 3, columns: [24, nil, 200, 120], header: false).skeletonTimeout()
                     } else if !model.hasMore, !model.events.isEmpty {
                         Text("Showing all \(model.events.count.formatted()) events").appFont(.caption).foregroundStyle(.secondary).padding(12)
                     }
@@ -349,6 +350,7 @@ struct IngestFailuresView: View {
                     Card { VStack(spacing: 0) { SkeletonCardHeader(); SkeletonTableRows(rows: 10, columns: [140, 90, 180, nil, 80, 90]) } }.skeletonAccessibility()
                 }
                 .padding(16)
+                .skeletonTimeout(fillsPage: true) { Task { await load() } }
                 Spacer(minLength: 0)
             } else if let error, page == nil {
                 ErrorBanner(message: error) { Task { await load() } }.padding()

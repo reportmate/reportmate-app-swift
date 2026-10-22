@@ -257,6 +257,7 @@ struct ApplicationsReportView: View {
             SkeletonTableRows(rows: 8, columns: [nil, 120, 120, 120])
         }
         .padding(16)
+        .skeletonTimeout(fillsPage: true) { Task { await model.loadFilters(api: appState.api, force: true) } }
     }
 
     private var builder: some View {

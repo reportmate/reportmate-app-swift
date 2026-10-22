@@ -73,7 +73,7 @@ struct EventInlineLinesView: View {
                     .appFont(.body)
                     .foregroundStyle(summaryColor(successTone))
                     .fixedSize(horizontal: false, vertical: true)
-                if loading { SkeletonLine(width: 220, height: 8).skeletonAccessibility("Loading details") }
+                if loading { SkeletonLine(width: 220, height: 8).skeletonAccessibility("Loading details").skeletonTimeout() }
             } else {
                 ForEach(Array(errors.enumerated()), id: \.offset) { _, line in lineView(line, tone: .red) }
                 ForEach(Array(warnings.enumerated()), id: \.offset) { _, line in lineView(line, tone: .yellow) }
@@ -144,6 +144,7 @@ struct EventDetailsView: View {
             if store.loading, store.payloads.isEmpty {
                 VStack(alignment: .leading, spacing: 7) { SkeletonLine(width: 260, height: 9); SkeletonLine(width: 200, height: 9); SkeletonLine(width: 230, height: 9) }
                     .skeletonAccessibility("Loading details")
+                    .skeletonTimeout()
             }
             ForEach(event.eventIds, id: \.self) { id in
                 if let p = store.payloads[id] {
@@ -377,7 +378,7 @@ struct EventExpandedPanel: View {
                 }
                 if store.loading, store.payloads.isEmpty {
                     VStack(alignment: .leading, spacing: 7) { ForEach(0..<8, id: \.self) { i in SkeletonLine(fraction: [0.4, 0.6, 0.5, 0.7, 0.35, 0.55, 0.45, 0.3][i], height: 9) } }
-                        .padding(10).skeletonAccessibility("Loading payload")
+                        .padding(10).skeletonAccessibility("Loading payload").skeletonTimeout()
                 } else {
                     ScrollView([.horizontal, .vertical]) {
                         Text(EventPayloadText.highlighted(text, search: search))

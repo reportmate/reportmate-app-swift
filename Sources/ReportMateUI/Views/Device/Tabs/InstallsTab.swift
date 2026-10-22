@@ -130,7 +130,7 @@ struct RunLogDisclosure: View {
                 if expanded {
                     Divider()
                     if loading {
-                        VStack(alignment: .leading, spacing: 8) { ForEach(0..<6, id: \.self) { i in SkeletonLine(fraction: [0.9, 0.7, 0.8, 0.5, 0.75, 0.6][i], height: 9) } }.padding(12).skeletonAccessibility("Loading run log")
+                        VStack(alignment: .leading, spacing: 8) { ForEach(0..<6, id: \.self) { i in SkeletonLine(fraction: [0.9, 0.7, 0.8, 0.5, 0.75, 0.6][i], height: 9) } }.padding(12).skeletonAccessibility("Loading run log").skeletonTimeout()
                     } else {
                         HStack {
                             HStack(spacing: 6) {
