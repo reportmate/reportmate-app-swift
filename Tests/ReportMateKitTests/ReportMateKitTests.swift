@@ -766,6 +766,26 @@ final class ScriptedURLProtocol: URLProtocol, @unchecked Sendable {
         let resolved = await config.resolvingEntra { _ in AuthConfig(oidcEnabled: true, audience: "api://sample", issuers: []) }
         #expect(resolved.oidcAudience == "api://sample" && resolved.isConfigured && !resolved.needsEntraResolution)
     }
+
+    @Test func advertisedFirstPartyAudiencesAreRefused() async {
+        let config = AppConfiguration(baseURL: "https://api.example.invalid", authMethod: .entraBearer)
+        for audience in ["https://graph.microsoft.com", "https://management.azure.com/", "https://vault.azure.net", "00000003-0000-0000-c000-000000000000x"] {
+            let resolved = await config.resolvingEntra { _ in AuthConfig(oidcEnabled: true, audience: audience, issuers: []) }
+            #expect(resolved == config)
+        }
+        #expect(AppConfiguration.isAcceptableAudience("26c197e0-3c53-4c52-b104-2f84b1669105"))
+        #expect(AppConfiguration.isAcceptableAudience("api://SAMPLE"))
+    }
+
+    @Test func discoveryNeedsHTTPS() async {
+        let config = AppConfiguration(baseURL: "http://api.example.invalid", authMethod: .entraBearer)
+        let resolved = await config.resolvingEntra { _ in
+            Issue.record("discovery should not run over http")
+            return AuthConfig(oidcEnabled: true, audience: "api://sample", issuers: [])
+        }
+        #expect(resolved == config)
+        #expect(AppConfiguration.isTrustedDiscoveryURL("http://localhost:8000"))
+    }
 }
 
 @Suite struct ConfigurationSourceTests {

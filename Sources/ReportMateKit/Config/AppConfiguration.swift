@@ -305,8 +305,9 @@ extension AppConfiguration {
     /// Entra when the API advertises OIDC and `az` can mint a token. Anything else,
     /// or a deployment without OIDC, is returned unchanged.
     public func resolvingEntra(tokenSource: AzTokenSource = .shared, discover: @Sendable (String) async throws -> AuthConfig = { try await AuthConfig.discover(baseURL: $0) }) async -> AppConfiguration {
-        guard needsEntraResolution else { return self }
-        guard let auth = try? await discover(baseURL), auth.oidcEnabled, let audience = auth.audience else { return self }
+        guard needsEntraResolution, Self.isTrustedDiscoveryURL(baseURL) else { return self }
+        guard let auth = try? await discover(baseURL), auth.oidcEnabled, let audience = auth.audience,
+              Self.isAcceptableAudience(audience) else { return self }
         var out = self
         if authMethod == .passphrase {
             guard (try? await tokenSource.token(forResource: audience)) != nil else { return self }
@@ -316,5 +317,28 @@ extension AppConfiguration {
         out.authMethod = .entraBearer
         out.oidcAudience = audience
         return out
+    }
+
+    /// Discovery hands the app an audience it then mints an Entra token for, so it
+    /// only runs over https (plain http only to this machine, for development).
+    public static func isTrustedDiscoveryURL(_ baseURL: String) -> Bool {
+        guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespaces)), let host = url.host?.lowercased() else { return false }
+        switch url.scheme?.lowercased() {
+        case "https": return true
+        case "http": return host == "localhost" || host == "127.0.0.1" || host == "::1"
+        default: return false
+        }
+    }
+
+    /// An advertised audience must name an app registration: `api://…` or a bare
+    /// application ID. Anything else (graph.microsoft.com, management.azure.com,
+    /// a vault or storage URL) would have the app mint a token for a first-party
+    /// resource and send it to the server that asked for it.
+    public static func isAcceptableAudience(_ audience: String) -> Bool {
+        let a = audience.trimmingCharacters(in: .whitespaces)
+        if UUID(uuidString: a) != nil { return true }
+        guard a.lowercased().hasPrefix("api://") else { return false }
+        let rest = a.dropFirst("api://".count)
+        return !rest.isEmpty && !rest.contains(where: { $0.isWhitespace })
     }
 }
