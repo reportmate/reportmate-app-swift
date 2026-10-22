@@ -72,7 +72,7 @@ struct ManagementReportView: View {
             if providers.count == 1 { providerFilter = f.take("provider").first }
             let types = f.values("enrollmentType")
             if types.count == 1 { typeFilter = f.take("enrollmentType").first }
-        }, matches: { row, f in f.matches(management: ManagementReportRow(json: row.json)) }, widgetQuery: q)
+        }, matches: { row, f in f.matches(management: ManagementReportRow(json: row.json), platform: row.platform, lastSeen: row.lastSeen) }, widgetQuery: q)
     }
 
     private func widgets(_ all: [ManagementReportRow]) -> some View {

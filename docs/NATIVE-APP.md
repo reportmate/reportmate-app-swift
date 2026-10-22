@@ -217,11 +217,11 @@ and appear as removable chips under the header, and Copy Link carries both.
 | `/devices` | `status`, `search`, `platform` |
 | `/system` | `osVersion`, `uptime`, `pending`, `deferred=1`, `edition`, `os=unsupported\|windows10`, `patch=behind` |
 | `/security` | `encryption=off`, `firewall=off`, `antivirus=off`, `sip=off`, `secureBoot=off`, `threats=1`, `certs=expired\|expiring`, `cve=critical\|exploited`, `certSearch`, `certStatus` |
-| `/management` | `provider`, `enrolled=0\|1`, `enrollmentType` |
+| `/management` | `provider`, `enrolled=0\|1`, `enrollmentType`, `platform=macOS\|Windows` (this report only; the global toggle is `platform=mac\|win`), `lastSeen=24h\|1-7d\|7d+` |
 | `/hardware` | `arch`, `storage=low`, `memory=le8`, `type=laptop\|desktop`, `processor` |
 | `/installs` | `filter`, `item`, `stale=1`, `view` |
 | `/events/failures` | `hours`, `reason`, `outcome` |
-| `/identity` | `admins=extra`, `join=entra\|domain\|hybrid\|workgroup`, `usage` |
+| `/identity` | `admins=extra\|2\|3\|4+`, `join=entra\|domain\|hybrid\|workgroup`, `usage` |
 | `/applications` | `type=usage&apps=&period=`; `/applications/usage/<app>?days=30` |
 | `/network` | `connection=wired\|wifi`, `signal=weak`, `quality=poor`, `vpn=1` |
 | `/peripherals` | `kind=printers\|displays`, `room` |

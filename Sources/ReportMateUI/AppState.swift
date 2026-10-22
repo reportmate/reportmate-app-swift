@@ -177,7 +177,10 @@ final class AppState {
         // The web header carries the global platform toggle as ?platform=mac|win on
         // every page, and leaves it off for All; a link without it keeps the current
         // choice, as the web does.
-        switch link.query["platform"]?.lowercased() {
+        // `/management?platform=macOS|Windows` is that report's own filter (the card links
+        // use it), not the toggle, so it leaves the toggle alone.
+        let reportPlatform: Bool = { if case .report("management") = link.target { return ["macOS", "Windows"].contains(link.query["platform"] ?? "") }; return false }()
+        switch reportPlatform ? nil : link.query["platform"]?.lowercased() {
         case "mac", "macos": platformFilter = .macOS
         case "win", "windows": platformFilter = .windows
         case "all": platformFilter = .all
@@ -218,6 +221,8 @@ final class AppState {
     /// A link to what is on screen: the pushed route, else the section with its filters.
     var currentDeepLink: DeepLink {
         var link = pageDeepLink
+        // A page that carries its own `platform` filter (Management) keeps it.
+        guard link.query["platform"] == nil else { return link }
         switch platformFilter {
         case .macOS: link.query["platform"] = "mac"
         case .windows: link.query["platform"] = "win"

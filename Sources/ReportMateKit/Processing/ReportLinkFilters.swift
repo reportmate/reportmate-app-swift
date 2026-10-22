@@ -15,6 +15,9 @@ public struct ReportLinkFilter: Sendable, Hashable {
         self.report = report
         let known = Set(ReportLinkFilter.parameters[report] ?? [])
         params = query.filter { known.contains($0.key) && !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }
+        // The global toggle travels as `platform=mac|win`; only Management's own
+        // `platform=macOS|Windows` is a report filter.
+        if let p = params["platform"], report != "management" || !["macOS", "Windows"].contains(p) { params["platform"] = nil }
     }
 
     public var isEmpty: Bool { params.isEmpty }
@@ -41,7 +44,7 @@ public struct ReportLinkFilter: Sendable, Hashable {
         "devices": ["status", "search", "platform"],
         "system": ["osVersion", "uptime", "pending", "deferred", "edition", "os", "patch"],
         "security": ["encryption", "firewall", "antivirus", "sip", "secureBoot", "threats", "certs", "cve", "certSearch", "certStatus"],
-        "management": ["provider", "enrolled", "enrollmentType"],
+        "management": ["provider", "enrolled", "enrollmentType", "platform", "lastSeen"],
         "hardware": ["arch", "storage", "memory", "type", "processor"],
         "installs": ["filter", "item", "stale", "view"],
         "failures": ["hours", "reason", "outcome"],
@@ -84,7 +87,9 @@ public struct ReportLinkFilter: Sendable, Hashable {
         case "edition": return "Edition: \(joined)"
         case "os": return v.map { $0 == "windows10" ? "Windows 10" : $0 == "unsupported" ? "Unsupported macOS" : $0 }.joined(separator: ", ")
         case "patch": return "Behind the latest patch"
-        case "admins": return "Extra local admins"
+        case "admins": return v.first == "extra" ? "Extra local admins" : "Local admins: " + v.joined(separator: ", ")
+        case "platform": return "Platform: \(joined)"
+        case "lastSeen": return "Last seen: " + v.map { LastSeenBucket(rawValue: $0)?.label ?? $0 }.joined(separator: ", ")
         case "join": return "Join: " + v.map { IdentityJoin(rawValue: $0.lowercased())?.label ?? $0 }.joined(separator: ", ")
         case "usage": return "Usage: \(joined)"
         case "connection": return v.map { $0 == "wifi" ? "Wi-Fi" : $0 == "wired" ? "Wired" : $0 }.joined(separator: ", ")
@@ -306,7 +311,13 @@ public extension ReportLinkFilter {
         return true
     }
 
-    func matches(management m: ManagementReportRow) -> Bool {
+    /// `platform` (macOS or Windows) narrows this report only; the global toggle travels as
+    /// `mac` or `win`. `lastSeen` is a `LastSeenBucket`.
+    func matches(management m: ManagementReportRow, platform: Platform = .unknown, lastSeen: Date? = nil, now: Date = Date()) -> Bool {
+        let platforms = values("platform").map { Platform.normalize($0) }
+        if !platforms.isEmpty, !platforms.contains(platform) { return false }
+        let seen = values("lastSeen").compactMap(LastSeenBucket.init(rawValue:))
+        if !seen.isEmpty, !seen.contains(where: { $0.contains(lastSeen, now: now) }) { return false }
         let providers = values("provider")
         if !providers.isEmpty, !providers.contains(where: { $0.caseInsensitiveCompare(m.provider) == .orderedSame }) { return false }
         if let e = params["enrolled"], (e == "1") != m.isEnrolled { return false }
@@ -354,7 +365,18 @@ public extension ReportLinkFilter {
     }
 
     func matches(identity i: IdentityReportRow) -> Bool {
-        if params["admins"] == "extra", i.adminUsers <= 1 { return false }
+        let admins = values("admins")
+        if !admins.isEmpty {
+            let n = i.adminUsers
+            let hit = admins.contains { a in
+                switch a {
+                case "extra": return n > 1
+                case "4+": return n >= 4
+                default: return Int(a) == n
+                }
+            }
+            if !hit { return false }
+        }
         let joins = values("join").map { $0.lowercased() }
         if !joins.isEmpty, !joins.contains(IdentityJoin.of(i).rawValue) { return false }
         let usage = values("usage").map { $0.lowercased() }
@@ -381,5 +403,29 @@ public extension ReportLinkFilter {
         let rooms = values("room")
         if !rooms.isEmpty, !rooms.contains(room ?? "") { return false }
         return true
+    }
+}
+
+/// How long ago a device last checked in, as `?lastSeen=` names it.
+public enum LastSeenBucket: String, Sendable, CaseIterable {
+    case day = "24h", week = "1-7d", older = "7d+"
+
+    public var label: String {
+        switch self {
+        case .day: return "in the last 24 hours"
+        case .week: return "1-7 days ago"
+        case .older: return "over 7 days ago"
+        }
+    }
+
+    /// A device never seen counts as over seven days.
+    public func contains(_ lastSeen: Date?, now: Date = Date()) -> Bool {
+        guard let lastSeen else { return self == .older }
+        let age = now.timeIntervalSince(lastSeen)
+        switch self {
+        case .day: return age < 86_400
+        case .week: return age >= 86_400 && age <= 7 * 86_400
+        case .older: return age > 7 * 86_400
+        }
     }
 }

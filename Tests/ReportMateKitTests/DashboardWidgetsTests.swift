@@ -53,9 +53,9 @@ private func json(_ text: String) -> JSONValue { try! JSONValue.parse(Data(text.
             ManagementReportRow(json: json(#"{"isEnrolled": false}"#)),
         ]
         let unmanaged = ReportLinkFilter(report: "management", query: ["provider": "Unmanaged"])
-        #expect(rows.filter(unmanaged.matches(management:)).count == 1)
-        #expect(rows.filter(ReportLinkFilter(report: "management", query: ["enrolled": "1"]).matches(management:)).count == 1)
-        #expect(rows.filter(ReportLinkFilter(report: "management", query: ["enrollmentType": "Automated"]).matches(management:)).count == 1)
+        #expect(rows.filter { m in unmanaged.matches(management: m) }.count == 1)
+        #expect(rows.filter { m in ReportLinkFilter(report: "management", query: ["enrolled": "1"]).matches(management: m) }.count == 1)
+        #expect(rows.filter { m in ReportLinkFilter(report: "management", query: ["enrollmentType": "Automated"]).matches(management: m) }.count == 1)
     }
 
     @Test func securityParameters() {
@@ -164,6 +164,40 @@ private func json(_ text: String) -> JSONValue { try! JSONValue.parse(Data(text.
 
 
 @Suite struct ReportParameterTests {
+    @Test func managementPlatformAndLastSeen() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let m = ManagementReportRow(json: json(#"{"isEnrolled": false}"#))
+        func hit(_ q: [String: String], _ platform: Platform, _ hoursAgo: Double?) -> Bool {
+            ReportLinkFilter(report: "management", query: q).matches(management: m, platform: platform, lastSeen: hoursAgo.map { now.addingTimeInterval(-$0 * 3600) }, now: now)
+        }
+        #expect(hit(["platform": "macOS"], .macOS, 1))
+        #expect(!hit(["platform": "Windows"], .macOS, 1))
+        #expect(hit(["lastSeen": "24h"], .macOS, 2))
+        #expect(!hit(["lastSeen": "24h"], .macOS, 30))
+        #expect(hit(["lastSeen": "1-7d"], .windows, 30))
+        #expect(hit(["lastSeen": "7d+"], .windows, 200))
+        #expect(hit(["lastSeen": "7d+"], .windows, nil))
+        #expect(hit(["platform": "Windows", "enrolled": "0", "lastSeen": "1-7d"], .windows, 48))
+        let f = ReportLinkFilter(report: "management", query: ["platform": "macOS", "lastSeen": "7d+"])
+        #expect(f.chips.map(\.label) == ["Last seen: over 7 days ago", "Platform: macOS"])
+    }
+
+    @Test func identityExactAdminCounts() {
+        let rows = [1, 2, 3, 4, 6].map { n in IdentityReportRow(json: json("{\"summary\": {\"adminUsers\": \(n)}}")) }
+        func count(_ v: String) -> Int { rows.filter(ReportLinkFilter(report: "identity", query: ["admins": v]).matches(identity:)).count }
+        #expect(count("2") == 1)
+        #expect(count("3") == 1)
+        #expect(count("4+") == 2)
+        #expect(count("extra") == 4)
+        #expect(ReportLinkFilter.label(key: "admins", value: "4+") == "Local admins: 4+")
+    }
+
+    @Test func managementPlatformLinkParses() {
+        let link = DeepLink(url: URL(string: "reportmate://management?platform=Windows&lastSeen=1-7d&enrolled=0")!)
+        #expect(link?.query == ["platform": "Windows", "lastSeen": "1-7d", "enrolled": "0"])
+        #expect(link.map { ReportLinkFilter(report: "management", query: $0.query).params.count } == 3)
+    }
+
     @Test func staleAgentsOverAWeek() {
         let agents = [StaleAgent(serialNumber: "SAMPLE1", staleDays: 1.5), StaleAgent(serialNumber: "SAMPLE2", staleDays: 8), StaleAgent(serialNumber: "SAMPLE3", staleDays: 40)]
         #expect(InstallsStale.serials(agents) == ["SAMPLE2", "SAMPLE3"])
