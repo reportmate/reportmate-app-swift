@@ -116,6 +116,11 @@ if [ -d "$ICON_SOURCE" ] && xcrun actool --compile "$ICON_OUT" --platform macosx
     echo "Icon compiled from $ICON_SOURCE"
     cp "$ICON_SOURCE/Assets/reportmate-logo.png" "$APP/Contents/Resources/reportmate-logo.png"
 else
+    # A release must never ship the placeholder: fail on CI or when packaging.
+    if [ -n "${CI:-}" ] || [ "${PKG:-0}" = "1" ] || [ "${DMG:-0}" = "1" ]; then
+        echo "actool could not compile $ICON_SOURCE (needs Xcode 26 or later); refusing to build a release with the placeholder icon" >&2
+        exit 1
+    fi
     echo "actool could not compile $ICON_SOURCE; using the generated placeholder icon" >&2
     swift scripts/make-app-icon.swift "$ICON_OUT/ReportMate.icns" >/dev/null && cp "$ICON_OUT/ReportMate.icns" "$APP/Contents/Resources/ReportMate.icns" || true
 fi
