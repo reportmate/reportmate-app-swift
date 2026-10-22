@@ -99,7 +99,8 @@ final class AppState {
     }
 
     /// `configuration` replaces the saved connection for this session; nil loads it
-    /// from the Keychain, the environment and the runner as the app always has.
+    /// from the app's preferences, the environment, a managed profile and the runner.
+    /// The app never reads or writes the Keychain.
     init(configuration supplied: AppConfiguration? = nil, embedded: Bool = false) {
         self.embedded = embedded
         let config = supplied ?? AppConfiguration.load()
@@ -108,23 +109,33 @@ final class AppState {
         if supplied == nil { config.exportConnection() }
         configuration = config
         api = ReportMateAPI(configuration: config)
+        connectionResolving = config.needsEntraResolution
         platformFilter = PlatformFilter(rawValue: UserDefaults.standard.string(forKey: "platformFilter") ?? "") ?? .all
         includeArchived = UserDefaults.standard.bool(forKey: "includeArchived")
     }
 
-    /// An admin Mac that only inherited the runner's endpoint and passphrase moves
-    /// to Entra sign-in when the API advertises it and az can mint a token: no
-    /// shared secret in the app, and reportmateutil follows through connection.json.
-    func preferEntraIfAvailable() async {
-        let upgraded = await configuration.preferringEntra()
-        guard upgraded != configuration else { return }
-        try? update(configuration: upgraded)
+    /// True until the connection has settled on its credential (see
+    /// `AppConfiguration.needsEntraResolution`). Pages wait for it, so no request goes
+    /// out with an inherited passphrase that Entra is about to replace.
+    private(set) var connectionResolving = false
+
+    /// Settle the credential before the first request: an Entra sign-in takes the
+    /// audience the API advertises, and an admin Mac that only inherited the runner's
+    /// endpoint and passphrase moves to Entra when az can mint a token. No shared
+    /// secret in the app, and reportmateutil follows through connection.json.
+    func resolveConnection() async {
+        guard configuration.needsEntraResolution else { connectionResolving = false; return }
+        connectionResolving = true
+        defer { connectionResolving = false }
+        let resolved = await configuration.resolvingEntra()
+        guard resolved != configuration else { return }
+        update(configuration: resolved)
     }
 
-    var isConfigured: Bool { configuration.isConfigured }
+    var isConfigured: Bool { configuration.isConfigured && !connectionResolving }
 
-    func update(configuration: AppConfiguration) throws {
-        try configuration.save()
+    func update(configuration: AppConfiguration) {
+        configuration.save()
         self.configuration = configuration
         api = ReportMateAPI(configuration: configuration)
         authProblem = nil
