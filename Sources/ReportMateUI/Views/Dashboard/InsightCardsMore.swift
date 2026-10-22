@@ -610,21 +610,23 @@ struct AppUsageRow: View {
         let devices = app.int("activeDevices") ?? app.int("devices") ?? 0
         MaybeInsightLink(link: app.link) {
             HStack(spacing: 10) {
-                Text(app.name ?? "").appFont(.callout).lineLimit(1).truncationMode(.middle)
+                Text(app.name ?? "").appFont(.callout).lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
+                    .help(app.name ?? "")
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.secondary.opacity(0.12))
                         Capsule().fill(Tone.blue.color.opacity(0.75)).frame(width: maxHours > 0 ? geo.size.width * hours / maxHours : 0)
                     }
                 }
-                .frame(width: 160, height: 6)
+                .frame(width: 70, height: 6)
                 Text("\(Self.number.string(from: NSNumber(value: hours.rounded())) ?? "0") h")
                     .appFont(.callout, weight: .medium).monospacedDigit()
-                    .frame(width: 96, alignment: .trailing)
+                    .frame(width: 84, alignment: .trailing)
                 Text("\(Self.number.string(from: NSNumber(value: devices)) ?? "0") devices")
                     .appFont(.callout).foregroundStyle(.secondary).monospacedDigit()
-                    .frame(width: 100, alignment: .trailing)
+                    .frame(width: 88, alignment: .trailing)
             }
         }
         .accessibilityElement(children: .combine)
