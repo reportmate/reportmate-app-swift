@@ -169,19 +169,67 @@ the navigation stack; Back is ⌘[ or the toolbar arrow.
 Pages use the width of a wide window instead of a laptop-width column, and
 re-flow as the window is resized:
 
-- Dashboard: at 1500 pt of content width or more it goes to three columns —
-  Fleet Status, the error and warning counters and New Clients; then the four
-  insight widgets (System Health, Security Posture, Management, Hardware), the
-  same width as the first column; then Recent Events, Platform Distribution and
-  the OS version charts, taking the rest. Below that it keeps the two-column
-  layout with the insights underneath, and goes to one column when narrow. The
-  web app makes the same switch at a 1680 px viewport.
+- Dashboard: at 2000 pt of content width or more (a 27-inch display) it goes to
+  four columns: Fleet Status, the error and warning counters and New Clients;
+  two insight columns the same width as the first, with the twelve cards dealt
+  alternately between them; then Recent Events, Platform Distribution and the OS
+  version charts at double width. From 1500 pt it has three columns with cards
+  1–4 in the insight column and cards 5–12 four across underneath. Below that it
+  keeps the two-column layout with all twelve cards in a two-column grid
+  underneath, and goes to one column when narrow. The web app switches at 1680
+  and 2200 px.
 - Report widget rows stretch to fill the window, and scroll sideways only when
   they cannot fit. Security's eight donuts flow into up to eight columns.
 - Card grids (`UniformGrid`) balance their columns, so six cards sit as two rows
   of three rather than four and two. The device Info tab goes up to six columns.
 - Hardware tab spec tiles flow into more columns. Tables already fill the width.
 - Settings keeps the fixed-width Mac settings window.
+
+### Dashboard widgets and their links
+
+The dashboard's twelve insight cards and the link parameters behind them are a
+contract shared with the web and Windows apps, written up in the web repo as
+[`docs/DASHBOARD-WIDGETS.md`](https://github.com/reportmate/reportmate-app-web/blob/main/docs/DASHBOARD-WIDGETS.md).
+The cards are 1 System Health, 2 Security Posture, 3 Management, 4 Hardware,
+5 Install Health, 6 Check-in Gaps, 7 OS Currency, 8 Software Risk,
+9 Certificates, 10 Identity, 11 App Usage and 12 Network & Peripherals
+(`Views/Dashboard/InsightWidgets.swift`, `InsightCardsMore.swift`).
+
+Every count, bar, legend row and chip on the dashboard, the Fleet Status legend,
+Platform Distribution and the OS version bars included, opens the report that
+owns it with the matching filter on, through the same `reportmate://` link the
+web uses: clicking Unmanaged in Management opens
+`reportmate://management?provider=Unmanaged`. A card's header opens the report
+unfiltered. Each item's context menu copies its link, and its tooltip says where
+it goes.
+
+`ReportMateKit` holds the logic: `DashboardLinks` builds the links,
+`ReportLinkFilter` reads each report's parameters and applies them as row
+predicates, and `DashboardInsights` computes the card figures with those same
+predicates, so a card's number is the number of rows its link shows. On a
+report, a parameter that matches a widget selects it, the rest narrow the rows
+and appear as removable chips under the header, and Copy Link carries both.
+
+| Report | Parameters |
+|---|---|
+| `/devices` | `status`, `search`, `platform` |
+| `/system` | `osVersion`, `uptime`, `pending`, `deferred=1`, `edition`, `os=unsupported\|windows10`, `patch=behind` |
+| `/security` | `encryption=off`, `firewall=off`, `antivirus=off`, `sip=off`, `secureBoot=off`, `threats=1`, `certs=expired\|expiring`, `cve=critical\|exploited`, `certSearch`, `certStatus` |
+| `/management` | `provider`, `enrolled=0\|1`, `enrollmentType` |
+| `/hardware` | `arch`, `storage=low`, `memory=le8`, `type=laptop\|desktop`, `processor` |
+| `/installs` | `filter`, `item`, `stale=1`, `view` |
+| `/events/failures` | `hours`, `reason`, `outcome` |
+| `/identity` | `admins=extra`, `join=entra\|domain\|hybrid\|workgroup`, `usage` |
+| `/applications` | `type=usage&apps=&period=`; `/applications/usage/<app>?days=30` |
+| `/network` | `connection=wired\|wifi`, `signal=weak` |
+| `/peripherals` | `kind=printers\|displays`, `room` |
+
+The cards load from the endpoints their reports use, two at a time with one
+retry on a 5xx, and refresh every five minutes. The bulk `/installs` rows behind
+Install Health's top failing items and Software Risk's most-behind items load
+last, refresh every half hour, and are optional: when they fail the cards show
+their counts without the lists. Check-in failures and App Usage are fleet-wide;
+the API does not split them by platform.
 
 ## Parity matrix
 
@@ -190,7 +238,7 @@ where the native counterpart lives.
 
 | Web page | Native view | Status |
 |---|---|---|
-| `/dashboard` (fleet status donut, error and warning counters, new clients, recent events with type filter, platform distribution with drill-downs and filters, macOS and Windows version donuts with drill-down) | `Views/Dashboard/DashboardView.swift`, `RecentEventsWidget.swift`, `InsightWidgets.swift` | Complete, plus a second tier the web does not have: System Health (uptime buckets, pending and deferred updates), Security Posture (encryption, firewall, antivirus, SIP, Secure Boot compliance, threats, expired certificates, critical CVEs), Management (MDM enrollment and providers) and Hardware (architecture, low storage, low memory, laptops), each built from the bulk report its page reads and linking to it. They load two at a time after the dashboard payload, retry once on a 5xx, and refresh every five minutes. Opens the Web PubSub event stream through `/negotiate` and shows Live, Reconnecting or Polling like the web page; polls every 30 s underneath either way. If the negotiate call fails or the hub is not configured the feed stays on polling. Version donuts link to the System report's OS version filter. |
+| `/dashboard` (fleet status donut, error and warning counters, new clients, recent events with type filter, platform distribution with drill-downs and filters, macOS and Windows version donuts with drill-down) | `Views/Dashboard/DashboardView.swift`, `RecentEventsWidget.swift`, `InsightWidgets.swift` | Complete, plus the twelve insight cards of the shared widget spec (see Dashboard widgets and their links). The first four: System Health (uptime buckets, pending and deferred updates), Security Posture (encryption, firewall, antivirus, SIP, Secure Boot compliance, threats, expired certificates, critical CVEs), Management (MDM enrollment and providers) and Hardware (architecture, low storage, low memory, laptops), each built from the bulk report its page reads and linking to it. They load two at a time after the dashboard payload, retry once on a 5xx, and refresh every five minutes. Opens the Web PubSub event stream through `/negotiate` and shows Live, Reconnecting or Polling like the web page; polls every 30 s underneath either way. If the negotiate call fails or the hub is not configured the feed stays on polling. Version donuts link to the System report's OS version filter. |
 | `/devices` (search, Selections accordion, sortable table, status and inventory pills, `?status=` from the dashboard) | `Views/Devices/DevicesView.swift` | Complete. Adds a Registered column. |
 | `/device/[serial]` header and tabs: Info, Installs, Applications, Hardware, Network, Security, Management (with logs), Identity, Peripherals, System, Events | `Views/Device/DeviceDetailView.swift`, `Views/Device/Tabs/*` | Complete for all tabs, including the management log viewer (MDM root first, structured line parsers for the convention, CMTrace, Intune daemon, Munki, syslog and ISO-stamped logs, level toggles with counts, tag pills, JSON tails as a tree, tool version with a fallback to the installs module), the security certificate and CVE tables, launchd and scheduled task tables, and the identity session analytics. |
 | `/events` (date range, kind chips with System and Info shown alone, search, infinite scroll, live refresh, expanded rows with run summary, details, raw payload copy and search) | `Views/Events/EventsView.swift`, `EventRows.swift` | Complete. |
