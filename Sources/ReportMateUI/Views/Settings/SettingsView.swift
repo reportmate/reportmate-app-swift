@@ -113,6 +113,11 @@ struct ConnectionSettingsView: View {
             if draft.oidcAudience.isEmpty { testResult = "This API does not advertise Entra sign-in"; testFailed = true }
             return
         }
+        guard AppConfiguration.isTrustedDiscoveryURL(draft.baseURL), AppConfiguration.isAcceptableAudience(audience) else {
+            testResult = "The API advertised \(audience), which is not an api:// audience; enter it by hand if it is right"
+            testFailed = true
+            return
+        }
         draft.oidcAudience = audience
         testResult = nil
     }

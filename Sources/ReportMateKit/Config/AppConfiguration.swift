@@ -53,6 +53,8 @@ public struct AppConfiguration: Sendable, Equatable {
     public var webBaseURL: String
     /// True when the API URL came from the runner's configuration on this Mac rather than the app's own settings.
     public var inheritedFromRunner = false
+    /// True when the API URL came from `REPORTMATE_URL`.
+    public var baseURLFromEnvironment = false
     /// Where `apiKey` or `passphrase` came from; secrets are never typed into the app.
     public var credentialSource: CredentialSource = .none
 
@@ -162,7 +164,7 @@ public struct AppConfiguration: Sendable, Equatable {
             config.authMethod = .entraBearer
         }
 
-        if let v = environment["REPORTMATE_URL"], !v.isEmpty { config.baseURL = v; config.inheritedFromRunner = false }
+        if let v = environment["REPORTMATE_URL"], !v.isEmpty { config.baseURL = v; config.inheritedFromRunner = false; config.baseURLFromEnvironment = true }
         if let v = environment["REPORTMATE_WEB_URL"], !v.isEmpty { config.webBaseURL = v }
         if let v = environment["REPORTMATE_API_KEY"], !v.isEmpty { config.apiKey = v; config.authMethod = .apiKey; config.credentialSource = .environment }
         if let v = environment["REPORTMATE_PASSPHRASE"], !v.isEmpty, environment["REPORTMATE_API_KEY"]?.isEmpty ?? true {
@@ -305,7 +307,12 @@ extension AppConfiguration {
     /// Entra when the API advertises OIDC and `az` can mint a token. Anything else,
     /// or a deployment without OIDC, is returned unchanged.
     public func resolvingEntra(tokenSource: AzTokenSource = .shared, discover: @Sendable (String) async throws -> AuthConfig = { try await AuthConfig.discover(baseURL: $0) }) async -> AppConfiguration {
-        guard needsEntraResolution, Self.isTrustedDiscoveryURL(baseURL) else { return self }
+        // Only a URL an administrator set (the runner's managed or system
+        // preferences, or the environment) may hand the app an audience silently.
+        // A URL typed into Settings gets its audience from the Discover button,
+        // where the operator sees it before saving.
+        guard needsEntraResolution, inheritedFromRunner || baseURLFromEnvironment,
+              Self.isTrustedDiscoveryURL(baseURL) else { return self }
         guard let auth = try? await discover(baseURL), auth.oidcEnabled, let audience = auth.audience,
               Self.isAcceptableAudience(audience) else { return self }
         var out = self
@@ -330,13 +337,13 @@ extension AppConfiguration {
         }
     }
 
-    /// An advertised audience must name an app registration: `api://…` or a bare
-    /// application ID. Anything else (graph.microsoft.com, management.azure.com,
-    /// a vault or storage URL) would have the app mint a token for a first-party
-    /// resource and send it to the server that asked for it.
+    /// An advertised audience must be an `api://` application ID URI. A bare
+    /// application ID could name Microsoft Graph or another first-party app, and a
+    /// URL (graph.microsoft.com, management.azure.com, a vault or storage account)
+    /// would have the app mint a token for that resource and send it to the server
+    /// that asked for it.
     public static func isAcceptableAudience(_ audience: String) -> Bool {
         let a = audience.trimmingCharacters(in: .whitespaces)
-        if UUID(uuidString: a) != nil { return true }
         guard a.lowercased().hasPrefix("api://") else { return false }
         let rest = a.dropFirst("api://".count)
         return !rest.isEmpty && !rest.contains(where: { $0.isWhitespace })
