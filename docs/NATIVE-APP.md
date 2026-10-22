@@ -209,10 +209,11 @@ The top bar keeps every section tab on a device page too.
 The dashboard's twelve insight cards and the link parameters behind them are a
 contract shared with the web and Windows apps, written up in the web repo as
 [`docs/DASHBOARD-WIDGETS.md`](https://github.com/reportmate/reportmate-app-web/blob/main/docs/DASHBOARD-WIDGETS.md).
-Each card answers one question about the fleet: 1 Reboot & Update Debt,
-2 Protection Gaps, 3 Unmanaged Devices, 4 Hardware at Risk, 5 Install Health,
-6 Check-in Gaps, 7 OS Currency, 8 Software Risk, 9 Expiring Certificates,
-10 Local Admin Exposure, 11 Unused Software and 12 Connectivity Problems
+Each card answers one question about the fleet: Install Health, Reboot & Update
+Debt, Protection Gaps, Management Tools Errors, Storage, Check-in Gaps, OS
+Currency, Software Risk, Expiring Certificates, Directory Join (All, Windows and
+Mac views, following the platform toggle), Connectivity Problems, and App Usage
+(the top ten apps, with Usage and Catalog chips)
 (`Views/Dashboard/InsightWidgets.swift`, `InsightCardsMore.swift`).
 
 Every count, bar, legend row and chip on the dashboard, the Fleet Status legend,
@@ -233,22 +234,26 @@ and appear as removable chips under the header, and Copy Link carries both.
 
 | Report | Parameters |
 |---|---|
-| `/devices` | `status`, `search`, `platform` |
+| `/devices` | `status`, `search`, `platform`, `tool`, `level` (named above the list; it has no log levels to narrow by) |
 | `/system` | `osVersion`, `uptime`, `pending`, `deferred=1`, `edition`, `os=unsupported\|windows10`, `patch=behind` |
 | `/security` | `encryption=off`, `firewall=off`, `antivirus=off`, `sip=off`, `secureBoot=off`, `threats=1`, `certs=expired\|expiring`, `cve=critical\|exploited`, `certSearch`, `certStatus` |
 | `/management` | `provider`, `enrolled=0\|1`, `enrollmentType`, `platform=macOS\|Windows` (this report only; the global toggle is `platform=mac\|win`), `lastSeen=24h\|1-7d\|7d+` |
-| `/hardware` | `arch`, `storage=low`, `memory=le8`, `type=laptop\|desktop`, `processor` |
-| `/installs` | `filter`, `item`, `stale=1`, `view` |
+| `/hardware` | `arch`, `storage=low\|lt5\|5-10\|10-20\|20+`, `capacity=le256\|512\|1t\|2t+`, `platform=macOS\|Windows`, `memory=le8`, `type=laptop\|desktop`, `processor` |
+| `/installs` | `filter` (`errors`, `warnings`, `pending`), `agent=munki\|cimian`, `item`, `stale=1`, `view` |
 | `/events/failures` | `hours`, `reason`, `outcome` |
-| `/identity` | `admins=extra\|2\|3\|4+`, `join=entra\|domain\|hybrid\|workgroup`, `usage` |
+| `/identity` | `admins=extra\|2\|3\|4+`, `join=entra\|domain\|hybrid\|workgroup`, `directory=psso\|bound\|unbound`, `platform=macOS\|Windows`, `usage` |
+| `/device/<serial>` | `tab=management&tool=<tool>&level=error\|warning` opens the log viewer on that tool, errors (or warnings) only |
 | `/applications` | `type=usage&apps=&period=`; `/applications/usage/<app>?days=30` |
 | `/network` | `connection=wired\|wifi`, `signal=weak`, `quality=poor`, `vpn=1` |
 | `/peripherals` | `kind=printers\|displays`, `room` |
 
-Every card comes from one request, `GET /api/v1/dashboard/insights?platform=all|macOS|Windows`,
-which the API computes in SQL and caches for five minutes. The dashboard asks
-again at most every five minutes and when the platform toggle changes, and never
-pulls the bulk reports (on 2026-10-22 clients doing that held the API at its
+Each card is its own request, `GET /api/v1/dashboard/insights/{card}?platform=all|macOS|Windows`
+(App Usage: `/dashboard/insights/appUsage?platform=&usages=&catalogs=&days=30`),
+answered as `{card, platform, includeArchived, generatedAt, data}` from the API's
+per-card SQL cache. The cards load four at a time and each paints as it answers;
+where the server has no per-card endpoints the combined `/dashboard/insights` is
+used. The dashboard asks again at most every five minutes and when the platform
+toggle changes, and never pulls the bulk reports (on 2026-10-22 clients doing that held the API at its
 memory limit). Cards show skeletons until the first answer. A card the server
 could not compute, or a failed request, shows its error with Retry, which asks
 again. Check-in counts and reasons cover every platform; the card says so when

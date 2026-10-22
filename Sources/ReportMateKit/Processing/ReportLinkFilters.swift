@@ -17,8 +17,11 @@ public struct ReportLinkFilter: Sendable, Hashable {
         params = query.filter { known.contains($0.key) && !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }
         // The global toggle travels as `platform=mac|win`; only Management's own
         // `platform=macOS|Windows` is a report filter.
-        if let p = params["platform"], report != "management" || !["macOS", "Windows"].contains(p) { params["platform"] = nil }
+        if let p = params["platform"], !ReportLinkFilter.reportPlatformReports.contains(report) || !["macOS", "Windows"].contains(p) { params["platform"] = nil }
     }
+
+    /// Reports whose own `platform=macOS|Windows` narrows that report alone.
+    public static let reportPlatformReports: Set<String> = ["management", "hardware", "identity"]
 
     public var isEmpty: Bool { params.isEmpty }
     public var count: Int { params.count }
@@ -41,14 +44,14 @@ public struct ReportLinkFilter: Sendable, Hashable {
 
     /// Parameter names per report, as `docs/DASHBOARD-WIDGETS.md` lists them.
     public static let parameters: [String: [String]] = [
-        "devices": ["status", "search", "platform"],
+        "devices": ["status", "search", "platform", "tool", "level"],
         "system": ["osVersion", "uptime", "pending", "deferred", "edition", "os", "patch"],
         "security": ["encryption", "firewall", "antivirus", "sip", "secureBoot", "threats", "certs", "cve", "certSearch", "certStatus"],
         "management": ["provider", "enrolled", "enrollmentType", "platform", "lastSeen"],
-        "hardware": ["arch", "storage", "memory", "type", "processor"],
-        "installs": ["filter", "item", "stale", "view"],
+        "hardware": ["arch", "storage", "memory", "type", "processor", "capacity", "platform"],
+        "installs": ["filter", "item", "stale", "view", "agent"],
         "failures": ["hours", "reason", "outcome"],
-        "identity": ["admins", "join", "usage"],
+        "identity": ["admins", "join", "usage", "directory", "platform"],
         "network": ["connection", "signal", "quality", "vpn"],
         "peripherals": ["kind", "room"],
     ]
@@ -76,7 +79,12 @@ public struct ReportLinkFilter: Sendable, Hashable {
         case "enrolled": return value == "1" ? "Enrolled" : "Not enrolled"
         case "enrollmentType": return "Enrollment: \(joined)"
         case "arch": return "Architecture: \(joined)"
-        case "storage": return "Under 10% free storage"
+        case "storage": return v.first == "low" ? "Under 10% free storage" : "Free space: " + v.map { StorageBuckets.free($0)?.label ?? $0 }.joined(separator: ", ")
+        case "capacity": return "Capacity: " + v.map { StorageBuckets.capacity($0)?.label ?? $0 }.joined(separator: ", ")
+        case "directory": return "Directory: " + v.map { MacDirectory(rawValue: $0)?.label ?? $0 }.joined(separator: ", ")
+        case "agent": return "Agent: " + v.map { $0 == "munki" ? "Munki" : $0 == "cimian" ? "Cimian" : $0 }.joined(separator: ", ")
+        case "tool": return "Tool: \(joined)"
+        case "level": return v.first == "warning" ? "Warnings" : "Errors"
         case "memory": return "8 GB memory or less"
         case "type": return v.map { $0.prefix(1).uppercased() + $0.dropFirst() + "s" }.joined(separator: ", ")
         case "processor": return "Processor: \(joined)"
@@ -327,9 +335,19 @@ public extension ReportLinkFilter {
     }
 
     func matches(hardware hw: HardwareReportRow, platform: Platform) -> Bool {
+        let platforms = values("platform").map { Platform.normalize($0) }
+        if !platforms.isEmpty, !platforms.contains(platform) { return false }
+        let buckets = values("storage").filter { $0 != "low" }.compactMap(StorageBuckets.free)
+        if !buckets.isEmpty {
+            guard let ratio = StorageBuckets.freeRatio(hw), buckets.contains(where: { $0.range.contains(ratio) }) else { return false }
+        }
+        let capacities = values("capacity").compactMap(StorageBuckets.capacity)
+        if !capacities.isEmpty {
+            guard StorageBuckets.freeRatio(hw) != nil, capacities.contains(where: { $0.range.contains(hw.storageTotalBytes) }) else { return false }
+        }
         let arch = values("arch")
         if !arch.isEmpty, !arch.contains(HardwareClass.family(platform: platform, hw)) { return false }
-        if params["storage"] == "low", !HardwareClass.isLowStorage(hw) { return false }
+        if has("storage", "low"), !HardwareClass.isLowStorage(hw) { return false }
         if params["memory"] == "le8", !HardwareClass.isLowMemory(hw) { return false }
         let types = values("type").map { $0.lowercased() }
         if !types.isEmpty, !types.contains(HardwareClass.type(hw)) { return false }
@@ -364,7 +382,11 @@ public extension ReportLinkFilter {
         return true
     }
 
-    func matches(identity i: IdentityReportRow) -> Bool {
+    func matches(identity i: IdentityReportRow, platform: Platform = .unknown) -> Bool {
+        let platforms = values("platform").map { Platform.normalize($0) }
+        if !platforms.isEmpty, !platforms.contains(platform) { return false }
+        let directories = values("directory").compactMap(MacDirectory.init(rawValue:))
+        if !directories.isEmpty, platform == .windows || !directories.contains(MacDirectory.of(i)) { return false }
         let admins = values("admins")
         if !admins.isEmpty {
             let n = i.adminUsers
@@ -427,5 +449,61 @@ public enum LastSeenBucket: String, Sendable, CaseIterable {
         case .week: return age >= 86_400 && age <= 7 * 86_400
         case .older: return age > 7 * 86_400
         }
+    }
+}
+
+// MARK: - Storage
+
+/// The Storage card's free-space and capacity buckets, with the API's bounds
+/// (`sql/insights/storage.sql`): free space as a share of internal storage, and
+/// capacity in decimal bytes with each size's midpoints as the edges.
+public enum StorageBuckets {
+    public struct Bucket: Sendable, Hashable {
+        public let key: String
+        public let label: String
+        let range: Range<Double>
+    }
+
+    public static let free: [Bucket] = [
+        Bucket(key: "lt5", label: "Under 5% free", range: 0..<0.05),
+        Bucket(key: "5-10", label: "5-10% free", range: 0.05..<0.10),
+        Bucket(key: "10-20", label: "10-20% free", range: 0.10..<0.20),
+        Bucket(key: "20+", label: "20% or more free", range: 0.20..<Double.greatestFiniteMagnitude),
+    ]
+    public static let capacity: [Bucket] = [
+        Bucket(key: "le256", label: "256 GB or less", range: 0..<384e9),
+        Bucket(key: "512", label: "512 GB", range: 384e9..<768e9),
+        Bucket(key: "1t", label: "1 TB", range: 768e9..<1536e9),
+        Bucket(key: "2t+", label: "2 TB or more", range: 1536e9..<Double.greatestFiniteMagnitude),
+    ]
+
+    public static func free(_ key: String) -> Bucket? { free.first { $0.key == key } }
+    public static func capacity(_ key: String) -> Bucket? { capacity.first { $0.key == key } }
+
+    /// Free share of internal storage; nil when the device reports no size or free space.
+    public static func freeRatio(_ hw: HardwareReportRow) -> Double? {
+        guard hw.storageTotalBytes > 0, hw.storageFreeBytes > 0 else { return nil }
+        return hw.storageFreeBytes / hw.storageTotalBytes
+    }
+}
+
+// MARK: - Mac directory
+
+/// How a Mac is bound, the identity report's rules as the Directory Join card reads them.
+public enum MacDirectory: String, Sendable, CaseIterable {
+    case psso, bound, unbound
+
+    public var label: String {
+        switch self {
+        case .psso: return "Platform SSO / Entra"
+        case .bound: return "AD-bound"
+        case .unbound: return "Not bound"
+        }
+    }
+
+    public static func of(_ row: IdentityReportRow) -> MacDirectory {
+        if row.entraJoined { return .psso }
+        if row.domainJoined || row.ldapBound { return .bound }
+        return .unbound
     }
 }

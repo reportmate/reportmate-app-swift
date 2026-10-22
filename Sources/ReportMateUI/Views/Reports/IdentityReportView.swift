@@ -89,7 +89,7 @@ struct IdentityReportView: View {
                 }
             },
             widgets: { rows in widgets(rows.map(i)) },
-            linking: ReportLinking(absorb: { _ in clearWidgetFilters() }, matches: { row, f in f.matches(identity: IdentityReportRow(json: row.json)) })
+            linking: ReportLinking(absorb: { _ in clearWidgetFilters() }, matches: { row, f in f.matches(identity: IdentityReportRow(json: row.json), platform: row.platform) })
         ) { rows in
             let pairs = filtered(rows)
             VStack(spacing: 0) {

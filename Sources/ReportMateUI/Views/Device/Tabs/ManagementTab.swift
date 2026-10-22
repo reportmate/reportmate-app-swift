@@ -4,8 +4,23 @@ import ReportMateKit
 
 /// Device management: enrollment and certificate cards, tool logs, profiles
 /// and managed preferences. Port of `ManagementTab.tsx`.
+/// A link's `tool` and `level` for the log viewer: `log:<tool>:<level>` on the device route.
+struct ManagementLogFocus: Hashable {
+    let tool: String
+    let level: String
+
+    init?(filter: String) {
+        let parts = filter.split(separator: ":", maxSplits: 2).map(String.init)
+        guard parts.count == 3, parts[0] == "log", !parts[1].isEmpty else { return nil }
+        tool = parts[1]
+        level = parts[2]
+    }
+}
+
 struct ManagementTabView: View {
     let device: DeviceDetail
+    /// Opens the log viewer on this tool and level.
+    var logFocus: ManagementLogFocus? = nil
     @State private var profileSearch = ""
     @State private var policySearch = ""
     @State private var expandedProfiles: Set<String> = []
@@ -22,7 +37,7 @@ struct ManagementTabView: View {
                     enrollmentCard(m).frame(maxWidth: .infinity)
                     if m.isEnrolled { certificateCard(m).frame(width: 340) }
                 }
-                if let logs = m.logs, !logs.roots.isEmpty { ManagementLogsSection(serialNumber: device.serialNumber, logs: logs, installs: device.asJSON["modules"]["installs"]) }
+                if let logs = m.logs, !logs.roots.isEmpty { ManagementLogsSection(serialNumber: device.serialNumber, logs: logs, installs: device.asJSON["modules"]["installs"], focus: logFocus) }
                 if !m.profiles.isEmpty { profilesSection(m) }
                 if m.isMac, !m.managedPolicies.isEmpty { policiesSection(m) }
             }
@@ -519,6 +534,8 @@ struct ManagementLogsSection: View {
     let logs: LogsInfo
     /// The installs module: a root's version falls back to its tool's installed version here.
     var installs: JSONValue = .null
+    /// A link's tool and level: that tool's tab, errors (or warnings) only.
+    var focus: ManagementLogFocus? = nil
 
     enum TailState { case loading, loaded(LogsInfo.Root), error(String) }
 
@@ -563,7 +580,15 @@ struct ManagementLogsSection: View {
                 if let root = roots.first(where: { $0.tool == activeTool }) { rootDetail(root) }
             }
         }
-        .onAppear { if activeTool == nil { activeTool = roots.first?.tool } }
+        .onAppear {
+            if let focus, roots.contains(where: { $0.tool == focus.tool }) {
+                activeTool = focus.tool
+                levelFilter = LogsInfo.LevelFilter()
+                if focus.level == "warning" { levelFilter.warnings = true } else { levelFilter.errors = true }
+            } else if activeTool == nil {
+                activeTool = roots.first?.tool
+            }
+        }
         .onChange(of: serialNumber) { tails = [:]; activeTool = roots.first?.tool }
         .task(id: "\(activeTool ?? "")-\(retryNonce)") { await loadIfNeeded() }
     }

@@ -82,9 +82,9 @@ private func json(_ text: String) -> JSONValue { try! JSONValue.parse(Data(text.
         let workgroup = IdentityReportRow(json: json(#"{"directoryServices": {"workgroup": "WORKGROUP"}}"#))
         #expect([entra, hybrid, domain, workgroup].map(IdentityJoin.of) == [.entra, .hybrid, .domain, .workgroup])
         let rows = [entra, hybrid, domain, workgroup]
-        #expect(rows.filter(ReportLinkFilter(report: "identity", query: ["admins": "extra"]).matches(identity:)).count == 1)
-        #expect(rows.filter(ReportLinkFilter(report: "identity", query: ["join": "hybrid"]).matches(identity:)).count == 1)
-        #expect(rows.filter(ReportLinkFilter(report: "identity", query: ["usage": "shared"]).matches(identity:)).count == 1)
+        #expect(rows.filter { r in ReportLinkFilter(report: "identity", query: ["admins": "extra"]).matches(identity: r) }.count == 1)
+        #expect(rows.filter { r in ReportLinkFilter(report: "identity", query: ["join": "hybrid"]).matches(identity: r) }.count == 1)
+        #expect(rows.filter { r in ReportLinkFilter(report: "identity", query: ["usage": "shared"]).matches(identity: r) }.count == 1)
     }
 
     @Test func hardwareParameters() {
@@ -184,7 +184,7 @@ private func json(_ text: String) -> JSONValue { try! JSONValue.parse(Data(text.
 
     @Test func identityExactAdminCounts() {
         let rows = [1, 2, 3, 4, 6].map { n in IdentityReportRow(json: json("{\"summary\": {\"adminUsers\": \(n)}}")) }
-        func count(_ v: String) -> Int { rows.filter(ReportLinkFilter(report: "identity", query: ["admins": v]).matches(identity:)).count }
+        func count(_ v: String) -> Int { rows.filter { r in ReportLinkFilter(report: "identity", query: ["admins": v]).matches(identity: r) }.count }
         #expect(count("2") == 1)
         #expect(count("3") == 1)
         #expect(count("4+") == 2)
@@ -217,16 +217,64 @@ private func json(_ text: String) -> JSONValue { try! JSONValue.parse(Data(text.
         #expect(count(["connection": "wired"]) == 1)
     }
 }
+@Suite struct RevisionThreeParameterTests {
+    @Test func storageBucketsCapacityAndPlatform() {
+        let nearlyFull = HardwareReportRow(json: json(#"{"storage": [{"size": 500000000000, "freeSpace": 20000000000}]}"#))
+        let roomy = HardwareReportRow(json: json(#"{"storage": [{"size": 2000000000000, "freeSpace": 1000000000000}]}"#))
+        let pairs: [(HardwareReportRow, Platform)] = [(nearlyFull, .macOS), (roomy, .windows)]
+        func count(_ q: [String: String]) -> Int { pairs.filter { ReportLinkFilter(report: "hardware", query: q).matches(hardware: $0.0, platform: $0.1) }.count }
+        #expect(count(["storage": "lt5"]) == 1)
+        #expect(count(["storage": "20+"]) == 1)
+        #expect(count(["storage": "low"]) == 1)
+        #expect(count(["capacity": "512"]) == 1)
+        #expect(count(["capacity": "2t+"]) == 1)
+        #expect(count(["storage": "low", "platform": "Windows"]) == 0)
+        #expect(count(["platform": "macOS"]) == 1)
+        // The global toggle's form is not a hardware filter.
+        #expect(ReportLinkFilter(report: "hardware", query: ["platform": "mac"]).params.isEmpty)
+    }
 
-/// The shape reportmate-api `dashboard_insights.py` returns (its shape_* functions and
-/// tests/test_dashboard_insights.py), with SAMPLE values.
+    @Test func identityMacDirectoryAndPlatform() {
+        let psso = IdentityReportRow(json: json(#"{"platformSSOUsers": {"deviceRegistered": true}}"#))
+        let bound = IdentityReportRow(json: json(#"{"directoryServices": {"activeDirectory": {"bound": true}}}"#))
+        let loose = IdentityReportRow(json: json(#"{}"#))
+        #expect([psso, bound, loose].map(MacDirectory.of) == [.psso, .bound, .unbound])
+        let f = ReportLinkFilter(report: "identity", query: ["directory": "unbound", "platform": "macOS"])
+        #expect(f.matches(identity: loose, platform: .macOS))
+        #expect(!f.matches(identity: loose, platform: .windows))
+        #expect(!f.matches(identity: psso, platform: .macOS))
+    }
+
+    @Test func installsAndDevicesKeepTheirParameters() {
+        #expect(ReportLinkFilter(report: "installs", query: ["agent": "munki", "filter": "pending"]).params.count == 2)
+        #expect(ReportLinkFilter(report: "devices", query: ["tool": "installs", "level": "error"]).chips.map(\.label) == ["Errors", "Tool: installs"])
+    }
+}
+
+/// The shapes reportmate-api `dashboard_insights.py` returns (PR #158), with SAMPLE values.
 let insightsFixture = #"""
 {
   "generatedAt": "2026-10-22T15:00:00.123456+00:00",
   "platform": "macOS",
   "includeArchived": false,
-  "computeSeconds": 1.42,
   "cards": {
+    "installHealth": {
+      "devices": 550,
+      "withErrors": {"count": 6, "link": {"path": "/installs", "params": {"filter": "errors"}}},
+      "withWarnings": {"count": 8, "link": {"path": "/installs", "params": {"filter": "warnings"}}},
+      "errorItems": {"count": 9, "link": {"path": "/installs", "params": {"filter": "errors"}}},
+      "warningItems": {"count": 218, "link": {"path": "/installs", "params": {"filter": "warnings"}}},
+      "pending": {"items": 40, "devices": 12, "link": {"path": "/installs", "params": {"filter": "pending"}}},
+      "silentAgents": {"count": 6, "thresholdDays": 7, "link": {"path": "/installs", "params": {"stale": "1"}}},
+      "topFailing": [{"name": "Sample App", "devices": 3, "link": {"path": "/installs", "params": {"item": "Sample App", "filter": "errors"}}}],
+      "byAgent": [{"agent": "munki", "name": "Munki", "platform": "macOS", "devices": 550,
+                   "withErrors": {"count": 1, "link": {"path": "/installs", "params": {"filter": "errors", "agent": "munki"}}},
+                   "withWarnings": {"count": 7, "link": {"path": "/installs", "params": {"filter": "warnings", "agent": "munki"}}},
+                   "errorItems": {"count": 2, "link": {"path": "/installs", "params": {"filter": "errors", "agent": "munki"}}},
+                   "warningItems": {"count": 100, "link": {"path": "/installs", "params": {"filter": "warnings", "agent": "munki"}}},
+                   "pending": {"items": 30, "devices": 10, "link": {"path": "/installs", "params": {"filter": "pending", "agent": "munki"}}},
+                   "silentAgents": {"count": 4, "link": {"path": "/installs", "params": {"stale": "1", "agent": "munki"}}}}]
+    },
     "rebootDebt": {
       "devices": 550,
       "uptime30dPlus": {"count": 30, "link": {"path": "/system", "params": {"uptime": "30d+"}}},
@@ -244,26 +292,22 @@ let insightsFixture = #"""
       "withThreats": {"count": 0, "link": {"path": "/security", "params": {"threats": "1"}}},
       "criticalCves": {"count": 3, "link": {"path": "/security", "params": {"cve": "critical"}}}
     },
-    "unmanagedDevices": {
-      "devices": 550,
-      "unmanaged": {"count": 11, "pct": 2, "link": {"path": "/management", "params": {"enrolled": "0"}}},
-      "enrolledPct": 98,
-      "byPlatform": [{"platform": "macOS", "count": 11, "devices": 550, "link": {"path": "/management", "params": {"enrolled": "0"}}}],
-      "lastSeen": [{"key": "24h", "label": "Seen in the last 24 hours", "count": 4, "link": {"path": "/management", "params": {"enrolled": "0"}}}],
-      "recent": [{"serialNumber": "SAMPLE1", "name": "Sample Mac", "platform": "macOS", "lastSeen": "2026-10-22T14:00:00+00:00", "link": {"path": "/device/SAMPLE1", "params": {}}}]
+    "managementToolErrors": {
+      "windowHours": 24,
+      "tools": [{"tool": "installs", "name": "Munki", "platform": "macOS", "devices": 550, "devicesWithErrors": 12, "devicesWithWarnings": 40, "errorLines": 300, "warningLines": 900,
+                 "link": {"path": "/devices", "params": {"tool": "installs", "level": "error", "platform": "macOS"}},
+                 "warningsLink": {"path": "/devices", "params": {"tool": "installs", "level": "warning", "platform": "macOS"}}}],
+      "topErrors": [{"message": "Could not download <n> bytes", "tool": "installs", "name": "Munki", "devices": 5, "lines": 40,
+                     "link": {"path": "/devices", "params": {"tool": "installs", "level": "error"}},
+                     "sampleDevice": {"serialNumber": "SAMPLE1", "link": {"path": "/device/SAMPLE1", "params": {"tab": "management", "tool": "installs", "level": "error"}}}}]
     },
-    "hardwareAtRisk": {
+    "storage": {
       "devices": 550,
-      "lowStorage": {"count": 21, "link": {"path": "/hardware", "params": {"storage": "low"}}},
-      "lowMemory": {"count": 0, "link": {"path": "/hardware", "params": {"memory": "le8"}}},
-      "intelMacs": {"count": 5, "macs": 550, "link": {"path": "/hardware", "params": {"arch": "Intel"}}}
-    },
-    "installHealth": {
-      "devices": 550,
-      "withErrors": {"count": 1, "link": {"path": "/installs", "params": {"filter": "errors"}}},
-      "withWarnings": {"count": 7, "link": {"path": "/installs", "params": {"filter": "warnings"}}},
-      "topFailing": [{"name": "Sample App", "devices": 3, "link": {"path": "/installs", "params": {"item": "Sample App", "filter": "errors"}}}],
-      "silentAgents": {"count": 6, "thresholdDays": 7, "link": {"path": "/installs", "params": {"stale": "1"}}}
+      "freeSpace": [{"key": "lt5", "label": "Under 5% free", "count": 7, "link": {"path": "/hardware", "params": {"storage": "lt5"}}}],
+      "lowStorage": {"count": 21, "link": {"path": "/hardware", "params": {"storage": "low"}},
+                     "byPlatform": [{"platform": "macOS", "count": 21, "link": {"path": "/hardware", "params": {"storage": "low", "platform": "macOS"}}}]},
+      "capacity": [{"key": "le256", "label": "256 GB or less", "count": 100, "link": {"path": "/hardware", "params": {"capacity": "le256"}}}],
+      "fullest": [{"serialNumber": "SAMPLE2", "name": "Sample Lab", "platform": "macOS", "freePct": 1.2, "freeBytes": 3000000000, "totalBytes": 250000000000, "link": {"path": "/device/SAMPLE2", "params": {}}}]
     },
     "checkinGaps": {
       "hours": 24,
@@ -275,7 +319,7 @@ let insightsFixture = #"""
       "stale": {"count": 31, "link": {"path": "/devices", "params": {"status": "stale"}}},
       "missing": {"count": 84, "link": {"path": "/devices", "params": {"status": "missing"}}}
     },
-    "osCurrency": {"error": "statement timeout"},
+    "osCurrency": {"error": "Timed out after 20s", "generatedAt": "2026-10-22T15:00:00+00:00"},
     "softwareRisk": {
       "devices": 550,
       "criticalCves": {"count": 3, "link": {"path": "/security", "params": {"cve": "critical"}}},
@@ -289,28 +333,38 @@ let insightsFixture = #"""
       "expiredUser": {"devices": 0, "link": {"path": "/security", "params": {"certs": "expired"}}},
       "soonest": [{"commonName": "Sample CA", "daysUntilExpiry": 1, "devices": 12, "link": {"path": "/security", "params": {"certSearch": "Sample CA", "certStatus": "expiring"}}}]
     },
-    "localAdminExposure": {
-      "devices": 544,
-      "extraAdmins": {"count": 488, "link": {"path": "/identity", "params": {"admins": "extra"}}},
-      "byAdminCount": [{"key": "2", "label": "2 admins", "count": 300, "link": {"path": "/identity", "params": {"admins": "extra"}}}],
-      "topDevices": [{"serialNumber": "SAMPLE2", "name": "Sample Lab", "platform": "macOS", "admins": 7, "link": {"path": "/device/SAMPLE2", "params": {}}}],
-      "join": [{"key": "entra", "label": "Entra joined", "count": 198, "link": {"path": "/identity", "params": {"join": "entra"}}}],
-      "workgroup": {"count": 346, "link": {"path": "/identity", "params": {"join": "workgroup"}}, "byPlatform": [{"platform": "macOS", "count": 346}]}
-    },
-    "unusedSoftware": {
-      "days": 30,
-      "minInstalls": 10,
-      "leastUsed": [{"name": "Sample Suite", "activeDevices": 1, "installedDevices": 40, "usageRate": 0.025, "link": {"path": "/applications/usage/Sample%20Suite", "params": {"days": "30"}}}],
-      "mostUsed": [{"name": "Sample Browser", "totalHours": 1200.5, "activeHours": 900.0, "activeDevices": 300, "link": {"path": "/applications/usage/Sample%20Browser", "params": {"days": "30"}}}]
+    "directoryJoin": {
+      "views": {
+        "all": {"devices": 900, "segments": [{"key": "entra", "label": "Entra joined", "count": 500, "link": {"path": "/identity", "params": {"join": "entra"}}}],
+                "extraAdmins": {"count": 488, "link": {"path": "/identity", "params": {"admins": "extra"}}},
+                "shared": {"count": 400, "link": {"path": "/identity", "params": {"usage": "shared"}}},
+                "assigned": {"count": 300, "link": {"path": "/identity", "params": {"usage": "assigned"}}}},
+        "windows": {"devices": 350, "segments": [], "extraAdmins": {"count": 10, "link": {"path": "/identity", "params": {"admins": "extra", "platform": "Windows"}}},
+                    "shared": {"count": 200, "link": {"path": "/identity", "params": {"usage": "shared", "platform": "Windows"}}},
+                    "assigned": {"count": 150, "link": {"path": "/identity", "params": {"usage": "assigned", "platform": "Windows"}}}},
+        "mac": {"devices": 550, "segments": [{"key": "unbound", "label": "Not bound", "count": 346, "link": {"path": "/identity", "params": {"directory": "unbound", "platform": "macOS"}}}],
+                "extraAdmins": {"count": 478, "link": {"path": "/identity", "params": {"admins": "extra", "platform": "macOS"}}},
+                "shared": {"count": 200, "link": {"path": "/identity", "params": {"usage": "shared", "platform": "macOS"}}},
+                "assigned": {"count": 150, "link": {"path": "/identity", "params": {"usage": "assigned", "platform": "macOS"}}}}
+      }
     },
     "connectivityProblems": {
       "devices": 550,
       "weakSignal": {"count": 4, "link": {"path": "/network", "params": {"signal": "weak"}}},
-      "poorQuality": {"count": 131, "measured": 400, "link": {"path": "/network", "params": {}}},
-      "onVpn": {"count": 2, "link": {"path": "/network", "params": {}}}
+      "poorQuality": {"count": 131, "measured": 400, "link": {"path": "/network", "params": {"quality": "poor"}}},
+      "onVpn": {"count": 2, "link": {"path": "/network", "params": {"vpn": "1"}}}
     }
   }
 }
+"""#
+
+let appUsageEnvelope = #"""
+{"card": "appUsage", "platform": "all", "includeArchived": false, "generatedAt": "2026-10-22T15:00:00+00:00",
+ "data": {"days": 30, "filters": {"usages": ["Shared"], "catalogs": []},
+          "available": {"usages": [{"value": "Shared", "devices": 500}, {"value": "Assigned", "devices": 400}], "catalogs": [{"value": "Staff", "devices": 300}]},
+          "link": {"path": "/applications", "params": {"type": "usage", "period": "30", "usages": "Shared"}},
+          "apps": [{"name": "Sample Browser", "totalHours": 1200.5, "activeHours": 900.0, "devices": 320, "activeDevices": 300,
+                    "link": {"path": "/applications/usage/Sample%20Browser", "params": {"days": "30", "usages": "Shared"}}}]}}
 """#
 
 @Suite struct DashboardInsightsDocumentTests {
@@ -319,38 +373,42 @@ let insightsFixture = #"""
     @Test func readsEveryCard() {
         let d = doc
         #expect(d.generatedAt != nil)
-        #expect(d.platform == "macOS")
         #expect(Set(d.cards.keys) == Set(DashboardInsightsDocument.cardKeys))
-        #expect(d.card("rebootDebt")?.item("uptime30dPlus")?.count == 30)
-        #expect(d.card("protectionGaps")?.items("gaps").map(\.key) == ["firewall", "encryption"])
-        #expect(d.card("protectionGaps")?.items("gaps").first?.int("total") == 550)
-        #expect(d.card("unmanagedDevices")?.item("unmanaged")?.int("pct") == 2)
-        #expect(d.card("installHealth")?.items("topFailing").first?.name == "Sample App")
-        #expect(d.card("installHealth")?.items("topFailing").first?.count == 3)
-        #expect(d.card("expiringCertificates")?.item("expiring")?.int("certificates") == 42)
-        #expect(d.card("unusedSoftware")?.items("mostUsed").first?.double("totalHours") == 1200.5)
+        #expect(d.card("installHealth")?.item("pending")?.int("items") == 40)
+        #expect(d.card("installHealth")?.items("byAgent").first?.json["silentAgents"]["count"].int == 4)
+        #expect(d.card("managementToolErrors")?.items("tools").first?.int("devicesWithErrors") == 12)
+        #expect(d.card("storage")?.item("lowStorage")?.items("byPlatform").first?.count == 21)
+        #expect(d.card("directoryJoin")?.item("views")?.json["mac"]["devices"].int == 550)
         #expect(d.card("checkinGaps")?.bool("checkinsAllPlatforms") == true)
     }
 
     @Test func aFailedCardCarriesItsError() {
-        #expect(doc.card("osCurrency")?.error == "statement timeout")
+        #expect(doc.card("osCurrency")?.error == "Timed out after 20s")
         #expect(doc.card("rebootDebt")?.error == nil)
     }
 
     @Test func serverLinksBecomeAppLinks() {
         let d = doc
-        #expect(d.card("unmanagedDevices")?.item("unmanaged")?.link?.url.absoluteString == "reportmate://management?enrolled=0")
         #expect(d.card("rebootDebt")?.item("pendingUpdates")?.link?.url.absoluteString == "reportmate://system?pending=1-5,6-10,10+")
         #expect(d.card("installHealth")?.items("topFailing").first?.link == DashboardLinks.installs(item: "Sample App", filter: "errors"))
-        #expect(d.card("checkinGaps")?.items("reasons").first?.link == DashboardLinks.failures(hours: 24, reason: "malformed_json"))
-        #expect(d.card("unusedSoftware")?.items("leastUsed").first?.link == DashboardLinks.applicationUsage("Sample Suite"))
-        #expect(d.card("localAdminExposure")?.items("topDevices").first?.link?.target == .device(serial: "SAMPLE2", tab: nil))
-        #expect(d.card("expiringCertificates")?.items("soonest").first?.link?.query == ["certSearch": "Sample CA", "certStatus": "expiring"])
+        let sample = d.card("managementToolErrors")?.items("topErrors").first?.item("sampleDevice")?.link
+        #expect(sample?.target == .device(serial: "SAMPLE1", tab: "management"))
+        #expect(sample?.query == ["tool": "installs", "level": "error"])
+        #expect(d.card("storage")?.items("freeSpace").first?.link?.query == ["storage": "lt5"])
+    }
+
+    @Test func perCardEnvelope() {
+        let card = DashboardInsightsDocument.card(fromEnvelope: json(appUsageEnvelope))
+        #expect(card.error == nil)
+        #expect(card.items("apps").first?.name == "Sample Browser")
+        #expect(card.item("available")?.items("usages").map { $0.string("value") } == ["Shared", "Assigned"])
+        #expect(card.items("apps").first?.link?.query == ["days": "30", "usages": "Shared"])
+        let failed = DashboardInsightsDocument.card(fromEnvelope: json(#"{"card": "storage", "data": {"error": "Database unavailable"}}"#))
+        #expect(failed.error == "Database unavailable")
     }
 
     @Test func platformParameter() {
         #expect(DashboardInsightsDocument.platformParameter(.all) == "all")
-        #expect(DashboardInsightsDocument.platformParameter(.macOS) == "macOS")
         #expect(DashboardInsightsDocument.platformParameter(.windows) == "Windows")
     }
 }

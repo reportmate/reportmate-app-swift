@@ -27,7 +27,34 @@ final class DashboardInsightsModel {
 
     static let refreshInterval: TimeInterval = 300
     static let notDeployed = "Not available on this server yet"
-    static let cardCount = DashboardInsightsDocument.cardKeys.count
+    /// The eleven cards plus App Usage, for "Loading n of 12".
+    static let cardCount = DashboardInsightsDocument.cardKeys.count + 1
+
+    // MARK: App Usage
+
+    /// The App Usage card's Usage and Catalog chips; each combination is its own cached answer.
+    var appUsageUsages: Set<String> = []
+    var appUsageCatalogs: Set<String> = []
+    private var appUsageKey: String?
+    private var appUsageAt: Date?
+    private(set) var appUsageLoading = false
+
+    /// `/dashboard/insights/appUsage` for the chips' combination; it fills `cards["appUsage"]`.
+    func loadAppUsage(api: ReportMateAPI, platform: PlatformFilter, force: Bool = false) async {
+        let p = DashboardInsightsDocument.platformParameter(platform)
+        let usages = appUsageUsages.sorted(), catalogs = appUsageCatalogs.sorted()
+        let key = "\(api.configuration.normalizedBaseURL)|\(p)|\(usages)|\(catalogs)"
+        if !force, key == appUsageKey, let appUsageAt, Date().timeIntervalSince(appUsageAt) < Self.refreshInterval { return }
+        if appUsageLoading, !force { return }
+        appUsageLoading = true
+        defer { appUsageLoading = false }
+        let query: [String: String?] = ["platform": p, "days": "30",
+                                        "usages": usages.isEmpty ? nil : usages.joined(separator: ","),
+                                        "catalogs": catalogs.isEmpty ? nil : catalogs.joined(separator: ",")]
+        let result = await Self.fetchCard(DashboardInsightsDocument.appUsageKey, api: api, query: query)
+        apply(result, to: DashboardInsightsDocument.appUsageKey)
+        if case .card = result { appUsageKey = key; appUsageAt = Date() }
+    }
 
     var hasData: Bool { !cards.isEmpty }
     /// Cards that have answered, with data or an error, for "Loading n of 12".
@@ -119,10 +146,8 @@ final class DashboardInsightsModel {
         do {
             let json = try await retrying { try await api.getJSON("/dashboard/insights/\(key)", query: query) }
             if json.isNull { return .notFound }
-            // The card on its own, or wrapped as {card: …} or {cards: {key: …}}.
-            if json["cards"][key].object != nil { return .card(json["cards"][key]) }
-            if json["card"].object != nil { return .card(json["card"]) }
-            return .card(json)
+            // `{card, platform, includeArchived, generatedAt, data}`; `data` is the card or `{"error": …}`.
+            return .card(DashboardInsightsDocument.card(fromEnvelope: json).json)
         } catch {
             return .failed(error.localizedDescription)
         }

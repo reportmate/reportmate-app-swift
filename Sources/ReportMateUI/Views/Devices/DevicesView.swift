@@ -9,6 +9,10 @@ struct DevicesView: View {
     @State private var filtersExpanded = false
     @State private var sortOrder: [KeyPathComparator<DeviceSummary>] = [KeyPathComparator(\.name, comparator: .localizedStandard)]
     @State private var tableSelection: DeviceSummary.ID?
+    /// `?tool=…&level=error|warning` from the Management Tools Errors card. The device list
+    /// carries no log levels, so it names the filter and points to the device logs
+    /// rather than narrowing the rows.
+    @State private var toolLink: (tool: String, level: String)?
 
     private var options: DeviceFilterOptions { DeviceFilterOptions(devices: appState.devices) }
 
@@ -35,6 +39,7 @@ struct DevicesView: View {
             if let error = appState.devicesError, !appState.devices.isEmpty, !appState.devicesLoading {
                 RefreshFailedBanner(message: error, updatedAt: appState.devicesLoadedAt) { Task { await appState.loadDevices(force: true) } }
             }
+            if let toolLink { toolBar(toolLink) }
             DeviceFiltersView(options: options, selections: $selections, expanded: $filtersExpanded)
             if appState.devicesLoading, appState.devices.isEmpty {
                 SkeletonTableRows(rows: 18, columns: [240, 110, 140, nil, 120, 110]).skeletonTimeout(fillsPage: true) { Task { await appState.loadDevices(force: true) } }
@@ -64,6 +69,7 @@ struct DevicesView: View {
         .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
             guard let link = appState.consumeDeepLink(for: .devices) else { return }
             search = link.query["search"] ?? ""
+            toolLink = link.query["tool"].map { ($0, link.query["level"] ?? "error") }
             func set(_ key: String) -> Set<String> { Set((link.query[key] ?? "").split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }) }
             selections.statuses = set("status"); selections.usages = set("usage"); selections.catalogs = set("catalog")
             selections.areas = set("area"); selections.locations = set("location"); selections.fleets = set("fleet")
@@ -88,6 +94,7 @@ struct DevicesView: View {
         func put(_ key: String, _ set: Set<String>) { if !set.isEmpty { q[key] = set.sorted().joined(separator: ",") } }
         put("status", selections.statuses); put("usage", selections.usages); put("catalog", selections.catalogs)
         put("area", selections.areas); put("location", selections.locations); put("fleet", selections.fleets)
+        if let toolLink { q["tool"] = toolLink.tool; q["level"] = toolLink.level }
         return q
     }
 
@@ -215,4 +222,21 @@ extension InventorySummary {
 extension DeviceSummary {
     var lastSeenSortKey: Date { lastSeen ?? .distantPast }
     var createdAtSortKey: Date { createdAt ?? .distantPast }
+}
+
+extension DevicesView {
+    /// The tool and level a Management Tools Errors link named.
+    func toolBar(_ link: (tool: String, level: String)) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wrench.and.screwdriver").foregroundStyle(.secondary).accessibilityHidden(true)
+            Text("\(link.tool.prefix(1).uppercased() + link.tool.dropFirst()) \(link.level == "warning" ? "warnings" : "errors") in the last 24 hours")
+                .appFont(.caption, weight: .medium)
+            Text("The list can't narrow by log level; each device's Management tab shows its logs.")
+                .appFont(.caption).foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .background(Color.accentColor.opacity(0.08))
+        .overlay(alignment: .bottom) { Divider() }
+    }
 }

@@ -185,9 +185,12 @@ final class AppState {
         // The web header carries the global platform toggle as ?platform=mac|win on
         // every page, and leaves it off for All; a link without it keeps the current
         // choice, as the web does.
-        // `/management?platform=macOS|Windows` is that report's own filter (the card links
-        // use it), not the toggle, so it leaves the toggle alone.
-        let reportPlatform: Bool = { if case .report("management") = link.target { return ["macOS", "Windows"].contains(link.query["platform"] ?? "") }; return false }()
+        // `platform=macOS|Windows` on Management, Hardware or Identity is that report's own
+        // filter (the card links use it), not the toggle, so it leaves the toggle alone.
+        let reportPlatform: Bool = {
+            if case .report(let name) = link.target, ReportLinkFilter.reportPlatformReports.contains(name) { return ["macOS", "Windows"].contains(link.query["platform"] ?? "") }
+            return false
+        }()
         switch reportPlatform ? nil : link.query["platform"]?.lowercased() {
         case "mac", "macos": platformFilter = .macOS
         case "win", "windows": platformFilter = .windows
@@ -200,7 +203,10 @@ final class AppState {
         case .device(let serial, let tab):
             if section == .dashboard || section == .devices { section = .devices }
             path = NavigationPath()
-            open(device: serial, tab: tab.flatMap(DeviceTab.init(rawValue:)), filter: link.query["filter"])
+            // `tool` and `level` (the Management Tools Errors links) focus the log viewer on the
+            // Management tab; they travel as the route's filter, `log:<tool>:<level>`.
+            let logFocus = link.query["tool"].map { "log:\($0):\(link.query["level"] ?? "error")" }
+            open(device: serial, tab: tab.flatMap(DeviceTab.init(rawValue:)), filter: logFocus ?? link.query["filter"])
         case .events, .eventsFailures: section = .events; pendingDeepLink = link
         case .report(let name):
             if let s = AppSection(rawValue: name) { section = s; pendingDeepLink = link }
@@ -229,7 +235,7 @@ final class AppState {
     /// A link to what is on screen: the pushed route, else the section with its filters.
     var currentDeepLink: DeepLink {
         var link = pageDeepLink
-        // A page that carries its own `platform` filter (Management) keeps it.
+        // A page that carries its own `platform` filter (Management, Hardware, Identity) keeps it.
         guard link.query["platform"] == nil else { return link }
         switch platformFilter {
         case .macOS: link.query["platform"] = "mac"
@@ -245,7 +251,10 @@ final class AppState {
             switch route {
             case .device(let serial, let tab, let filter):
                 var q: [String: String] = [:]
-                if let filter { q["filter"] = filter }
+                if let filter, filter.hasPrefix("log:") {
+                    let parts = filter.split(separator: ":", maxSplits: 2).map(String.init)
+                    if parts.count == 3 { q["tool"] = parts[1]; q["level"] = parts[2] }
+                } else if let filter { q["filter"] = filter }
                 return DeepLink(target: .device(serial: serial, tab: tab?.rawValue), query: q)
             case .applicationUsage(let app, let days, let usages, let catalogs, let locations):
                 var q = ["days": String(days)]

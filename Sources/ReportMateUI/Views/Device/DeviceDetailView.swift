@@ -320,10 +320,10 @@ struct DeviceDetailView: View {
             ErrorBanner(message: err) { Task { await model.reloadModule(module, api: appState.api) } }
         } else {
             switch tab {
-            case .installs: InstallsTabView(device: device, initialFilter: installsFilter)
+            case .installs: InstallsTabView(device: device, initialFilter: installsFilter?.hasPrefix("log:") == true ? nil : installsFilter)
             case .applications: ApplicationsTabView(device: device)
             case .system: SystemTabView(device: device)
-            case .management: ManagementTabView(device: device)
+            case .management: ManagementTabView(device: device, logFocus: installsFilter.flatMap(ManagementLogFocus.init(filter:)))
             case .identity: IdentityTabView(device: device)
             case .hardware: HardwareTabView(device: device)
             case .peripherals: PeripheralsTabView(device: device)

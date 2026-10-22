@@ -152,9 +152,10 @@ struct DashboardView: View {
     static let wideBreakpoint: CGFloat = 2000
     /// Column 1 and each insight column never go narrower than this.
     static let columnMinimum: CGFloat = 360
-    /// The insight-column cards in the spec's order. Install Health (5) sits in column 1
-    /// under Fleet Status and App Usage (11) under Recent Events, so neither is here.
-    static let cardOrder = [1, 2, 3, 4, 6, 7, 8, 9, 10, 12]
+    /// The insight-column cards, by API key. Install Health sits in column 1 under Fleet
+    /// Status and App Usage under Recent Events, so neither is here.
+    static let cardOrder = ["rebootDebt", "protectionGaps", "managementToolErrors", "storage", "checkinGaps",
+                            "osCurrency", "softwareRisk", "expiringCertificates", "directoryJoin", "connectivityProblems"]
 
     private var devices: [DeviceSummary] {
         guard let all = model.data?.devices else { return [] }
@@ -313,13 +314,13 @@ struct DashboardView: View {
         }
     }
 
-    private func insightStack(_ cards: [Int]) -> some View {
+    private func insightStack(_ cards: [String]) -> some View {
         VStack(spacing: 20) {
             ForEach(cards, id: \.self) { card($0) }
         }
     }
 
-    private func insightGrid(_ cards: [Int], maxColumns: Int) -> some View {
+    private func insightGrid(_ cards: [String], maxColumns: Int) -> some View {
         UniformGrid(minColumnWidth: 320, maxColumns: maxColumns, spacing: 20, fillsHeight: false) {
             ForEach(cards, id: \.self) { card($0) }
         }
@@ -331,11 +332,13 @@ struct DashboardView: View {
     /// here at most that often (the 30-second tick finds it fresh).
     private func loadInsights(force: Bool = false) async {
         guard !placeholder, appState.isConfigured else { return }
-        await insights.load(api: appState.api, platform: appState.platformFilter, includeArchived: appState.includeArchived, force: force)
+        async let cards: Void = insights.load(api: appState.api, platform: appState.platformFilter, includeArchived: appState.includeArchived, force: force)
+        async let usage: Void = insights.loadAppUsage(api: appState.api, platform: appState.platformFilter, force: force)
+        _ = await (cards, usage)
     }
 
-    private func card(_ number: Int) -> some View {
-        InsightCardView(number: number, platform: appState.platformFilter)
+    private func card(_ key: String) -> some View {
+        InsightCardView(key: key, platform: appState.platformFilter)
     }
 
     @ViewBuilder

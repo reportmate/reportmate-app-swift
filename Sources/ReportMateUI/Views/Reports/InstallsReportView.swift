@@ -39,6 +39,7 @@ struct InstallsReportView: View {
             switch model.installStatusFilter { case .error: q["filter"] = "errors"; case .warning: q["filter"] = "warnings"; default: break }
         }
         if model.staleOnly { q["stale"] = "1" }
+        if let agent = model.agentFilter { q["agent"] = agent }
         if !model.selections.catalogs.isEmpty { q["catalogs"] = model.selections.catalogs.sorted().joined(separator: ",") }
         if !model.selections.usages.isEmpty { q["usages"] = model.selections.usages.sorted().joined(separator: ",") }
         if !model.searchQuery.isEmpty { q["q"] = model.searchQuery }
@@ -63,7 +64,7 @@ struct InstallsReportView: View {
                         DeviceFiltersView(options: model.filterOptions(platform), selections: $m.selections, expanded: $m.selectionsExpanded)
                         if model.isGeneratingReport { itemPicker }
                         if !model.isGeneratingReport { searchRow }
-                        if model.staleOnly, model.isConfigReport { staleBar }
+                        if model.staleOnly || model.agentFilter != nil { staleBar }
                         if model.loading { reportProgress }
                         if !model.loading, model.hasGeneratedReport, model.installs.isEmpty, !model.isConfigReport { noResults }
                         if !model.installs.isEmpty, !model.isConfigReport { installsTable }
@@ -83,6 +84,7 @@ struct InstallsReportView: View {
             guard let link = appState.consumeDeepLink(for: .installs) else { return }
             model.searchQuery = link.query["q"] ?? ""
             model.staleOnly = link.query["stale"] == "1"
+            model.agentFilter = ["munki", "cimian"].contains(link.query["agent"] ?? "") ? link.query["agent"] : nil
             // `item` (the dashboard's top-item links) opens that item's report, where
             // `filter` narrows the records rather than opening the status drill-down.
             let item = link.query["item"]
@@ -114,24 +116,34 @@ struct InstallsReportView: View {
         }
     }
 
-    /// The `?stale=1` filter as a removable chip.
+    /// The `?stale=1` and `?agent=` filters as removable chips.
     private var staleBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal.decrease.circle").foregroundStyle(.secondary).accessibilityHidden(true)
-            Button { model.staleOnly = false } label: {
-                HStack(spacing: 4) {
-                    Text(ReportLinkFilter.label(key: "stale", value: "1") + " (\(model.staleSerials.count))").appFont(.caption, weight: .medium)
-                    Image(systemName: "xmark").appFont(.caption2)
-                }
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(Color.accentColor.opacity(0.14), in: Capsule())
-                .foregroundStyle(Color.accentColor)
+            if model.staleOnly {
+                linkChip(ReportLinkFilter.label(key: "stale", value: "1") + " (\(model.staleSerials.count))") { model.staleOnly = false }
             }
-            .buttonStyle(.plain)
-            .help("Remove this filter")
+            if let agent = model.agentFilter {
+                linkChip(ReportLinkFilter.label(key: "agent", value: agent)) { model.agentFilter = nil }
+            }
             Spacer()
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+
+    private func linkChip(_ text: String, remove: @escaping () -> Void) -> some View {
+        Button(action: remove) {
+            HStack(spacing: 4) {
+                Text(text).appFont(.caption, weight: .medium)
+                Image(systemName: "xmark").appFont(.caption2)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Color.accentColor.opacity(0.14), in: Capsule())
+            .foregroundStyle(Color.accentColor)
+        }
+        .buttonStyle(.plain)
+        .help("Remove this filter")
+        .accessibilityLabel("Remove filter \(text)")
     }
 
     // MARK: Header

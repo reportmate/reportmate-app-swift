@@ -17,30 +17,28 @@ private extension InsightItem {
     }
 }
 
-/// The card for `number` in the spec's order.
+/// The insight-column card for an API card key.
 struct InsightCardView: View {
-    let number: Int
+    let key: String
     let platform: PlatformFilter
 
     var body: some View {
-        switch number {
-        case 1: RebootDebtCard()
-        case 2: ProtectionGapsCard()
-        case 3: UnmanagedDevicesCard()
-        case 4: HardwareAtRiskCard()
-        case 5: InstallHealthCard(stats: nil, platform: platform)
-        case 6: CheckInGapsCard(platform: platform)
-        case 7: OSCurrencyCard()
-        case 8: SoftwareRiskCard()
-        case 9: ExpiringCertificatesCard()
-        case 10: LocalAdminExposureCard()
-        case 11: AppUsageCard()
+        switch key {
+        case "rebootDebt": RebootDebtCard()
+        case "protectionGaps": ProtectionGapsCard()
+        case "managementToolErrors": ManagementToolErrorsCard()
+        case "storage": StorageCard()
+        case "checkinGaps": CheckInGapsCard(platform: platform)
+        case "osCurrency": OSCurrencyCard()
+        case "softwareRisk": SoftwareRiskCard()
+        case "expiringCertificates": ExpiringCertificatesCard()
+        case "directoryJoin": DirectoryJoinCard(platform: platform)
         default: ConnectivityProblemsCard()
         }
     }
 }
 
-// MARK: - 1 Reboot & Update Debt
+// MARK: - Reboot & Update Debt
 
 struct RebootDebtCard: View {
     var body: some View {
@@ -69,7 +67,7 @@ struct RebootDebtCard: View {
     }
 }
 
-// MARK: - 2 Protection Gaps
+// MARK: - Protection Gaps
 
 struct ProtectionGapsCard: View {
     var body: some View {
@@ -95,50 +93,53 @@ struct ProtectionGapsCard: View {
     }
 }
 
-// MARK: - 3 Unmanaged Devices
+// MARK: - Management Tools Errors
 
-struct UnmanagedDevicesCard: View {
+/// Errors and warnings in the management tools' own logs over the last day, per
+/// tool, with the commonest error messages. Parsed by the API at ingest.
+struct ManagementToolErrorsCard: View {
     var body: some View {
-        InsightCard(key: "unmanagedDevices", title: "Unmanaged Devices", subtitle: "Not enrolled in MDM", systemImage: "checkmark.shield", tone: .purple, link: DashboardLinks.report("management")) { c in
+        InsightCard(key: "managementToolErrors", title: "Management Tools Errors", subtitle: "Errors in the management tools' logs", systemImage: "wrench.and.screwdriver", tone: .purple, link: DashboardLinks.devices()) { c in
             VStack(alignment: .leading, spacing: 12) {
-                let unmanaged = c.item("unmanaged")
-                MaybeInsightLink(link: unmanaged?.link) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("\(unmanaged?.count ?? 0)").appFont(.title, weight: .bold).foregroundStyle((unmanaged?.count ?? 0) == 0 ? Color.secondary : Tone.purple.color).monospacedDigit()
-                        Text("unmanaged · \(unmanaged?.int("pct") ?? 0)% of \(c.int("devices") ?? 0)").appFont(.callout).foregroundStyle(.secondary)
-                        Spacer(minLength: 0)
-                    }
-                }
-                if let enrolled = c.int("enrolledPct") {
-                    Text("\(enrolled)% of the fleet is enrolled").appFont(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
-                }
-                let byPlatform = c.items("byPlatform")
-                if !byPlatform.isEmpty {
+                let tools = c.items("tools").filter { ($0.int("devicesWithErrors") ?? 0) + ($0.int("devicesWithWarnings") ?? 0) > 0 }
+                let hours = c.int("windowHours") ?? 24
+                if tools.isEmpty {
+                    Text("No tool reported an error or warning in the last \(hours) hours").appFont(.caption).foregroundStyle(.secondary)
+                } else {
                     VStack(alignment: .leading, spacing: 2) {
-                        InsightHeading("By platform")
-                        ForEach(byPlatform) { p in
-                            InsightBarRow(label: p.name ?? "Unknown", count: p.count, max: Swift.max(p.int("devices") ?? 1, 1), tone: .purple, link: p.link, valueText: "\(p.count) of \(p.int("devices") ?? 0)")
+                        InsightHeading("Devices with errors, last \(hours) hours")
+                        ForEach(tools) { t in
+                            let errors = t.int("devicesWithErrors") ?? 0, warnings = t.int("devicesWithWarnings") ?? 0
+                            HStack(spacing: 8) {
+                                Text(t.name ?? t.string("tool") ?? "").appFont(.callout, weight: .medium).lineLimit(1).frame(width: 110, alignment: .leading)
+                                MaybeInsightLink(link: t.link) {
+                                    Text("\(errors) errors").appFont(.callout).foregroundStyle(errors == 0 ? Color.secondary : Tone.red.color).monospacedDigit()
+                                }
+                                MaybeInsightLink(link: InsightItem.deepLink(t.json["warningsLink"])) {
+                                    Text("\(warnings) warnings").appFont(.callout).foregroundStyle(warnings == 0 ? Color.secondary : Tone.yellow.color).monospacedDigit()
+                                }
+                                Spacer(minLength: 0)
+                                Text("\(t.int("errorLines") ?? 0) lines").appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
+                            }
                         }
                     }
                 }
-                let lastSeen = c.items("lastSeen")
-                if !lastSeen.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        InsightHeading("Last seen")
-                        let max = lastSeen.map(\.count).max() ?? 1
-                        ForEach(lastSeen) { s in InsightBarRow(label: s.label ?? s.key ?? "", count: s.count, max: max, tone: .gray, link: s.link) }
-                    }
-                }
-                let recent = c.items("recent")
-                if !recent.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        InsightHeading("Most recently seen")
-                        ForEach(recent) { d in
-                            MaybeInsightLink(link: d.link) {
-                                HStack {
-                                    Text(d.name ?? d.string("serialNumber") ?? "").appFont(.callout).lineLimit(1).truncationMode(.middle)
-                                    Spacer()
-                                    Text(TimeFormatting.relative(FlexibleDate.parse(d.json["lastSeen"]))).appFont(.caption).foregroundStyle(.secondary)
+                let top = c.items("topErrors")
+                if !top.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        InsightHeading("Commonest errors")
+                        ForEach(top) { e in
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                MaybeInsightLink(link: e.link) {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(e.string("message") ?? "").appFont(.callout).lineLimit(2).truncationMode(.middle)
+                                        Text("\(e.string("name") ?? "") · \(e.int("devices") ?? 0) devices · \(e.int("lines") ?? 0) lines").appFont(.caption).foregroundStyle(.secondary)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                if let sample = e.item("sampleDevice"), let link = sample.link {
+                                    InsightLink(link: link) { Image(systemName: "doc.text.magnifyingglass").foregroundStyle(.secondary) }
+                                        .accessibilityLabel("Open an example device's log")
                                 }
                             }
                         }
@@ -149,27 +150,65 @@ struct UnmanagedDevicesCard: View {
     }
 }
 
-// MARK: - 4 Hardware at Risk
+// MARK: - Storage
 
-struct HardwareAtRiskCard: View {
+struct StorageCard: View {
     var body: some View {
-        InsightCard(key: "hardwareAtRisk", title: "Hardware at Risk", subtitle: "Low storage, low memory and Intel Macs", systemImage: "cpu", tone: .teal, link: DashboardLinks.report("hardware")) { c in
-            HStack(alignment: .top, spacing: 8) {
-                InsightFigure(value: c.count("lowStorage"), label: "under 10% storage free", tone: .red, link: c.item("lowStorage")?.link)
-                InsightFigure(value: c.count("lowMemory"), label: "8 GB memory or less", tone: .orange, link: c.item("lowMemory")?.link)
-                let intel = c.item("intelMacs")
-                InsightFigure(value: intel?.count, label: "Intel Macs of \(intel?.int("macs") ?? 0), at risk at the next macOS", tone: .yellow, link: intel?.link)
+        InsightCard(key: "storage", title: "Storage", subtitle: "Free space, capacity and the fullest devices", systemImage: "internaldrive", tone: .teal, link: DashboardLinks.report("hardware")) { c in
+            VStack(alignment: .leading, spacing: 12) {
+                let low = c.item("lowStorage")
+                HStack(alignment: .top, spacing: 8) {
+                    InsightFigure(value: low?.count, label: "under 10% free", tone: .red, link: low?.link)
+                    ForEach(low?.items("byPlatform") ?? []) { p in
+                        InsightFigure(value: p.count, label: "\(p.name ?? "") under 10%", tone: .orange, link: p.link)
+                    }
+                }
+                let free = c.items("freeSpace")
+                if !free.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        InsightHeading("Free space")
+                        let max = free.map(\.count).max() ?? 1
+                        ForEach(free) { b in
+                            InsightBarRow(label: b.label ?? b.key ?? "", count: b.count, max: max, tone: b.key == "lt5" ? .red : b.key == "5-10" ? .orange : b.key == "10-20" ? .yellow : .green, link: b.link)
+                        }
+                    }
+                }
+                let capacity = c.items("capacity")
+                if !capacity.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        InsightHeading("Capacity")
+                        let max = capacity.map(\.count).max() ?? 1
+                        ForEach(capacity) { b in InsightBarRow(label: b.label ?? b.key ?? "", count: b.count, max: max, tone: .teal, link: b.link) }
+                    }
+                }
+                let fullest = c.items("fullest")
+                if !fullest.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        InsightHeading("Fullest devices")
+                        ForEach(fullest) { d in
+                            MaybeInsightLink(link: d.link) {
+                                HStack {
+                                    Text(d.name ?? d.string("serialNumber") ?? "").appFont(.callout).lineLimit(1).truncationMode(.middle)
+                                    Spacer()
+                                    Text(ByteCountFormatter.string(fromByteCount: Int64(d.double("freeBytes") ?? 0), countStyle: .decimal) + " free")
+                                        .appFont(.caption).foregroundStyle(.secondary)
+                                    Text(String(format: "%.1f%%", d.double("freePct") ?? 0)).appFont(.callout, weight: .medium).foregroundStyle(Tone.red.color).monospacedDigit()
+                                        .frame(minWidth: 48, alignment: .trailing)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-// MARK: - 5 Install Health
+// MARK: - Install Health
 
 /// Column 1, under Fleet Status, in place of the old Errors and Warnings tiles.
-/// The two headline counts are the largest numbers on the dashboard. They come
-/// from the dashboard payload, so they show with Fleet Status; the item lists come
-/// from the insights document.
+/// The two headline counts are the largest numbers on the dashboard. Until the
+/// card answers they come from the dashboard payload, so they show with Fleet Status.
 struct InstallHealthCard: View {
     let stats: InstallStats?
     let platform: PlatformFilter
@@ -179,7 +218,7 @@ struct InstallHealthCard: View {
 
     var body: some View {
         let link = DashboardLinks.installs()
-        let c = insights.card("installHealth")
+        let c = insights.card("installHealth").flatMap { $0.error == nil ? $0 : nil }
         Card {
             VStack(alignment: .leading, spacing: 0) {
                 CardHeader("Install Health", subtitle: "Munki and Cimian across the fleet", systemImage: "arrow.down.circle", tone: .green) { appState.follow(link) }
@@ -188,12 +227,11 @@ struct InstallHealthCard: View {
                     .accessibilityAddTraits(.isButton)
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 12) {
-                        hero(stats.flatMap { $0.devicesWithErrors(for: platform) }, label: "devices with errors", tone: .red,
+                        hero(c?.item("withErrors")?.count ?? stats.flatMap { $0.devicesWithErrors(for: platform) }, label: "devices with errors", tone: .red,
                              link: c?.item("withErrors")?.link ?? DashboardLinks.installs(filter: "errors"))
-                        hero(stats.flatMap { $0.devicesWithWarnings(for: platform) }, label: "devices with warnings", tone: .yellow,
+                        hero(c?.item("withWarnings")?.count ?? stats.flatMap { $0.devicesWithWarnings(for: platform) }, label: "devices with warnings", tone: .yellow,
                              link: c?.item("withWarnings")?.link ?? DashboardLinks.installs(filter: "warnings"))
                     }
-                    if let stats { split(stats) }
                     details(c)
                 }
                 .padding(16)
@@ -217,48 +255,38 @@ struct InstallHealthCard: View {
         }
     }
 
-    /// Munki (Mac) against Cimian (Windows), and the item counts behind the devices.
-    @ViewBuilder
-    private func split(_ s: InstallStats) -> some View {
-        let showMac = platform != .windows, showWin = platform != .macOS
-        VStack(alignment: .leading, spacing: 4) {
-            if showMac {
-                splitRow("Munki", errors: s.macDevicesWithErrors, warnings: s.macDevicesWithWarnings, platform: "mac")
-            }
-            if showWin {
-                splitRow("Cimian", errors: s.winDevicesWithErrors, warnings: s.winDevicesWithWarnings, platform: "win")
-            }
-            let errorItems = platform == .macOS ? s.macErrorItems : platform == .windows ? s.winErrorItems : s.totalErrorItems
-            let warningItems = platform == .macOS ? s.macWarningItems : platform == .windows ? s.winWarningItems : s.totalWarningItems
-            InsightChips {
-                StatChip(value: errorItems, label: "error items", tone: .red, link: DashboardLinks.installs(filter: "errors"))
-                StatChip(value: warningItems, label: "warning items", tone: .yellow, link: DashboardLinks.installs(filter: "warnings"))
-            }
-            .padding(.top, 4)
-        }
-    }
-
-    private func splitRow(_ tool: String, errors: Int, warnings: Int, platform: String) -> some View {
-        HStack(spacing: 8) {
-            Text(tool).appFont(.callout, weight: .medium).frame(width: 64, alignment: .leading)
-            InsightLink(link: DashboardLinks.report("installs", ["filter": "errors", "platform": platform])) {
-                Text("\(errors) with errors").appFont(.callout).foregroundStyle(errors == 0 ? Color.secondary : Tone.red.color).monospacedDigit()
-            }
-            InsightLink(link: DashboardLinks.report("installs", ["filter": "warnings", "platform": platform])) {
-                Text("\(warnings) with warnings").appFont(.callout).foregroundStyle(warnings == 0 ? Color.secondary : Tone.yellow.color).monospacedDigit()
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
     @ViewBuilder
     private func details(_ c: InsightCardData?) -> some View {
-        if let c, c.error == nil {
-            let silent = c.item("silentAgents")
-            let pending = c.item("pendingInstalls")
+        if let c {
+            // Munki against Cimian: devices with errors and warnings, then items.
+            let agents = c.items("byAgent")
+            if !agents.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(agents) { a in
+                        let e = a.item("withErrors"), w = a.item("withWarnings"), ei = a.item("errorItems"), wi = a.item("warningItems")
+                        HStack(spacing: 8) {
+                            Text(a.name ?? a.string("agent") ?? "").appFont(.callout, weight: .medium).frame(width: 60, alignment: .leading)
+                            MaybeInsightLink(link: e?.link) {
+                                Text("\(e?.count ?? 0) with errors").appFont(.callout).foregroundStyle((e?.count ?? 0) == 0 ? Color.secondary : Tone.red.color).monospacedDigit()
+                            }
+                            MaybeInsightLink(link: w?.link) {
+                                Text("\(w?.count ?? 0) with warnings").appFont(.callout).foregroundStyle((w?.count ?? 0) == 0 ? Color.secondary : Tone.yellow.color).monospacedDigit()
+                            }
+                            Spacer(minLength: 0)
+                            MaybeInsightLink(link: ei?.link ?? wi?.link) {
+                                Text("\(ei?.count ?? 0) / \(wi?.count ?? 0) items").appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
+                            }
+                            .help("Error items / warning items")
+                        }
+                    }
+                }
+            }
+            let pending = c.item("pending"), silent = c.item("silentAgents")
             InsightChips {
+                StatChip(value: c.item("errorItems")?.count ?? 0, label: "error items", tone: .red, link: c.item("errorItems")?.link)
+                StatChip(value: c.item("warningItems")?.count ?? 0, label: "warning items", tone: .yellow, link: c.item("warningItems")?.link)
+                StatChip(value: pending?.int("items") ?? 0, label: "pending on \(pending?.int("devices") ?? 0) devices", tone: .blue, link: pending?.link)
                 StatChip(value: silent?.count ?? 0, label: "agents silent over \(silent?.int("thresholdDays") ?? 7) days", tone: .orange, link: silent?.link)
-                if let pending { StatChip(value: pending.count, label: "pending installs", tone: .blue, link: pending.link) }
             }
             let top = c.items("topFailing")
             VStack(alignment: .leading, spacing: 2) {
@@ -270,7 +298,7 @@ struct InstallHealthCard: View {
                     ForEach(top) { item in InsightBarRow(label: item.name ?? "", count: item.count, max: max, tone: .red, link: item.link) }
                 }
             }
-        } else if let message = c?.error ?? (insights.loading ? nil : insights.error) {
+        } else if let message = insights.card("installHealth")?.error ?? (insights.loading ? nil : insights.error) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Label(message, systemImage: "exclamationmark.triangle").appFont(.caption).foregroundStyle(.secondary).lineLimit(2)
                 Spacer(minLength: 8)
@@ -282,7 +310,7 @@ struct InstallHealthCard: View {
     }
 }
 
-// MARK: - 6 Check-in Gaps
+// MARK: - Check-in Gaps
 
 struct CheckInGapsCard: View {
     let platform: PlatformFilter
@@ -319,7 +347,7 @@ struct CheckInGapsCard: View {
     }
 }
 
-// MARK: - 7 OS Currency
+// MARK: - OS Currency
 
 struct OSCurrencyCard: View {
     var body: some View {
@@ -352,7 +380,7 @@ struct OSCurrencyCard: View {
     }
 }
 
-// MARK: - 8 Software Risk
+// MARK: - Software Risk
 
 struct SoftwareRiskCard: View {
     var body: some View {
@@ -377,7 +405,7 @@ struct SoftwareRiskCard: View {
     }
 }
 
-// MARK: - 9 Expiring Certificates
+// MARK: - Expiring Certificates
 
 struct ExpiringCertificatesCard: View {
     var body: some View {
@@ -414,80 +442,113 @@ struct ExpiringCertificatesCard: View {
     }
 }
 
-// MARK: - 10 Local Admin Exposure
+// MARK: - Directory Join
 
-struct LocalAdminExposureCard: View {
+/// How devices are joined to a directory, with extra local admins and shared or
+/// assigned use, in three views. The view follows the platform toggle; the
+/// segmented control picks another without changing the toggle.
+struct DirectoryJoinCard: View {
+    let platform: PlatformFilter
+    enum View3: String, CaseIterable, Identifiable { case all, windows, mac
+        var id: String { rawValue }
+        var title: String { self == .all ? "All" : self == .windows ? "Windows" : "Mac" }
+    }
+    @State private var chosen: View3?
+
+    private var view: View3 { chosen ?? (platform == .macOS ? .mac : platform == .windows ? .windows : .all) }
+
     var body: some View {
-        InsightCard(key: "localAdminExposure", title: "Local Admin Exposure", subtitle: "Extra local admins and unjoined devices", systemImage: "person.badge.key", tone: .indigo, link: DashboardLinks.report("identity")) { c in
+        InsightCard(key: "directoryJoin", title: "Directory Join", subtitle: "Join type, local admins and use", systemImage: "person.badge.key", tone: .indigo, link: DashboardLinks.report("identity")) { c in
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 8) {
-                    InsightFigure(value: c.count("extraAdmins"), label: "devices with more than one local admin", tone: .red, link: c.item("extraAdmins")?.link)
-                    let workgroup = c.item("workgroup")
-                    InsightFigure(value: workgroup?.count, label: "not joined to Entra or a domain", tone: .orange, link: workgroup?.link)
+                Picker("View", selection: Binding(get: { view }, set: { chosen = $0 })) {
+                    ForEach(View3.allCases) { Text($0.title).tag($0) }
                 }
-                let byCount = c.items("byAdminCount")
-                if !byCount.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        InsightHeading("Admins per device")
-                        let max = byCount.map(\.count).max() ?? 1
-                        ForEach(byCount) { b in InsightBarRow(label: b.label ?? b.key ?? "", count: b.count, max: max, tone: .indigo, link: b.link) }
-                    }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                let v = c.json["views"][view.rawValue]
+                let section = InsightItem(json: v)
+                let segments = section.items("segments")
+                let colors: [String: Color] = ["entra": .blue, "hybrid": .teal, "domain": .orange, "workgroup": Color.secondary.opacity(0.4),
+                                               "psso": .blue, "bound": .orange, "unbound": Color.secondary.opacity(0.4)]
+                if segments.isEmpty {
+                    Text("No \(view == .all ? "" : view.title + " ")devices reported").appFont(.caption).foregroundStyle(.secondary)
+                } else {
+                    InsightDonut(data: segments.map { InsightSlice(label: $0.label ?? $0.key ?? "", count: $0.count, color: colors[$0.key ?? ""] ?? .gray, link: $0.link) },
+                                 center: "\(v["devices"].int ?? 0)")
                 }
-                let top = c.items("topDevices")
-                if !top.isEmpty {
+                InsightChips {
+                    StatChip(value: section.item("extraAdmins")?.count ?? 0, label: "with extra local admins", tone: .red, link: section.item("extraAdmins")?.link)
+                    StatChip(value: section.item("shared")?.count ?? 0, label: "shared", tone: .blue, link: section.item("shared")?.link)
+                    StatChip(value: section.item("assigned")?.count ?? 0, label: "assigned", tone: .indigo, link: section.item("assigned")?.link)
+                }
+            }
+        }
+        .onChange(of: platform) { _, _ in chosen = nil }
+    }
+}
+
+// MARK: - App Usage
+
+/// In the wide column under Recent Events: the ten most-used apps over 30 days,
+/// narrowed by Usage and Catalog chips like Platform Distribution's. Each
+/// combination is its own cached answer, and each app's link carries the chips.
+struct AppUsageCard: View {
+    @Environment(AppState.self) private var appState
+    @Environment(DashboardInsightsModel.self) private var insights
+
+    var body: some View {
+        let link = (insights.card(DashboardInsightsDocument.appUsageKey).flatMap { InsightItem(json: $0.json).link })
+            ?? DashboardLinks.report("applications", ["type": "usage", "period": "30"])
+        InsightCard(key: DashboardInsightsDocument.appUsageKey, title: "App Usage", subtitle: "Most used apps, last 30 days", systemImage: "chart.bar.xaxis", tone: .blue, link: link) { c in
+            VStack(alignment: .leading, spacing: 10) {
+                chips(c)
+                let apps = Array(c.items("apps").prefix(10))
+                if apps.isEmpty {
+                    Text("No usage recorded for this selection").appFont(.caption).foregroundStyle(.secondary)
+                } else {
+                    let max = Int((apps.compactMap { $0.double("totalHours") }.max() ?? 1).rounded())
                     VStack(alignment: .leading, spacing: 2) {
-                        InsightHeading("Most local admins")
-                        ForEach(top) { d in
-                            MaybeInsightLink(link: d.link) {
-                                HStack {
-                                    Text(d.name ?? d.string("serialNumber") ?? "").appFont(.callout).lineLimit(1).truncationMode(.middle)
-                                    Spacer()
-                                    Text("\(d.int("admins") ?? 0) admins").appFont(.callout, weight: .medium).monospacedDigit()
-                                }
-                            }
+                        ForEach(apps) { app in
+                            let hours = Int((app.double("totalHours") ?? 0).rounded())
+                            InsightBarRow(label: app.name ?? "", count: hours, max: Swift.max(max, 1), tone: .blue, link: app.link,
+                                          valueText: "\(hours) h · \(app.int("activeDevices") ?? 0) devices")
                         }
                     }
                 }
-                let joins = c.items("join")
-                if !joins.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        InsightHeading("Directory join")
-                        let max = joins.map(\.count).max() ?? 1
-                        ForEach(joins) { j in InsightBarRow(label: j.label ?? j.key ?? "", count: j.count, max: max, tone: .gray, link: j.link) }
-                    }
-                }
             }
+            .opacity(insights.appUsageLoading ? 0.6 : 1)
         }
     }
-}
 
-// MARK: - 11 App Usage
-
-/// In the wide column under Recent Events: the ten most-used apps over 30 days.
-struct AppUsageCard: View {
-    var body: some View {
-        InsightCard(key: AppUsageCard.key, title: "App Usage", subtitle: "Most used apps, last 30 days", systemImage: "chart.bar.xaxis", tone: .blue, link: DashboardLinks.report("applications", ["type": "usage", "period": "30"])) { c in
-            let most = Array(c.items("mostUsed").prefix(10))
-            if most.isEmpty {
-                Text("No usage recorded").appFont(.caption).foregroundStyle(.secondary)
-            } else {
-                let max = Int((most.compactMap { $0.double("totalHours") }.max() ?? 1).rounded())
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(most) { app in
-                        let hours = Int((app.double("totalHours") ?? 0).rounded())
-                        let devices = app.int("activeDevices") ?? 0
-                        InsightBarRow(label: app.name ?? "", count: hours, max: Swift.max(max, 1), tone: .blue, link: app.link, valueText: "\(hours) h · \(devices) devices")
-                    }
-                }
+    @ViewBuilder
+    private func chips(_ c: InsightCardData) -> some View {
+        let available = c.item("available")
+        let usages = available?.items("usages").compactMap { $0.string("value") } ?? []
+        let catalogs = available?.items("catalogs").compactMap { $0.string("value") } ?? []
+        if !usages.isEmpty || !catalogs.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                if !usages.isEmpty { pillRow("Usage", usages, selected: insights.appUsageUsages, tone: .purple) { toggle(\.appUsageUsages, $0) } }
+                if !catalogs.isEmpty { pillRow("Catalog", catalogs, selected: insights.appUsageCatalogs, tone: .green) { toggle(\.appUsageCatalogs, $0) } }
             }
         }
     }
 
-    /// The card's section until the API's dedicated app-usage card lands.
-    static let key = "unusedSoftware"
+    private func pillRow(_ label: String, _ values: [String], selected: Set<String>, tone: Tone, toggle: @escaping (String) -> Void) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(label.uppercased()).appFont(.caption2).foregroundStyle(.secondary).frame(width: 52, alignment: .leading).padding(.top, 4)
+            FlowLayout(spacing: 4) {
+                ForEach(values, id: \.self) { v in FilterPill(text: v, selected: selected.contains(v), tone: tone, size: 10) { toggle(v) } }
+            }
+        }
+    }
+
+    private func toggle(_ keyPath: ReferenceWritableKeyPath<DashboardInsightsModel, Set<String>>, _ value: String) {
+        if insights[keyPath: keyPath].contains(value) { insights[keyPath: keyPath].remove(value) } else { insights[keyPath: keyPath].insert(value) }
+        Task { await insights.loadAppUsage(api: appState.api, platform: appState.platformFilter) }
+    }
 }
 
-// MARK: - 12 Connectivity Problems
+// MARK: - Connectivity Problems
 
 struct ConnectivityProblemsCard: View {
     var body: some View {

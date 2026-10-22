@@ -6,12 +6,20 @@ import Foundation
 /// item carries `link: {path, params}`, the report and filter it opens. A card
 /// the server could not compute is `{"error": "..."}`; the rest still render.
 public struct DashboardInsightsDocument: Sendable, Hashable {
-    /// The card keys, in the spec's order (1 Reboot & Update Debt … 12 Connectivity Problems).
+    /// The card keys the API serves at `/dashboard/insights/{card}` and in the combined document.
     public static let cardKeys = [
-        "rebootDebt", "protectionGaps", "unmanagedDevices", "hardwareAtRisk",
-        "installHealth", "checkinGaps", "osCurrency", "softwareRisk",
-        "expiringCertificates", "localAdminExposure", "unusedSoftware", "connectivityProblems",
+        "installHealth", "rebootDebt", "protectionGaps", "managementToolErrors", "storage",
+        "checkinGaps", "osCurrency", "softwareRisk", "expiringCertificates", "directoryJoin", "connectivityProblems",
     ]
+    /// App Usage has its own endpoint, `/dashboard/insights/appUsage`, because it takes filters.
+    public static let appUsageKey = "appUsage"
+
+    /// The card in a per-card answer: `{card, platform, includeArchived, generatedAt, data}`,
+    /// where `data` is the card or `{"error": …}`. A bare card is taken as it is.
+    public static func card(fromEnvelope json: JSONValue) -> InsightCardData {
+        if json["data"].object != nil { return InsightCardData(json: json["data"]) }
+        return InsightCardData(json: json)
+    }
 
     public let generatedAt: Date?
     public let platform: String
@@ -72,6 +80,9 @@ public struct InsightItem: Sendable, Hashable, Identifiable {
     public func int(_ key: String) -> Int? { json[key].int }
     public func double(_ key: String) -> Double? { json[key].double }
     public func string(_ key: String) -> String? { json[key].nonEmptyString }
+    /// A nested figure (`sampleDevice`, `pending`) or list (`byPlatform`, `segments`).
+    public func item(_ key: String) -> InsightItem? { json[key].object == nil ? nil : InsightItem(json: json[key]) }
+    public func items(_ key: String) -> [InsightItem] { json[key].elements.map(InsightItem.init(json:)) }
 
     /// The server's `{path, params}` as an app link.
     public var link: DeepLink? { InsightItem.deepLink(json["link"]) }

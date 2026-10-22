@@ -36,6 +36,8 @@ final class InstallsReportModel {
     var installStatusFilter: InstallStatusClass?
     /// `?stale=1`: only devices whose agent has been silent for over a week.
     var staleOnly = false
+    /// `?agent=munki|cimian`: only devices that run that agent.
+    var agentFilter: String?
     var staleSerials: Set<String> { InstallsStale.serials(filters.staleAgents) }
     var statusView: StatusView = .devices
     var widgetsExpanded = true
@@ -161,6 +163,7 @@ final class InstallsReportModel {
         itemsStatusFilter = nil
         widgetsExpanded = true
         staleOnly = false
+        agentFilter = nil
     }
 
     func toggleInstall(_ name: String) {
@@ -184,7 +187,12 @@ final class InstallsReportModel {
     /// `platformFilteredDevices`: the toggle, with a tool-based fallback for
     /// devices whose platform is unknown.
     func platformDevices(_ platform: PlatformFilter) -> [InstallsDevice] {
-        platform == .all ? filters.devices : filters.devices.filter { platform.includes($0.platform) }
+        let devices = platform == .all ? filters.devices : filters.devices.filter { platform.includes($0.platform) }
+        switch agentFilter {
+        case "munki": return devices.filter { $0.munkiVersion != nil }
+        case "cimian": return devices.filter { $0.cimianVersion != nil }
+        default: return devices
+        }
     }
 
     func configRows(_ platform: PlatformFilter) -> [ConfigReportRow] {
