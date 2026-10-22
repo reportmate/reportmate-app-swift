@@ -47,7 +47,7 @@ struct InsightCardView: View {
 
 struct RebootDebtCard: View {
     var body: some View {
-        InsightCard(key: "rebootDebt", title: "Uptime Overview", subtitle: "How long devices have been up", systemImage: "power", tone: .purple, link: DashboardLinks.system()) { c in
+        InsightCard(key: "rebootDebt", title: "Uptime Overview", subtitle: "How long devices have been up", systemImage: "clock", tone: .purple, link: DashboardLinks.system()) { c in
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 8) {
                     InsightFigure(value: c.count("uptime30dPlus"), label: "up 30+ days", tone: .red, link: c.item("uptime30dPlus")?.link)
@@ -324,7 +324,7 @@ struct CheckInGapsCard: View {
     let platform: PlatformFilter
 
     var body: some View {
-        InsightCard(key: "checkinGaps", title: "Check-in Gaps", subtitle: "Rejected check-ins and silent devices", systemImage: AppSection.events.systemImage, tone: .gray, link: DashboardLinks.failures()) { c in
+        InsightCard(key: "checkinGaps", title: "Check-in Gaps", subtitle: "Rejected check-ins and silent devices", systemImage: "antenna.radiowaves.left.and.right.slash", tone: .red, link: DashboardLinks.failures()) { c in
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 8) {
                     let hours = c.int("hours") ?? 24
@@ -363,7 +363,7 @@ struct UpdateDebtCard: View {
     @Environment(DashboardInsightsModel.self) private var insights
 
     var body: some View {
-        InsightCard(key: "updateDebt", title: "Update Debt", subtitle: "Patch level, pending and deferred updates", systemImage: "arrow.triangle.2.circlepath", tone: .purple, link: DashboardLinks.system()) { c in
+        InsightCard(key: "updateDebt", title: "Update Debt", subtitle: "Patch level, pending and deferred updates", systemImage: "arrow.triangle.2.circlepath", tone: .blue, link: DashboardLinks.system()) { c in
             VStack(alignment: .leading, spacing: 12) {
                 let behind = c.item("behind")
                 if (c.int("rated") ?? 0) > 0 {
@@ -427,7 +427,7 @@ struct SoftwareRiskCard: View {
 
 struct ExpiringCertificatesCard: View {
     var body: some View {
-        InsightCard(key: "expiringCertificates", title: "Expiring Certificates", subtitle: "Expiring soon and expired user certificates", systemImage: "checkmark.seal", tone: .red, link: DashboardLinks.report("security")) { c in
+        InsightCard(key: "expiringCertificates", title: "Expiring Certificates", subtitle: "Expiring soon and expired user certificates", systemImage: "checkmark.seal", tone: .yellow, link: DashboardLinks.report("security")) { c in
             VStack(alignment: .leading, spacing: 12) {
                 let expiring = c.item("expiring")
                 let window = c.int("windowDays") ?? 30
@@ -612,7 +612,7 @@ struct AppUsageCard: View {
 
 struct ConnectivityProblemsCard: View {
     var body: some View {
-        InsightCard(key: "connectivityProblems", title: "Connectivity Problems", subtitle: "Weak Wi-Fi, poor network quality and VPN", systemImage: AppSection.network.systemImage, tone: .teal, link: DashboardLinks.report("network")) { c in
+        InsightCard(key: "connectivityProblems", title: "Connectivity Problems", subtitle: "Weak Wi-Fi, poor network quality and VPN", systemImage: "wifi.exclamationmark", tone: .teal, link: DashboardLinks.report("network")) { c in
             HStack(alignment: .top, spacing: 8) {
                 let weak = c.item("weakSignal")
                 InsightFigure(value: weak?.count, label: "weak Wi-Fi signal", tone: .red, link: weak?.link(or: DashboardLinks.report("network", ["signal": "weak"])))
