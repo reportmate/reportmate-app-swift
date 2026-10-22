@@ -539,3 +539,28 @@ let appUsageEnvelope = #"""
         #expect(web.cves.map(\.cve).contains("CVE-2026-0003"))
     }
 }
+
+@Suite struct SafeLinkTests {
+    @Test func opensOnlyWebURLsWithAHost() {
+        #expect(SafeLink.url("https://support.apple.com/en-us/100100")?.host == "support.apple.com")
+        #expect(SafeLink.url("http://example.com/notes") != nil)
+        #expect(SafeLink.url(" https://example.com ") != nil)
+        #expect(SafeLink.url("file:///etc/passwd") == nil)
+        #expect(SafeLink.url("javascript:alert(1)") == nil)
+        #expect(SafeLink.url("x-apple.systempreferences:com.apple.preference.security") == nil)
+        #expect(SafeLink.url("reportmate://device/SAMPLE1") == nil)
+        #expect(SafeLink.url("https:///no-host") == nil)
+        #expect(SafeLink.url("/relative/path") == nil)
+        #expect(SafeLink.url("") == nil)
+        #expect(SafeLink.url(nil as String?) == nil)
+    }
+
+    @Test func deviceValuesStayInsideTheirPage() {
+        let url = SafeLink.url(base: "https://msrc.microsoft.com/update-guide/vulnerability/", component: "CVE-2026-0001")
+        #expect(url?.absoluteString == "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2026-0001")
+        let sneaky = SafeLink.url(base: "https://support.microsoft.com/help/", component: "123/../../evil?x=1#y")
+        #expect(sneaky?.host == "support.microsoft.com")
+        #expect(sneaky?.query == nil && sneaky?.fragment == nil)
+        #expect(SafeLink.url(base: "https://support.microsoft.com/help/", component: "  ") == nil)
+    }
+}

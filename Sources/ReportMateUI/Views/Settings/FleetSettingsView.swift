@@ -145,7 +145,7 @@ struct FleetSettingsView: View {
                         .appFont(.callout)
                     Spacer()
                     if let webSettingsURL {
-                        Button("Open in Web") { NSWorkspace.shared.open(webSettingsURL) }.buttonStyle(.borderedProminent)
+                        Button("Open in Web") { if let url = SafeLink.url(webSettingsURL) { NSWorkspace.shared.open(url) } }.buttonStyle(.borderedProminent)
                     }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 8)
