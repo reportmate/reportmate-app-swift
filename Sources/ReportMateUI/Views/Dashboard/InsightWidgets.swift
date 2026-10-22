@@ -27,12 +27,6 @@ final class DashboardInsightsModel {
     private(set) var appUsage: UtilizationData?
     private(set) var certificates: [JSONValue]?
     private(set) var installsFilters: InstallsFilterOptions?
-    /// The bulk `/installs` rows behind the top-item lists. Large and sometimes a 502,
-    /// so optional: when they fail the cards show their counts without the lists.
-    private(set) var installRecords: [InstallRecord]?
-    private(set) var installRecordsLoading = false
-    private(set) var installRecordsFailed = false
-    private var installRecordsAt: Date?
 
     var loading: Set<Source> = []
     var errors: [Source: String] = [:]
@@ -56,10 +50,6 @@ final class DashboardInsightsModel {
         // The dashboard asks every 30 seconds; a load still running for this connection
         // carries on rather than being replaced, or twelve slow sources never finish.
         if !force, inFlight == api.configuration { return }
-        if loadedWith != api.configuration {
-            installRecords = nil
-            installRecordsAt = nil
-        }
         generation += 1
         let mine = generation
         inFlight = api.configuration
@@ -88,9 +78,6 @@ final class DashboardInsightsModel {
         guard mine == generation else { return }
         loadedAt = Date()
         loadedWith = api.configuration
-        // Not awaited: the paged install rows take a minute or more, and the cards
-        // above must not wait on them.
-        if !installRecordsLoading { Task { await loadInstallRecords(api: api, generation: mine, force: force) } }
     }
 
     private func apply(_ payload: Payload, to source: Source) {
@@ -136,35 +123,6 @@ final class DashboardInsightsModel {
         return .failure(APIError.transport("gave up"))
     }
 
-    /// The 130k-row `/installs` list, paged, after everything else. It refreshes every
-    /// half hour rather than every five minutes: it only feeds two top-five lists.
-    private func loadInstallRecords(api: ReportMateAPI, generation mine: Int, force: Bool) async {
-        if !force, let at = installRecordsAt, Date().timeIntervalSince(at) < 1800 { return }
-        installRecordsLoading = true
-        defer { installRecordsLoading = false }
-        var rows: [InstallRecord] = []
-        var offset = 0
-        let pageSize = 5000
-        while true {
-            let at = offset
-            let page = await Self.retrying { try await api.installRecords(limit: pageSize, offset: at) }
-            guard mine == generation else { return }
-            switch page {
-            case .success(let records):
-                rows.append(contentsOf: records)
-                offset += records.count
-                if records.count < pageSize {
-                    installRecords = rows
-                    installRecordsFailed = false
-                    installRecordsAt = Date()
-                    return
-                }
-            case .failure:
-                installRecordsFailed = installRecords == nil
-                return
-            }
-        }
-    }
 }
 
 // MARK: - Card chrome

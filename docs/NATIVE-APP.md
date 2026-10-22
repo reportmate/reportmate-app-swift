@@ -225,10 +225,10 @@ and appear as removable chips under the header, and Copy Link carries both.
 | `/peripherals` | `kind=printers\|displays`, `room` |
 
 The cards load from the endpoints their reports use, two at a time with one
-retry on a 5xx, and refresh every five minutes. The bulk `/installs` rows behind
-Install Health's top failing items and Software Risk's most-behind items load
-last, refresh every half hour, and are optional: when they fail the cards show
-their counts without the lists. Check-in failures and App Usage are fleet-wide;
+retry on a 5xx, and refresh every five minutes. The dashboard does not page the bulk `/installs` rows (130k rows held the API at its
+memory limit), so Install Health's top failing items and Software Risk's
+most-behind items show as unavailable beside their counts until the cards move
+to the cached `/api/v1/dashboard/insights` endpoint. Check-in failures and App Usage are fleet-wide;
 the API does not split them by platform.
 
 ## Parity matrix

@@ -290,14 +290,10 @@ struct DashboardView: View {
         appState.platformFilter == .all ? rows : rows.filter { appState.platformFilter.includes($0.platform) }
     }
 
-    private var installRecords: [InstallRecord]? {
-        guard let rows = insights.installRecords else { return nil }
-        switch appState.platformFilter {
-        case .all: return rows
-        case .macOS: return rows.filter { $0.platform == "Macintosh" }
-        case .windows: return rows.filter { $0.platform == "Windows" }
-        }
-    }
+    /// The top-item lists need the 130k-row `/installs` list, which the dashboard no longer
+    /// pages (it held the API at its memory limit); they show as unavailable until the
+    /// cached insights endpoint serves them.
+    private var installRecords: [InstallRecord]? { nil }
 
     private var staleAgents: [StaleAgent]? {
         insights.installsFilters.map { f in appState.platformFilter == .all ? f.staleAgents : f.staleAgents.filter { appState.platformFilter.includes($0.platform) } }
@@ -318,10 +314,10 @@ struct DashboardView: View {
         case 3: ManagementInsightWidget(rows: filtered(i.rows(.management)), loading: i.isLoading(.management), error: i.error(.management))
         case 4: HardwareInsightWidget(rows: filtered(i.rows(.hardware)), loading: i.isLoading(.hardware), error: i.error(.hardware))
         case 5: InstallHealthWidget(stats: model.data?.installStats, platform: appState.platformFilter, staleAgents: staleAgents, records: installRecords,
-                                    recordsLoading: i.installRecordsLoading, recordsFailed: i.installRecordsFailed, loading: i.isLoading(.installsFilters), error: i.error(.installsFilters))
+                                    recordsLoading: false, recordsFailed: true, loading: i.isLoading(.installsFilters), error: i.error(.installsFilters))
         case 6: CheckInGapsWidget(page: i.failures, devices: devices, platformFiltered: appState.platformFilter != .all, loading: i.isLoading(.failures), error: i.error(.failures))
         case 7: OSCurrencyWidget(rows: filtered(i.rows(.system)), allRows: i.rows(.system), loading: i.isLoading(.system), error: i.error(.system))
-        case 8: SoftwareRiskWidget(security: filtered(i.rows(.security)), records: installRecords, recordsLoading: i.installRecordsLoading, recordsFailed: i.installRecordsFailed,
+        case 8: SoftwareRiskWidget(security: filtered(i.rows(.security)), records: installRecords, recordsLoading: false, recordsFailed: true,
                                    loading: i.isLoading(.security), error: i.error(.security))
         case 9: CertificatesWidget(expiring: expiringCertificates, security: filtered(i.rows(.security)), loading: i.isLoading(.certificates) || i.isLoading(.security), error: i.error(.certificates))
         case 10: IdentityInsightWidget(rows: filtered(i.rows(.identity)), loading: i.isLoading(.identity), error: i.error(.identity))
