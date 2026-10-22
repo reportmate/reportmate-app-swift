@@ -43,6 +43,7 @@ final class DashboardInsightsModel {
     /// it; its results, 401s included, are dropped instead of overwriting the cards.
     private var loadedWith: AppConfiguration?
     private var generation = 0
+    private var inFlight: AppConfiguration?
 
     func rows(_ source: Source) -> [ReportRow] { reports[source] ?? [] }
     func isLoading(_ source: Source) -> Bool { loading.contains(source) }
@@ -50,12 +51,17 @@ final class DashboardInsightsModel {
 
     func load(api: ReportMateAPI, force: Bool = false) async {
         if !force, loadedWith == api.configuration, let loadedAt, Date().timeIntervalSince(loadedAt) < 300 { return }
+        // The dashboard asks every 30 seconds; a load still running for this connection
+        // carries on rather than being replaced, or twelve slow sources never finish.
+        if !force, inFlight == api.configuration { return }
         if loadedWith != api.configuration {
             installRecords = nil
             installRecordsAt = nil
         }
         generation += 1
         let mine = generation
+        inFlight = api.configuration
+        defer { if mine == generation { inFlight = nil } }
         loading = Set(Source.allCases)
         // Two at a time: each bulk report takes the API ten seconds or more, and
         // four at once had the gateway answer 503 for the last one. A 5xx or a
