@@ -281,22 +281,27 @@ struct ComplianceRow: View {
     }
 }
 
-/// One slice of an insight donut, with the link its legend row opens.
+/// One slice of an insight donut, with the link its legend row opens, and any
+/// sub-rows that legend row discloses (Domain Joined's trust states).
 struct InsightSlice: Identifiable {
     var id: String { label }
     let label: String
     let count: Int
     let color: Color
     var link: DeepLink? = nil
+    var children: [InsightSlice] = []
 }
 
-/// Ring plus legend, the dashboard's small donut. Each legend row opens its slice.
+/// Ring plus legend, the dashboard's small donut. Each legend row opens its slice;
+/// a row with sub-rows is a disclosure group, collapsed at first, whose chevron
+/// only toggles and whose label still opens the slice. Zero slices and sub-rows are
+/// left out.
 struct InsightDonut: View {
     let data: [InsightSlice]
     var center: String? = nil
+    @State private var expanded: Set<String> = []
 
     var body: some View {
-        // A zero slice is not shown, in the ring or the legend.
         let data = data.filter { $0.count > 0 }
         let total = data.reduce(0) { $0 + $1.count }
         HStack(alignment: .center, spacing: 14) {
@@ -312,17 +317,35 @@ struct InsightDonut: View {
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(data) { item in
-                    let row = HStack(spacing: 6) {
-                        Circle().fill(item.color).frame(width: 9, height: 9)
-                        Text(item.label).appFont(.callout).lineLimit(1)
-                        Spacer(minLength: 6)
-                        Text("\(item.count)").appFont(.callout, weight: .medium).monospacedDigit()
-                        Text(total == 0 ? "" : "\(((Double(item.count) / Double(total) * 100).rounded()).safeInt)%").appFont(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 34, alignment: .trailing)
+                    let children = item.children.filter { $0.count > 0 }
+                    if children.isEmpty {
+                        legendRow(item, total: total)
+                    } else {
+                        DisclosureGroup(isExpanded: Binding(get: { expanded.contains(item.id) },
+                                                            set: { if $0 { expanded.insert(item.id) } else { expanded.remove(item.id) } })) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                ForEach(children) { child in legendRow(child, total: total, small: true) }
+                            }
+                            .padding(.leading, 6)
+                        } label: {
+                            legendRow(item, total: total)
+                        }
                     }
-                    if let link = item.link { InsightLink(link: link) { row } } else { row.padding(.horizontal, 4).padding(.vertical, 2) }
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func legendRow(_ item: InsightSlice, total: Int, small: Bool = false) -> some View {
+        let row = HStack(spacing: 6) {
+            Circle().fill(item.color).frame(width: small ? 7 : 9, height: small ? 7 : 9)
+            Text(item.label).appFont(small ? .caption : .callout).lineLimit(1)
+            Spacer(minLength: 6)
+            Text("\(item.count)").appFont(small ? .caption : .callout, weight: .medium).monospacedDigit()
+            Text(total == 0 ? "" : "\(((Double(item.count) / Double(total) * 100).rounded()).safeInt)%").appFont(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 34, alignment: .trailing)
+        }
+        if let link = item.link { InsightLink(link: link) { row } } else { row.padding(.horizontal, 4).padding(.vertical, 2) }
     }
 }
 

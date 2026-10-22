@@ -477,15 +477,6 @@ struct DirectoryServicesCard: View {
         "entra": .green, "domain": .orange, "hybrid": .teal, "workgroup": .red, "psso": .green, "bound": .orange, "unbound": .red,
     ]
 
-    /// Domain Joined's trust states, as the identity report colours them.
-    private func trustTone(_ key: String?) -> Tone {
-        switch (key ?? "").lowercased() {
-        case "trusted": return .yellow
-        case "broken": return .red
-        default: return .orange
-        }
-    }
-
     private func color(_ s: InsightItem) -> Color {
         Self.colors[(s.label ?? "").lowercased()] ?? Self.colors[(s.key ?? "").lowercased().replacingOccurrences(of: "-", with: " ")] ?? .gray
     }
@@ -501,19 +492,12 @@ struct DirectoryServicesCard: View {
                 if segments.isEmpty {
                     Text("No directory data reported").appFont(.caption).foregroundStyle(.secondary)
                 } else {
-                    InsightDonut(data: segments.map { InsightSlice(label: $0.label ?? $0.key ?? "", count: $0.count, color: color($0), link: $0.link) },
-                                 center: "\(section.int("total") ?? section.int("devices") ?? segments.reduce(0) { $0 + $1.count })")
-                    // Domain Joined's trust breakdown, as the identity report expands it.
-                    ForEach(segments) { s in
-                        let parts = s.items("children").filter { $0.count > 0 }
-                        if !parts.isEmpty {
-                            VStack(alignment: .leading, spacing: 2) {
-                                InsightHeading("\(s.label ?? s.key ?? "") trust")
-                                let max = parts.map(\.count).max() ?? 1
-                                ForEach(parts) { p in InsightBarRow(label: p.label ?? p.key ?? "", count: p.count, max: max, tone: trustTone(p.key), link: p.link) }
-                            }
-                        }
-                    }
+                    // Domain Joined's trust states disclose under its legend row, collapsed at first,
+                    // as the identity report's widget shows them.
+                    InsightDonut(data: segments.map { s in
+                        InsightSlice(label: s.label ?? s.key ?? "", count: s.count, color: color(s), link: s.link,
+                                     children: s.items("children").map { InsightSlice(label: $0.label ?? $0.key ?? "", count: $0.count, color: color($0), link: $0.link) })
+                    }, center: "\(section.int("total") ?? section.int("devices") ?? segments.reduce(0) { $0 + $1.count })")
                 }
                 InsightChips {
                     StatChip(value: section.item("shared")?.count ?? 0, label: "shared", tone: .blue, link: section.item("shared")?.link)
