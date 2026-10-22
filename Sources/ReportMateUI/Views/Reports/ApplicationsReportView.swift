@@ -7,7 +7,7 @@ import ReportMateKit
 /// application names. Port of `app/applications/page.tsx`.
 struct ApplicationsReportView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = ApplicationsReportModel()
+    private var model: ApplicationsReportModel { appState.pages.applications }
 
     enum UsageColumn { case name, activeHours, totalHours, launchCount, deviceCount, userCount, lastUsed }
     enum VersionsColumn { case application, version, usage, catalog, area, location, device }

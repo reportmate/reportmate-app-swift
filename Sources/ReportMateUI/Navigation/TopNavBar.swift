@@ -19,15 +19,9 @@ struct TopNavBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if onDevicePage {
-                // On one device the page's own tabs are the point; the fleet reports
-                // repeat the same module names, so they fold into the menu as on a
-                // narrow window.
-                HStack(spacing: 4) {
-                    ForEach(AppSection.fleet) { tab($0) }
-                    reportsMenu
-                }
-            } else if inline, !fitsRow {
+            // The same tabs on every page, a device page included: the bar never changes
+            // shape on navigation, so the toolbar never re-lays itself out mid-transition.
+            if inline, !fitsRow {
                 HStack(spacing: 4) {
                     ForEach(AppSection.fleet) { tab($0) }
                     if compact {
@@ -62,13 +56,6 @@ struct TopNavBar: View {
         .padding(.vertical, inline || fitsRow ? 0 : 7)
         .background(inline || fitsRow ? Color.clear : Color.cardBackground)
         .overlay(alignment: .bottom) { if !inline, !fitsRow { Divider() } }
-    }
-
-    private var onDevicePage: Bool {
-        switch appState.currentRoute {
-        case .device, .localDevice: return true
-        default: return false
-        }
     }
 
     private func select(_ section: AppSection) {

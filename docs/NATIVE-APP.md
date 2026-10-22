@@ -155,8 +155,7 @@ reports as tabs (Installs, Applications, System, Management, Identity,
 Hardware, Peripherals, Security, Network). Nothing else sits in the bar: the API
 endpoint lives in Settings, and a red or grey dot appears at the right only while
 the connection is failing or unset. A window too narrow for every tab collapses
-the reports into a Reports menu, and a device page always uses that menu so the
-device's own tabs lead. The app's accent is pinned to blue, like the web's links,
+the reports into a Reports menu; a device page keeps the full row, like the web. The app's accent is pinned to blue, like the web's links,
 whatever the Mac's accent colour setting. ⌘1–⌘9 and ⌘0 jump between sections, ⌘K opens
 device search, ⌘R refreshes, and the toolbar's platform toggle (Mac / Windows
 / All) applies everywhere the web platform filter does.
@@ -169,21 +168,35 @@ the navigation stack; Back is ⌘[ or the toolbar arrow.
 Pages use the width of a wide window instead of a laptop-width column, and
 re-flow as the window is resized:
 
-- Dashboard: at 2000 pt of content width or more (a 27-inch display) it goes to
-  four columns: Fleet Status, the error and warning counters and New Clients;
-  two insight columns the same width as the first, with the twelve cards dealt
-  alternately between them; then Recent Events, Platform Distribution and the OS
-  version charts at double width. From 1500 pt it has three columns with cards
-  1–4 in the insight column and cards 5–12 four across underneath. Below that it
-  keeps the two-column layout with all twelve cards in a two-column grid
-  underneath, and goes to one column when narrow. The web app switches at 1680
-  and 2200 px.
+- Dashboard: column 1 holds Fleet Status, Install Health (its two headline
+  counts are the largest figures on the page; it replaces the old Errors and
+  Warnings tiles) and New Clients. The wide column holds Recent Events, App
+  Usage, Platform Distribution and the OS version charts. At 2000 pt of content
+  width or more (a 27-inch display) the other ten cards take two columns the
+  width of column 1, dealt alternately, for four columns in all (1fr each, the
+  wide one 2fr). From 1500 pt there are three columns, with the first four cards
+  beside column 1 and the other six four across underneath. Below that the ten
+  cards sit in a two-column grid under the main layout. The web app switches at
+  1680 and 2200 px.
 - Report widget rows stretch to fill the window, and scroll sideways only when
   they cannot fit. Security's eight donuts flow into up to eight columns.
 - Card grids (`UniformGrid`) balance their columns, so six cards sit as two rows
   of three rather than four and two. The device Info tab goes up to six columns.
 - Hardware tab spec tiles flow into more columns. Tables already fill the width.
 - Settings keeps the fixed-width Mac settings window.
+
+### Returning to a page, loading and refresh failures
+
+Each page's data lives in `PageModels`, owned by `AppState`, not by the page
+view. Going back to the dashboard, a report, Devices, Events or one of the last
+dozen device pages shows its last data at once and refreshes it in the
+background; skeletons appear only on a page's first load. A thin bar across the
+top of the page shows progress: "Loading 1 of 2" while the dashboard's sources
+arrive (a device page counts its modules), a sweep when the count is unknown,
+and "Updating" while kept data refreshes. When a background refresh fails, the
+last good data stays with a one-line "Couldn't refresh" note, when it last
+updated, and Retry; the full error state is for a page with nothing to show yet.
+The top bar keeps every section tab on a device page too.
 
 ### Dashboard widgets and their links
 

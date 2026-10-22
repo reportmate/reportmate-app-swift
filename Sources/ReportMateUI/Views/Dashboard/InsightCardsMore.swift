@@ -28,13 +28,13 @@ struct InsightCardView: View {
         case 2: ProtectionGapsCard()
         case 3: UnmanagedDevicesCard()
         case 4: HardwareAtRiskCard()
-        case 5: InstallHealthCard()
+        case 5: InstallHealthCard(stats: nil, platform: platform)
         case 6: CheckInGapsCard(platform: platform)
         case 7: OSCurrencyCard()
         case 8: SoftwareRiskCard()
         case 9: ExpiringCertificatesCard()
         case 10: LocalAdminExposureCard()
-        case 11: UnusedSoftwareCard()
+        case 11: AppUsageCard()
         default: ConnectivityProblemsCard()
         }
     }
@@ -166,27 +166,118 @@ struct HardwareAtRiskCard: View {
 
 // MARK: - 5 Install Health
 
+/// Column 1, under Fleet Status, in place of the old Errors and Warnings tiles.
+/// The two headline counts are the largest numbers on the dashboard. They come
+/// from the dashboard payload, so they show with Fleet Status; the item lists come
+/// from the insights document.
 struct InstallHealthCard: View {
+    let stats: InstallStats?
+    let platform: PlatformFilter
+    @Environment(AppState.self) private var appState
+    @Environment(DashboardInsightsModel.self) private var insights
+    @Environment(\.insightsRetry) private var retry
+
     var body: some View {
-        InsightCard(key: "installHealth", title: "Install Health", subtitle: "Munki and Cimian across the fleet", systemImage: "arrow.down.circle", tone: .green, link: DashboardLinks.installs()) { c in
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 8) {
-                    InsightFigure(value: c.count("withErrors"), label: "devices with errors", tone: .red, link: c.item("withErrors")?.link)
-                    InsightFigure(value: c.count("withWarnings"), label: "devices with warnings", tone: .yellow, link: c.item("withWarnings")?.link)
-                    let silent = c.item("silentAgents")
-                    InsightFigure(value: silent?.count, label: "agents silent over \(silent?.int("thresholdDays") ?? 7) days", tone: .orange, link: silent?.link)
-                }
-                let top = c.items("topFailing")
-                VStack(alignment: .leading, spacing: 2) {
-                    InsightHeading("Top failing items")
-                    if top.isEmpty {
-                        Text("No failing items").appFont(.caption).foregroundStyle(.secondary).padding(4)
-                    } else {
-                        let max = top.map(\.count).max() ?? 1
-                        ForEach(top) { item in InsightBarRow(label: item.name ?? "", count: item.count, max: max, tone: .red, link: item.link) }
+        let link = DashboardLinks.installs()
+        let c = insights.card("installHealth")
+        Card {
+            VStack(alignment: .leading, spacing: 0) {
+                CardHeader("Install Health", subtitle: "Munki and Cimian across the fleet", systemImage: "arrow.down.circle", tone: .green) { appState.follow(link) }
+                    .help(appState.describe(link))
+                    .linkContextMenu(link)
+                    .accessibilityAddTraits(.isButton)
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 12) {
+                        hero(stats.flatMap { $0.devicesWithErrors(for: platform) }, label: "devices with errors", tone: .red,
+                             link: c?.item("withErrors")?.link ?? DashboardLinks.installs(filter: "errors"))
+                        hero(stats.flatMap { $0.devicesWithWarnings(for: platform) }, label: "devices with warnings", tone: .yellow,
+                             link: c?.item("withWarnings")?.link ?? DashboardLinks.installs(filter: "warnings"))
                     }
+                    if let stats { split(stats) }
+                    details(c)
+                }
+                .padding(16)
+            }
+        }
+    }
+
+    private func hero(_ value: Int?, label: String, tone: Tone, link: DeepLink) -> some View {
+        InsightLink(link: link) {
+            VStack(alignment: .leading, spacing: 2) {
+                if let value {
+                    Text("\(value)").font(.system(size: 52, weight: .bold, design: .rounded)).monospacedDigit()
+                        .foregroundStyle(value == 0 ? Color.secondary : tone.color)
+                        .minimumScaleFactor(0.5).lineLimit(1)
+                } else {
+                    SkeletonBlock(width: 72, height: 52, radius: 10)
+                }
+                Text(label).appFont(.callout).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Munki (Mac) against Cimian (Windows), and the item counts behind the devices.
+    @ViewBuilder
+    private func split(_ s: InstallStats) -> some View {
+        let showMac = platform != .windows, showWin = platform != .macOS
+        VStack(alignment: .leading, spacing: 4) {
+            if showMac {
+                splitRow("Munki", errors: s.macDevicesWithErrors, warnings: s.macDevicesWithWarnings, platform: "mac")
+            }
+            if showWin {
+                splitRow("Cimian", errors: s.winDevicesWithErrors, warnings: s.winDevicesWithWarnings, platform: "win")
+            }
+            let errorItems = platform == .macOS ? s.macErrorItems : platform == .windows ? s.winErrorItems : s.totalErrorItems
+            let warningItems = platform == .macOS ? s.macWarningItems : platform == .windows ? s.winWarningItems : s.totalWarningItems
+            InsightChips {
+                StatChip(value: errorItems, label: "error items", tone: .red, link: DashboardLinks.installs(filter: "errors"))
+                StatChip(value: warningItems, label: "warning items", tone: .yellow, link: DashboardLinks.installs(filter: "warnings"))
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    private func splitRow(_ tool: String, errors: Int, warnings: Int, platform: String) -> some View {
+        HStack(spacing: 8) {
+            Text(tool).appFont(.callout, weight: .medium).frame(width: 64, alignment: .leading)
+            InsightLink(link: DashboardLinks.report("installs", ["filter": "errors", "platform": platform])) {
+                Text("\(errors) with errors").appFont(.callout).foregroundStyle(errors == 0 ? Color.secondary : Tone.red.color).monospacedDigit()
+            }
+            InsightLink(link: DashboardLinks.report("installs", ["filter": "warnings", "platform": platform])) {
+                Text("\(warnings) with warnings").appFont(.callout).foregroundStyle(warnings == 0 ? Color.secondary : Tone.yellow.color).monospacedDigit()
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func details(_ c: InsightCardData?) -> some View {
+        if let c, c.error == nil {
+            let silent = c.item("silentAgents")
+            let pending = c.item("pendingInstalls")
+            InsightChips {
+                StatChip(value: silent?.count ?? 0, label: "agents silent over \(silent?.int("thresholdDays") ?? 7) days", tone: .orange, link: silent?.link)
+                if let pending { StatChip(value: pending.count, label: "pending installs", tone: .blue, link: pending.link) }
+            }
+            let top = c.items("topFailing")
+            VStack(alignment: .leading, spacing: 2) {
+                InsightHeading("Top failing items")
+                if top.isEmpty {
+                    Text("No failing items").appFont(.caption).foregroundStyle(.secondary).padding(4)
+                } else {
+                    let max = top.map(\.count).max() ?? 1
+                    ForEach(top) { item in InsightBarRow(label: item.name ?? "", count: item.count, max: max, tone: .red, link: item.link) }
                 }
             }
+        } else if let message = c?.error ?? (insights.loading ? nil : insights.error) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Label(message, systemImage: "exclamationmark.triangle").appFont(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Spacer(minLength: 8)
+                Button("Retry") { retry() }.controlSize(.small)
+            }
+        } else {
+            SkeletonBars(count: 4).skeletonAccessibility("Loading install items")
         }
     }
 }
@@ -370,38 +461,30 @@ struct LocalAdminExposureCard: View {
     }
 }
 
-// MARK: - 11 Unused Software
+// MARK: - 11 App Usage
 
-struct UnusedSoftwareCard: View {
+/// In the wide column under Recent Events: the ten most-used apps over 30 days.
+struct AppUsageCard: View {
     var body: some View {
-        InsightCard(key: "unusedSoftware", title: "Unused Software", subtitle: "Installed widely, rarely opened", systemImage: "shippingbox", tone: .blue, link: DashboardLinks.report("applications", ["type": "usage", "period": "30"])) { c in
-            VStack(alignment: .leading, spacing: 12) {
-                let least = c.items("leastUsed")
+        InsightCard(key: AppUsageCard.key, title: "App Usage", subtitle: "Most used apps, last 30 days", systemImage: "chart.bar.xaxis", tone: .blue, link: DashboardLinks.report("applications", ["type": "usage", "period": "30"])) { c in
+            let most = Array(c.items("mostUsed").prefix(10))
+            if most.isEmpty {
+                Text("No usage recorded").appFont(.caption).foregroundStyle(.secondary)
+            } else {
+                let max = Int((most.compactMap { $0.double("totalHours") }.max() ?? 1).rounded())
                 VStack(alignment: .leading, spacing: 2) {
-                    InsightHeading("Least used, on \(c.int("minInstalls") ?? 10)+ devices (\(c.int("days") ?? 30) days)")
-                    if least.isEmpty {
-                        Text("No app is installed widely enough to judge").appFont(.caption).foregroundStyle(.secondary).padding(4)
-                    } else {
-                        ForEach(least) { app in
-                            let installed = app.int("installedDevices") ?? 0, active = app.int("activeDevices") ?? 0
-                            InsightBarRow(label: app.name ?? "", count: active, max: Swift.max(installed, 1), tone: .gray, link: app.link, valueText: "\(active) of \(installed)")
-                        }
-                    }
-                }
-                let most = c.items("mostUsed")
-                if !most.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        InsightHeading("Most used")
-                        let max = Int((most.compactMap { $0.double("totalHours") }.max() ?? 1).rounded())
-                        ForEach(most) { app in
-                            let hours = Int((app.double("totalHours") ?? 0).rounded())
-                            InsightBarRow(label: app.name ?? "", count: hours, max: Swift.max(max, 1), tone: .blue, link: app.link, valueText: "\(hours) h")
-                        }
+                    ForEach(most) { app in
+                        let hours = Int((app.double("totalHours") ?? 0).rounded())
+                        let devices = app.int("activeDevices") ?? 0
+                        InsightBarRow(label: app.name ?? "", count: hours, max: Swift.max(max, 1), tone: .blue, link: app.link, valueText: "\(hours) h · \(devices) devices")
                     }
                 }
             }
         }
     }
+
+    /// The card's section until the API's dedicated app-usage card lands.
+    static let key = "unusedSoftware"
 }
 
 // MARK: - 12 Connectivity Problems

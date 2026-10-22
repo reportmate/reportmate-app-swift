@@ -16,6 +16,11 @@ final class AppState {
     /// Set when the last API call failed with 401/403, shown in the toolbar.
     var authProblem: String?
 
+    // MARK: Page models
+
+    /// Each page's data, kept across navigation (see `PageModels`).
+    private(set) var pages = PageModels()
+
     // MARK: Navigation
 
     var section: AppSection = .dashboard {
@@ -142,6 +147,9 @@ final class AppState {
         devices = []
         devicesLoadedAt = nil
         settingsLoaded = false
+        let width = pages.dashboardWidth
+        pages = PageModels()
+        pages.dashboardWidth = width
         refreshRequested += 1
     }
 

@@ -31,6 +31,10 @@ struct DevicesView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if appState.devicesLoading { LoadProgressBar(updating: !appState.devices.isEmpty) }
+            if let error = appState.devicesError, !appState.devices.isEmpty, !appState.devicesLoading {
+                RefreshFailedBanner(message: error, updatedAt: appState.devicesLoadedAt) { Task { await appState.loadDevices(force: true) } }
+            }
             DeviceFiltersView(options: options, selections: $selections, expanded: $filtersExpanded)
             if appState.devicesLoading, appState.devices.isEmpty {
                 SkeletonTableRows(rows: 18, columns: [240, 110, 140, nil, 120, 110])

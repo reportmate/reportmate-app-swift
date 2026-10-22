@@ -3,7 +3,9 @@ import ReportMateKit
 
 /// Fleet peripherals report. Port of `app/peripherals/page.tsx`.
 struct PeripheralsReportView: View {
-    @State private var model = FleetReportModel(path: "/peripherals")
+    @Environment(AppState.self) private var appState
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/peripherals") }
 
     enum Column { case device, total, lastSeen }
     @State private var sortColumn: Column = .device

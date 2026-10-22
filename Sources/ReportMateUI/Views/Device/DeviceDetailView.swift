@@ -126,10 +126,17 @@ final class DeviceDetailModel {
         notFound = false
         let resolved = await appState.resolveIdentifier(serial) ?? serial
         do {
-            if let info = try await api.deviceInfo(resolved) {
+            if var info = try await api.deviceInfo(resolved) {
+                let fresh = info.loadedModules
+                // A device shown before keeps its modules on screen while they refresh.
+                if let existing = device {
+                    for name in existing.loadedModules where !info.loadedModules.contains(name) {
+                        if let module = ModuleName(rawValue: name), let value = existing.modules[name] { info.setModule(module, value) }
+                    }
+                }
                 device = info
                 loading = false
-                await loadRemainingModules(api: api, serial: resolved)
+                await loadRemainingModules(api: api, serial: resolved, skip: fresh)
             } else if let full = try await api.device(resolved) {
                 device = full
                 loading = false
@@ -144,8 +151,10 @@ final class DeviceDetailModel {
         }
     }
 
-    private func loadRemainingModules(api: ReportMateAPI, serial: String) async {
-        let needed = ModuleName.fetchable.filter { !(device?.loadedModules.contains($0.rawValue) ?? false) }
+    /// Every module the info call did not carry, kept ones included: those stay on
+    /// screen and are replaced in place.
+    private func loadRemainingModules(api: ReportMateAPI, serial: String, skip: Set<String>) async {
+        let needed = ModuleName.fetchable.filter { !skip.contains($0.rawValue) }
         await withTaskGroup(of: (ModuleName, Result<JSONValue, Error>).self) { group in
             for module in needed {
                 loadingModules.insert(module)
@@ -193,7 +202,8 @@ struct DeviceDetailView: View {
     var initialFilter: String?
     var isLocal = false
 
-    @State private var model: DeviceDetailModel
+    /// Kept by `AppState` (the last dozen devices), so going back to a device shows it at once.
+    private var model: DeviceDetailModel { appState.pages.device(serial, isLocal: isLocal) }
     @State private var tab: DeviceTab
     @State private var installsFilter: String?
     @State private var showDeleteConfirm = false
@@ -204,7 +214,6 @@ struct DeviceDetailView: View {
         self.initialTab = initialTab
         self.initialFilter = initialFilter
         self.isLocal = isLocal
-        _model = State(initialValue: DeviceDetailModel(serial: serial, isLocal: isLocal))
         _tab = State(initialValue: initialTab ?? .info)
         _installsFilter = State(initialValue: initialFilter)
     }
@@ -217,6 +226,7 @@ struct DeviceDetailView: View {
                 VStack(spacing: 0) {
                     DeviceHeaderSkeleton()
                     tabBar
+                    LoadProgressBar()
                     ScrollView { DeviceTabSkeleton(tab: tab).padding(16) }
                 }
             } else if model.notFound {
@@ -230,6 +240,14 @@ struct DeviceDetailView: View {
                 VStack(spacing: 0) {
                     DeviceHeaderView(device: device, model: model, onArchiveToggle: { Task { await toggleArchive(device) } }, onDelete: { showDeleteConfirm = true })
                     tabBar
+                    if !model.loadingModules.isEmpty {
+                        let total = ModuleName.fetchable.count
+                        LoadProgressBar(loaded: total - model.loadingModules.count, total: total,
+                                        updating: model.loadingModules.allSatisfy { device.loadedModules.contains($0.rawValue) })
+                    }
+                    if let error = model.error, !model.loading {
+                        RefreshFailedBanner(message: error) { Task { await model.load(api: appState.api, appState: appState) } }
+                    }
                     if let adminError { ErrorBanner(message: adminError).padding(.horizontal, 16).padding(.top, 8) }
                     tabContent(device)
                 }
@@ -382,12 +400,6 @@ struct DeviceHeaderView: View {
                 }
             }
             Spacer()
-            if !model.loadingModules.isEmpty {
-                HStack(spacing: 6) {
-                    SkeletonCircle(size: 8)
-                    Text("Loading \(model.loadingModules.count) modules…").appFont(.caption).foregroundStyle(.secondary)
-                }
-            }
             if !model.isLocal {
             Menu {
                 Button(device.archived ? "Unarchive Device" : "Archive Device", action: onArchiveToggle)

@@ -20,7 +20,10 @@ final class FleetReportModel {
     init(path: String) { self.path = path }
 
     func load(api: ReportMateAPI, query: [String: String?] = [:], force: Bool = false) async {
-        if !force, loadedAt != nil, !rows.isEmpty { return }
+        // A return within a minute shows the kept rows as they are; after that they stay
+        // on screen while a background refresh replaces them.
+        if !force, let loadedAt, !rows.isEmpty, Date().timeIntervalSince(loadedAt) < 60 { return }
+        if loading, !force { return }
         loading = true
         error = nil
         do {
@@ -182,7 +185,6 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
                     Text(subtitleText(rows.count)).appFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if model.loading, !model.rows.isEmpty { Text("Updating…").appFont(.caption).foregroundStyle(.secondary) }
                 toolbar(rows)
                 // One button clears everything narrowing the rows: widget filters, selections and search.
                 let narrowing = activeFilterCount + linkFilter.count + selections.count + (search.isEmpty ? 0 : 1)
@@ -206,6 +208,10 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
             .overlay(alignment: .bottom) { Divider() }
+            if model.loading { LoadProgressBar(updating: !model.rows.isEmpty) }
+            if let error = model.error, !model.rows.isEmpty, !model.loading {
+                RefreshFailedBanner(message: error, updatedAt: model.loadedAt) { Task { await model.load(api: appState.api, query: query, force: true) } }
+            }
             if !linkFilter.isEmpty { linkFilterBar }
             DeviceFiltersView(options: DeviceFilterOptions(devices: summaries), selections: $selections, expanded: $filtersExpanded)
             if model.loading, model.rows.isEmpty {

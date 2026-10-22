@@ -23,22 +23,21 @@ struct DashboardStatusSkeleton: View {
                     }
                 }
             }
-            HStack(spacing: 14) {
-                ForEach(0..<2, id: \.self) { _ in
-                    Card {
-                        HStack(spacing: 12) {
-                            SkeletonBlock(width: 44, height: 44, radius: 8)
+            // Install Health: two hero figures over the item lists.
+            SkeletonCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 12) {
+                        ForEach(0..<2, id: \.self) { _ in
                             VStack(alignment: .leading, spacing: 6) {
-                                SkeletonLine(width: 34, height: 18)
-                                SkeletonLine(width: 56, height: 9)
+                                SkeletonBlock(width: 72, height: 52, radius: 10)
+                                SkeletonLine(width: 120, height: 10)
                             }
-                            Spacer(minLength: 0)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .padding(.horizontal, 16).padding(.vertical, 20)
                     }
+                    SkeletonBars(count: 4)
                 }
             }
-            .skeletonAccessibility()
             SkeletonCard {
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(0..<4, id: \.self) { i in
@@ -64,6 +63,7 @@ struct DashboardActivitySkeleton: View {
                 }
             }
             .skeletonAccessibility()
+            SkeletonCard { SkeletonBars(count: 6) }
             SkeletonCard {
                 VStack(spacing: 10) {
                     ForEach(0..<2, id: \.self) { _ in

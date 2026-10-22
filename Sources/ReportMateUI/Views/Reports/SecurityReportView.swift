@@ -5,7 +5,8 @@ import ReportMateKit
 /// posture table. Port of `app/security/page.tsx`.
 struct SecurityReportView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = FleetReportModel(path: "/security")
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/security") }
 
     enum Column { case device, encryption, protection, detection, firewall, tampering, remote, certificates, cve }
     @State private var sortColumn: Column = .device

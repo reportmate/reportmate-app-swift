@@ -6,7 +6,7 @@ import ReportMateKit
 /// `app/installs/page.tsx`.
 struct InstallsReportView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = InstallsReportModel()
+    private var model: InstallsReportModel { appState.pages.installs }
 
     enum ConfigColumn { case device, total, installed, pending, errors, warnings, removed, manifest, lastSeen, version }
     enum InstallColumn { case device, manifest, name, version, status, lastSeen }

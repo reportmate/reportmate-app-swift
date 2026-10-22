@@ -6,7 +6,8 @@ import ReportMateKit
 /// uptime and pending-update widgets over the OS table. Port of `app/system/page.tsx`.
 struct SystemReportView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = FleetReportModel(path: "/system")
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/system") }
 
     enum Column { case device, os, version, updates, edition, activation, uptime, lastSeen }
     @State private var sortColumn: Column = .device

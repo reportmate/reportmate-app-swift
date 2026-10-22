@@ -3,7 +3,9 @@ import ReportMateKit
 
 /// Fleet network report. Port of `app/network/page.tsx`.
 struct NetworkReportView: View {
-    @State private var model = FleetReportModel(path: "/network")
+    @Environment(AppState.self) private var appState
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/network") }
 
     enum Column { case device, ip, mac, network }
     enum Connection { case wired, wireless, vpn }

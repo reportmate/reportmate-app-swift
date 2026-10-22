@@ -4,7 +4,9 @@ import ReportMateKit
 /// Fleet management report: providers, enrollment status and type widgets
 /// over the enrollment table. Port of `app/management/page.tsx`.
 struct ManagementReportView: View {
-    @State private var model = FleetReportModel(path: "/management")
+    @Environment(AppState.self) private var appState
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/management") }
 
     enum Column { case device, provider, status, type, deviceId }
     @State private var sortColumn: Column = .device

@@ -53,12 +53,11 @@ struct ContentView: View {
             // One row, like the web header: platform toggle on the left, search dead
             // centre, the sections on the right. Fixed items only: a fit-to-width
             // view inside a toolbar item makes the whole toolbar overflow.
-            // The dashboard is the app's front door: it carries the app icon and name
-            // where the web shows its logo and wordmark.
-            if appState.section == .dashboard, appState.path.isEmpty {
-                ToolbarItem(placement: .navigation) {
-                    Image(nsImage: AppLogo.image).resizable().aspectRatio(contentMode: .fit).frame(height: 24)
-                }
+            // The app icon where the web shows its logo, on every page: an item that comes
+            // and goes with the page makes the toolbar re-lay itself out mid-transition,
+            // drawing the search field over the section tabs for a moment.
+            ToolbarItem(placement: .navigation) {
+                Image(nsImage: AppLogo.image).resizable().aspectRatio(contentMode: .fit).frame(height: 24)
             }
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 10) {

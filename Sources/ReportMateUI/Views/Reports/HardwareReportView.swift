@@ -4,7 +4,8 @@ import ReportMateKit
 /// Fleet hardware report. Port of `app/hardware/page.tsx`.
 struct HardwareReportView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = FleetReportModel(path: "/hardware")
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/hardware") }
 
     enum Column { case device, model, chip, processor, memory, storage, arch }
     @State private var sortColumn: Column = .device

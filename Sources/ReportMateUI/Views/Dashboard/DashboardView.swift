@@ -14,6 +14,10 @@ final class DashboardModel {
     var data: DashboardData?
     var loading = false
     var error: String?
+    /// The load on arriving at the page is in flight.
+    var refreshing = false
+    /// A refresh failed while the last good payload stays on screen.
+    var refreshError: String?
     var lastUpdate: Date?
     var connectionStatus: ConnectionStatus = .connecting
     /// Bumped every two minutes so relative times re-render.
@@ -29,6 +33,9 @@ final class DashboardModel {
 
     func load(api: ReportMateAPI, includeArchived: Bool, initial: Bool) async {
         if initial { loading = data == nil }
+        // Only the load on arrival shows as Updating; the 30-second poll stays quiet.
+        if initial { refreshing = true }
+        defer { if initial { refreshing = false } }
         do {
             let fresh = try await api.dashboard(eventsLimit: 200, includeArchived: includeArchived)
             if var existing = data, !initial {
@@ -50,10 +57,15 @@ final class DashboardModel {
                 data = d
             }
             error = nil
+            refreshError = nil
             if !isLive { connectionStatus = .polling }
             lastUpdate = Date()
         } catch {
-            if initial { self.error = error.localizedDescription; connectionStatus = .error }
+            if data == nil {
+                if initial { self.error = error.localizedDescription; connectionStatus = .error }
+            } else {
+                refreshError = error.localizedDescription
+            }
         }
         loading = false
     }
@@ -124,10 +136,11 @@ final class DashboardModel {
 
 struct DashboardView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = DashboardModel()
-    @State private var insights = DashboardInsightsModel()
+    /// Kept by `AppState` across navigation: a return shows the last data at once.
+    private var model: DashboardModel { appState.pages.dashboard }
+    private var insights: DashboardInsightsModel { appState.pages.insights }
     /// Width inside the page padding; drives the switch between layouts.
-    @State private var contentWidth: CGFloat = 0
+    private var contentWidth: CGFloat { appState.pages.dashboardWidth }
     /// Draw only the skeleton layout and load nothing: shown while the connection settles.
     var placeholder = false
 
@@ -139,8 +152,9 @@ struct DashboardView: View {
     static let wideBreakpoint: CGFloat = 2000
     /// Column 1 and each insight column never go narrower than this.
     static let columnMinimum: CGFloat = 360
-    /// Cards in the spec's order: 1 System Health … 12 Network & Peripherals.
-    static let cardOrder = Array(1...12)
+    /// The insight-column cards in the spec's order. Install Health (5) sits in column 1
+    /// under Fleet Status and App Usage (11) under Recent Events, so neither is here.
+    static let cardOrder = [1, 2, 3, 4, 6, 7, 8, 9, 10, 12]
 
     private var devices: [DeviceSummary] {
         guard let all = model.data?.devices else { return [] }
@@ -161,10 +175,19 @@ struct DashboardView: View {
                     .padding()
                 Spacer()
             } else {
-                ScrollView {
-                    layout.padding(20)
+                VStack(spacing: 0) {
+                    if let failure = model.refreshError ?? (insights.document != nil ? insights.error : nil) {
+                        RefreshFailedBanner(message: failure, updatedAt: model.lastUpdate) {
+                            Task { await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: false) }
+                            Task { await loadInsights(force: true) }
+                        }
+                    }
+                    ScrollView {
+                        layout.padding(20)
+                    }
+                    .overlay(alignment: .top) { progressBar }
                 }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width - 40 } action: { contentWidth = $0 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width - 40 } action: { appState.pages.dashboardWidth = $0 }
             }
         }
         .navigationTitle("ReportMate")
@@ -197,6 +220,20 @@ struct DashboardView: View {
         }
     }
 
+    /// Sources loaded of total on the first load; a sweep marked Updating while kept data refreshes.
+    @ViewBuilder
+    private var progressBar: some View {
+        let total = 2
+        let loaded = (model.data != nil ? 1 : 0) + (insights.document != nil || insights.error != nil ? 1 : 0)
+        if !placeholder, loaded < total {
+            LoadProgressBar(loaded: loaded, total: total)
+        } else if placeholder {
+            LoadProgressBar()
+        } else if model.refreshing || insights.loading {
+            LoadProgressBar(updating: true)
+        }
+    }
+
     // MARK: Layouts
 
     @ViewBuilder
@@ -208,8 +245,8 @@ struct DashboardView: View {
             HStack(alignment: .top, spacing: 20) {
                 // Cards size to their content rather than to the tallest column.
                 statusColumn.frame(width: unit).fixedSize(horizontal: false, vertical: true)
-                insightStack(Self.cardOrder.filter { $0 % 2 == 1 }).frame(width: unit).fixedSize(horizontal: false, vertical: true)
-                insightStack(Self.cardOrder.filter { $0 % 2 == 0 }).frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                insightStack(Self.cardOrder.enumerated().filter { $0.offset % 2 == 0 }.map(\.element)).frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                insightStack(Self.cardOrder.enumerated().filter { $0.offset % 2 == 1 }.map(\.element)).frame(width: unit).fixedSize(horizontal: false, vertical: true)
                 activityColumn.frame(maxWidth: .infinity)
             }
         } else if contentWidth >= Self.desktopBreakpoint {
@@ -251,10 +288,7 @@ struct DashboardView: View {
             } else {
                 VStack(spacing: 20) {
                     StatusWidget(devices: devices)
-                    HStack(spacing: 14) {
-                        InstallStatWidget(kind: .error, stats: model.data?.installStats, filter: appState.platformFilter)
-                        InstallStatWidget(kind: .warning, stats: model.data?.installStats, filter: appState.platformFilter)
-                    }
+                    InstallHealthCard(stats: model.data?.installStats, platform: appState.platformFilter)
                     NewClientsWidget(devices: devices)
                 }
             }
@@ -268,6 +302,7 @@ struct DashboardView: View {
             } else {
                 VStack(spacing: 20) {
                     RecentEventsWidget(events: events, connectionStatus: model.connectionStatus, lastUpdate: model.lastUpdate)
+                    AppUsageCard()
                     PlatformDistributionWidget(devices: devices)
                     osVersionRow
                 }
@@ -376,50 +411,6 @@ struct StatusWidget: View {
 
 extension Notification.Name {
     static let devicesStatusFilter = Notification.Name("ReportMate.devicesStatusFilter")
-}
-
-// MARK: - Error / warning counters
-
-struct InstallStatWidget: View {
-    enum Kind { case error, warning }
-    @Environment(AppState.self) private var appState
-    let kind: Kind
-    let stats: InstallStats?
-    let filter: PlatformFilter
-
-    private var value: Int? {
-        guard let stats else { return nil }
-        return kind == .error ? stats.devicesWithErrors(for: filter) : stats.devicesWithWarnings(for: filter)
-    }
-
-    var body: some View {
-        let tone: Tone = kind == .error ? .red : .yellow
-        let label = kind == .error ? (value == 1 ? "Error" : "Errors") : (value == 1 ? "Warning" : "Warnings")
-        let link = DashboardLinks.installs(filter: kind == .error ? "errors" : "warnings")
-        Button {
-            appState.follow(link)
-        } label: {
-            Card {
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8).fill(value == nil ? Color.secondary.opacity(0.12) : tone.color.opacity(0.15))
-                        Image(systemName: kind == .error ? "xmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundStyle(value == nil ? Color.secondary : tone.color).appFont(fixed: 20)
-                    }
-                    .frame(width: 44, height: 44)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(value.map(String.init) ?? "-").appFont(.title, weight: .bold).foregroundStyle(value == nil ? Color.secondary : tone.color).monospacedDigit()
-                        Text(label).appFont(.callout).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 16).padding(.vertical, 20)
-            }
-        }
-        .buttonStyle(.plain)
-        .help(kind == .error ? "Devices with one or more failed installs" : "Devices with one or more install warnings")
-        .linkContextMenu(link)
-    }
 }
 
 extension Notification.Name {

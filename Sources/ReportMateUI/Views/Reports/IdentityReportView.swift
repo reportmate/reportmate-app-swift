@@ -7,7 +7,8 @@ import ReportMateKit
 /// Port of `app/identity/page.tsx`.
 struct IdentityReportView: View {
     @Environment(AppState.self) private var appState
-    @State private var model = FleetReportModel(path: "/identity")
+    /// Kept by `AppState` across navigation, so a return shows the last rows at once.
+    private var model: FleetReportModel { appState.pages.report("/identity") }
 
     enum Column { case device, directory, auth, users, loggedIn, lastSeen }
     enum TokenFilter { case withToken, missingToken }

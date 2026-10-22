@@ -1,4 +1,5 @@
 import SwiftUI
+import ReportMateKit
 
 // Skeleton loading: grey blocks laid out like the page that is loading, with a
 // soft highlight sweeping across them. They take the window's appearance (light,
@@ -23,12 +24,12 @@ private struct Shimmer: ViewModifier {
             TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
                 let now = context.date.timeIntervalSinceReferenceDate
                 let sweep = now.truncatingRemainder(dividingBy: Self.sweep) / Self.sweep
-                let pulse = 0.75 + 0.25 * cos(now / Self.pulse * 2 * .pi)
+                let pulse = 0.7 + 0.3 * cos(now / Self.pulse * 2 * .pi)
                 content
                     .opacity(pulse)
                     .overlay {
                         GeometryReader { geo in
-                            let band = max(geo.size.width * 0.45, 90)
+                            let band = min(max(geo.size.width * 0.35, 60), 260)
                             LinearGradient(colors: [.clear, highlight, .clear], startPoint: .leading, endPoint: .trailing)
                                 .frame(width: band, height: geo.size.height)
                                 .offset(x: -band + (geo.size.width + band) * sweep)
@@ -40,7 +41,9 @@ private struct Shimmer: ViewModifier {
         }
     }
 
-    private var highlight: Color { scheme == .dark ? Color.white.opacity(0.22) : Color.white.opacity(0.85) }
+    // Bright enough to read as movement at a glance, not a flicker: Rod found the
+    // softer sweep looked static.
+    private var highlight: Color { scheme == .dark ? Color.white.opacity(0.4) : Color.white.opacity(0.95) }
 }
 
 extension View {
@@ -56,7 +59,7 @@ extension View {
 private struct SkeletonFill: ShapeStyle {
     func resolve(in environment: EnvironmentValues) -> some ShapeStyle {
         let contrast = environment.colorSchemeContrast == .increased
-        return environment.colorScheme == .dark ? Color.white.opacity(contrast ? 0.16 : 0.08) : Color.black.opacity(contrast ? 0.14 : 0.07)
+        return environment.colorScheme == .dark ? Color.white.opacity(contrast ? 0.18 : 0.10) : Color.black.opacity(contrast ? 0.16 : 0.08)
     }
 }
 
@@ -271,5 +274,77 @@ struct ShimmerWhile: ViewModifier {
     let active: Bool
     func body(content: Content) -> some View {
         if active { content.shimmering().accessibilityLabel("Loading") } else { content }
+    }
+}
+
+/// A thin bar across the top of a page while it loads: determinate with "Loading
+/// 2 of 3" when the number of sources is known, a sweeping band when it is not.
+/// A refresh behind data already on screen shows the sweep with "Updating".
+struct LoadProgressBar: View {
+    var loaded: Int? = nil
+    var total: Int? = nil
+    var updating = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var label: String {
+        if updating { return "Updating" }
+        if let loaded, let total { return "Loading \(min(loaded, total)) of \(total)" }
+        return "Loading"
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.accentColor.opacity(0.15))
+                    if let loaded, let total, total > 0, !updating {
+                        Capsule().fill(Color.accentColor)
+                            .frame(width: max(8, geo.size.width * CGFloat(min(loaded, total)) / CGFloat(total)))
+                            .animation(.easeOut(duration: 0.3), value: loaded)
+                    } else if reduceMotion {
+                        Capsule().fill(Color.accentColor.opacity(0.6))
+                    } else {
+                        TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+                            let t = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2
+                            let band = geo.size.width * 0.3
+                            Capsule().fill(Color.accentColor)
+                                .frame(width: band)
+                                .offset(x: -band + (geo.size.width + band) * t)
+                        }
+                        .clipShape(Capsule())
+                    }
+                }
+            }
+            .frame(height: 3)
+            Text(label).appFont(.caption2).foregroundStyle(.secondary).monospacedDigit().fixedSize()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
+/// A background refresh failed while the page still shows its last good data: a
+/// one-line note with when it last updated and Retry. The full error state is only
+/// for a page with nothing to show yet.
+struct RefreshFailedBanner: View {
+    let message: String
+    var updatedAt: Date?
+    let retry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityHidden(true)
+            Text("Couldn't refresh").appFont(.caption, weight: .semibold)
+            if let updatedAt { Text("· last updated \(TimeFormatting.relative(updatedAt))").appFont(.caption).foregroundStyle(.secondary) }
+            Spacer(minLength: 8)
+            Button("Retry", action: retry).controlSize(.small)
+        }
+        .help(message)
+        .padding(.horizontal, 16).padding(.vertical, 6)
+        .background(Color.orange.opacity(0.10))
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .combine)
     }
 }

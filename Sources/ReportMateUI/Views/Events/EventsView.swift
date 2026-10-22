@@ -13,7 +13,7 @@ struct EventsView: View {
 
     @Environment(AppState.self) private var appState
     @State private var mode: Mode = .feed
-    @State private var model = EventsFeedModel()
+    private var model: EventsFeedModel { appState.pages.events }
     @State private var search = ""
     /// A `/events/failures` link for the failures view to apply, and that view's filters in link form.
     @State private var failuresLink: DeepLink?
@@ -166,6 +166,7 @@ struct EventsView: View {
     private var feed: some View {
         if model.loading, model.events.isEmpty {
             chips
+            LoadProgressBar()
             SkeletonTableRows(rows: 18, columns: [24, nil, 200, 120])
             Spacer(minLength: 0)
         } else if let error = model.error, model.events.isEmpty {
@@ -173,6 +174,10 @@ struct EventsView: View {
             Spacer()
         } else {
             chips
+            if model.loading { LoadProgressBar(updating: true) }
+            if let error = model.error, !model.events.isEmpty, !model.loading {
+                RefreshFailedBanner(message: error) { Task { await model.reload(api: appState.api) } }
+            }
             ScrollView {
                 VStack(spacing: 0) {
                     if filtered.isEmpty {
@@ -230,11 +235,13 @@ final class EventsFeedModel {
         reloadTask?.cancel()
         loading = true
         error = nil
-        events = []
         offset = 0
         hasMore = true
         do {
             let page = try await fetch(api: api, offset: 0)
+            // The shown events stay until the new page arrives: a return to the page, or a
+            // refresh, never blanks it.
+            events = []
             merge(page.events)
             loadedTotal = page.total
             hasMore = page.events.count >= Self.pageSize
