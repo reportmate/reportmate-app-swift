@@ -75,25 +75,25 @@ struct NetworkReportView: View {
                 statRow("On", all.filter { $0.wirelessState == .on }.count, .yellow)
                 statRow("Connected", all.filter { $0.wirelessState == .connected }.count, .green)
             }
-            .frame(width: 220)
+            .reportWidgetWidth(220)
             ReportWidgetBox(title: "Wireless Networks") {
                 if names.isEmpty { Text("No networks detected").appFont(.caption).foregroundStyle(.tertiary) }
                 ForEach(names.prefix(5), id: \.label) { statRow($0.label, $0.count, nil) }
             }
-            .frame(width: 240)
+            .reportWidgetWidth(240)
             SingleCountListWidget(title: "Network Quality", counts: NetworkReportRow.Speed.allCases.compactMap { s in
                 let count = all.filter { $0.speed == s }.count
                 if s == .nodata, count == 0 { return nil }
                 return (s.label, count, speedColor(s))
             }, selected: Binding(get: { speedFilter?.label }, set: { label in speedFilter = NetworkReportRow.Speed.allCases.first { $0.label == label } }))
-            .frame(width: 220)
+            .reportWidgetWidth(220)
             ReportWidgetBox(title: "Signal Quality") {
                 statRow("Excellent", all.filter { $0.signal == .excellent }.count, .green)
                 statRow("Good", all.filter { $0.signal == .good }.count, .teal)
                 statRow("Fair", all.filter { $0.signal == .fair }.count, .yellow)
                 statRow("Poor", all.filter { $0.signal == .poor }.count, .red)
             }
-            .frame(width: 220)
+            .reportWidgetWidth(220)
         }
     }
 

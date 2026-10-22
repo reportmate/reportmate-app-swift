@@ -157,19 +157,19 @@ struct SystemReportView: View {
         let windows = all.filter { !$0.isMac }
         return HStack(alignment: .top, spacing: 12) {
             if appState.platformFilter != .macOS {
-                OSVersionFilterWidget(title: "Windows Versions", tone: .blue, nodes: FleetStats.osVersions(sums, platform: .windows), selected: $osVersionFilter).frame(width: 300)
+                OSVersionFilterWidget(title: "Windows Versions", tone: .blue, nodes: FleetStats.osVersions(sums, platform: .windows), selected: $osVersionFilter).reportWidgetWidth(300)
             }
             if appState.platformFilter != .windows {
-                OSVersionFilterWidget(title: "macOS Versions", tone: .red, nodes: FleetStats.osVersions(sums, platform: .macOS), selected: $osVersionFilter).frame(width: 300)
+                OSVersionFilterWidget(title: "macOS Versions", tone: .red, nodes: FleetStats.osVersions(sums, platform: .macOS), selected: $osVersionFilter).reportWidgetWidth(300)
             }
             if isWindowsOnly {
-                DonutToggleWidget(title: "Edition", data: countLabels(windows.compactMap(\.edition)), selected: $editions, palette: [.indigo, .blue, .purple, .teal, .cyan]).frame(width: 220)
-                DonutToggleWidget(title: "Activation", data: countLabels(windows.compactMap(\.activationLabel)), selected: $activations, palette: [.green, .red]).frame(width: 200)
-                CountListWidget(title: "License Source", counts: countLabels(windows.compactMap(\.licenseSource)), selected: $licenseSources, tone: .orange).frame(width: 240)
+                DonutToggleWidget(title: "Edition", data: countLabels(windows.compactMap(\.edition)), selected: $editions, palette: [.indigo, .blue, .purple, .teal, .cyan]).reportWidgetWidth(220)
+                DonutToggleWidget(title: "Activation", data: countLabels(windows.compactMap(\.activationLabel)), selected: $activations, palette: [.green, .red]).reportWidgetWidth(200)
+                CountListWidget(title: "License Source", counts: countLabels(windows.compactMap(\.licenseSource)), selected: $licenseSources, tone: .orange).reportWidgetWidth(240)
             }
-            bucketWidget("Uptime Distribution", buckets: Self.uptimeBuckets.map(\.0), counts: forBuckets.compactMap { Self.uptimeBucket($0.uptime) }, selected: $uptimeBuckets).frame(width: 240)
+            bucketWidget("Uptime Distribution", buckets: Self.uptimeBuckets.map(\.0), counts: forBuckets.compactMap { Self.uptimeBucket($0.uptime) }, selected: $uptimeBuckets).reportWidgetWidth(240)
             bucketWidget("Pending Updates", buckets: Self.pendingBuckets.map(\.0), counts: forBuckets.compactMap { Self.pendingBucket($0.pendingUpdatesCount) }, selected: $pendingBuckets,
-                         footer: forBuckets.reduce(0) { $0 + $1.deferredUpdatesCount } > 0 ? "\(forBuckets.reduce(0) { $0 + $1.deferredUpdatesCount }) deferred" : nil).frame(width: 240)
+                         footer: forBuckets.reduce(0) { $0 + $1.deferredUpdatesCount } > 0 ? "\(forBuckets.reduce(0) { $0 + $1.deferredUpdatesCount }) deferred" : nil).reportWidgetWidth(240)
         }
     }
 

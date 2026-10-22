@@ -148,6 +148,25 @@ device search, ⌘R refreshes, and the toolbar's platform toggle (Mac / Windows
 Device pages and drill-downs (per-application usage, usage coverage) push onto
 the navigation stack; Back is ⌘[ or the toolbar arrow.
 
+### Wide windows
+
+Pages use the width of a wide window instead of a laptop-width column, and
+re-flow as the window is resized:
+
+- Dashboard: at 1500 pt of content width or more it goes to three columns —
+  Fleet Status, the error and warning counters and New Clients; then the four
+  insight widgets (System Health, Security Posture, Management, Hardware), the
+  same width as the first column; then Recent Events, Platform Distribution and
+  the OS version charts, taking the rest. Below that it keeps the two-column
+  layout with the insights underneath, and goes to one column when narrow. The
+  web app makes the same switch at a 1680 px viewport.
+- Report widget rows stretch to fill the window, and scroll sideways only when
+  they cannot fit. Security's eight donuts flow into up to eight columns.
+- Card grids (`UniformGrid`) balance their columns, so six cards sit as two rows
+  of three rather than four and two. The device Info tab goes up to six columns.
+- Hardware tab spec tiles flow into more columns. Tables already fill the width.
+- Settings keeps the fixed-width Mac settings window.
+
 ## Parity matrix
 
 Every web page and the widgets, filters, drill-downs and exports on it, with

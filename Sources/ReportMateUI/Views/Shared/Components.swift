@@ -447,12 +447,18 @@ struct UniformGridLayout: Layout {
     var maxColumns: Int
     var spacing: CGFloat
 
-    private func columns(for width: CGFloat) -> Int {
-        min(maxColumns, max(1, Int((width + spacing) / (minColumnWidth + spacing))))
+    /// As many columns as fit, then balanced: the fewest columns that still need
+    /// the same number of rows, so six cards on a window that fits four sit as
+    /// two rows of three rather than four and two.
+    private func columns(for width: CGFloat, count: Int) -> Int {
+        let fit = min(maxColumns, max(1, Int((width + spacing) / (minColumnWidth + spacing))))
+        guard count > 0 else { return fit }
+        let rows = (count + fit - 1) / fit
+        return (count + rows - 1) / rows
     }
 
     private func rows(subviews: Subviews, width: CGFloat) -> (columnWidth: CGFloat, heights: [CGFloat]) {
-        let cols = columns(for: width)
+        let cols = columns(for: width, count: subviews.count)
         let colW = (width - spacing * CGFloat(cols - 1)) / CGFloat(cols)
         var heights: [CGFloat] = []
         var i = 0
@@ -472,7 +478,7 @@ struct UniformGridLayout: Layout {
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let cols = columns(for: bounds.width)
+        let cols = columns(for: bounds.width, count: subviews.count)
         let r = rows(subviews: subviews, width: bounds.width)
         var y = bounds.minY
         for (rowIndex, rowHeight) in r.heights.enumerated() {

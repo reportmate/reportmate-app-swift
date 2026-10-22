@@ -103,9 +103,9 @@ struct IdentityReportView: View {
 
     private func widgets(_ all: [IdentityReportRow]) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            directoryWidget(all).frame(width: 320)
-            authWidget(all).frame(width: 300)
-            adminsWidget(all).frame(width: 320)
+            directoryWidget(all).reportWidgetWidth(320)
+            authWidget(all).reportWidgetWidth(300)
+            adminsWidget(all).reportWidgetWidth(320)
         }
     }
 

@@ -2,14 +2,14 @@ import SwiftUI
 import ReportMateKit
 
 /// The device overview: Inventory, System, Hardware, Management, Security
-/// and Network widgets in a three-column grid.
+/// and Network widgets in a grid of two to six columns, by window width.
 struct InfoTabView: View {
     @Environment(AppState.self) private var appState
     let device: DeviceDetail
 
     var body: some View {
         // Every card in a row takes the row's height, so the six cards read as two bands.
-        UniformGrid(minColumnWidth: 340, spacing: 16) {
+        UniformGrid(minColumnWidth: 340, maxColumns: 6, spacing: 16) {
             InventoryWidget(device: device, settings: appState.settings)
             SystemWidget(device: device)
             HardwareWidget(device: device)

@@ -68,9 +68,9 @@ struct ManagementReportView: View {
         // own slice so the percentages are shares of every device the header counts.
         let types = countLabels(all.map { $0.bootstrapMethod ?? "Not Enrolled" }).sorted { (order.firstIndex(of: $0.label) ?? 99) < (order.firstIndex(of: $1.label) ?? 99) }.map { ($0.label, $0.count) }
         return HStack(alignment: .top, spacing: 12) {
-            SingleCountListWidget(title: "Providers", counts: providers, selected: $providerFilter, emptyText: "No data available").frame(width: 300)
-            MiniDonutWidget(title: "Enrollment Status", data: statuses, colors: ["Enrolled": .green, "Pending": .orange, "Unenrolled": .red, "Not Enrolled": .red, "Error": .red], selected: $statusFilter).frame(width: 300)
-            MiniDonutWidget(title: "Enrollment Type", data: types, colors: ["Automated": .green, "User Approved": .cyan, "Manual": .red, "Not Enrolled": Color.secondary.opacity(0.5), "Other": Color.secondary.opacity(0.5)], selected: $typeFilter).frame(width: 300)
+            SingleCountListWidget(title: "Providers", counts: providers, selected: $providerFilter, emptyText: "No data available").reportWidgetWidth(300)
+            MiniDonutWidget(title: "Enrollment Status", data: statuses, colors: ["Enrolled": .green, "Pending": .orange, "Unenrolled": .red, "Not Enrolled": .red, "Error": .red], selected: $statusFilter).reportWidgetWidth(300)
+            MiniDonutWidget(title: "Enrollment Type", data: types, colors: ["Automated": .green, "User Approved": .cyan, "Manual": .red, "Not Enrolled": Color.secondary.opacity(0.5), "Other": Color.secondary.opacity(0.5)], selected: $typeFilter).reportWidgetWidth(300)
         }
     }
 

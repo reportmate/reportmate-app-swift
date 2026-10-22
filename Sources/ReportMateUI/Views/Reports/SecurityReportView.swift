@@ -107,7 +107,7 @@ struct SecurityReportView: View {
 
     private func widgets(_ all: [SecurityReportRow]) -> some View {
         let green = Color.green, red = Color.red, amber = Color.orange, gray = Color.secondary.opacity(0.5), blue = Color.blue
-        return LazyVGrid(columns: Array(repeating: GridItem(.fixed(250), spacing: 12), count: 4), spacing: 12) {
+        return UniformGrid(minColumnWidth: 230, maxColumns: 8, spacing: 12) {
             MiniDonutWidget(title: "Encryption", data: donutData(all, \.encryptionLabel), colors: ["Encrypted": green, "Not Encrypted": red], selected: $encryptionFilter)
             // The API carries antivirus fields for Windows only (false on a Mac), so
             // the Protection figure describes the devices that report it, not the fleet.

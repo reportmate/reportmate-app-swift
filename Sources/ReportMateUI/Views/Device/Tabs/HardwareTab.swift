@@ -76,7 +76,7 @@ struct HardwareTabView: View {
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.cardBorder, lineWidth: 2))
     }
 
-    private var tileColumns: [GridItem] { [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)] }
+    private var tileColumns: [GridItem] { [GridItem(.adaptive(minimum: 160), spacing: 12)] }
 
     private func unifiedGrid(_ hw: HardwareInfo) -> some View {
         VStack(alignment: .leading, spacing: 10) {

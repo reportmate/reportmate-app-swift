@@ -4,7 +4,9 @@ import ReportMateKit
 
 /// The dashboard: fleet status, install error and warning counters, new
 /// clients on the left; recent events, platform distribution and OS version
-/// charts on the right. Refreshes every 30 seconds like the web page.
+/// charts on the right. On a wide window (see `wideBreakpoint`) the four
+/// insight widgets take a middle column of their own. Refreshes every 30
+/// seconds like the web page.
 @MainActor
 @Observable
 final class DashboardModel {
@@ -123,6 +125,12 @@ struct DashboardView: View {
     @Environment(AppState.self) private var appState
     @State private var model = DashboardModel()
     @State private var insights = DashboardInsightsModel()
+    /// Width inside the page padding; drives the switch to three columns.
+    @State private var contentWidth: CGFloat = 0
+
+    /// Content width at which the dashboard goes to three columns. The web app's
+    /// matching switch is a 1680 px media query on the whole viewport.
+    static let wideBreakpoint: CGFloat = 1500
 
     private var devices: [DeviceSummary] {
         guard let all = model.data?.devices else { return [] }
@@ -146,18 +154,31 @@ struct DashboardView: View {
                 Spacer()
             } else {
                 ScrollView {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .top, spacing: 20) {
-                            leftColumn.frame(width: 360)
-                            rightColumn
-                        }
-                        VStack(spacing: 20) {
-                            leftColumn
-                            rightColumn
+                    Group {
+                        if contentWidth >= Self.wideBreakpoint {
+                            // Desktop mode: fleet status, the four insights, then events and charts.
+                            HStack(alignment: .top, spacing: 20) {
+                                // Cards size to their content rather than to the tallest column.
+                                statusColumn.frame(width: 360).fixedSize(horizontal: false, vertical: true)
+                                insightColumn.frame(width: 360).fixedSize(horizontal: false, vertical: true)
+                                activityColumn.frame(maxWidth: .infinity)
+                            }
+                        } else {
+                            ViewThatFits(in: .horizontal) {
+                                HStack(alignment: .top, spacing: 20) {
+                                    leftColumn.frame(width: 360)
+                                    rightColumn
+                                }
+                                VStack(spacing: 20) {
+                                    leftColumn
+                                    rightColumn
+                                }
+                            }
                         }
                     }
                     .padding(20)
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width - 40 } action: { contentWidth = $0 }
             }
         }
         .navigationTitle("ReportMate")
@@ -194,6 +215,36 @@ struct DashboardView: View {
             }
             NewClientsWidget(devices: devices)
             SystemInsightWidget(rows: filtered(insights.system), loading: insights.loading.contains("system"), error: insights.errors["system"])
+        }
+    }
+
+    // MARK: Wide (three-column) layout
+
+    private var statusColumn: some View {
+        VStack(spacing: 20) {
+            StatusWidget(devices: devices)
+            HStack(spacing: 14) {
+                InstallStatWidget(kind: .error, stats: model.data?.installStats, filter: appState.platformFilter)
+                InstallStatWidget(kind: .warning, stats: model.data?.installStats, filter: appState.platformFilter)
+            }
+            NewClientsWidget(devices: devices)
+        }
+    }
+
+    private var insightColumn: some View {
+        VStack(spacing: 20) {
+            SystemInsightWidget(rows: filtered(insights.system), loading: insights.loading.contains("system"), error: insights.errors["system"])
+            SecurityPostureWidget(rows: filtered(insights.security), loading: insights.loading.contains("security"), error: insights.errors["security"])
+            ManagementInsightWidget(rows: filtered(insights.management), loading: insights.loading.contains("management"), error: insights.errors["management"])
+            HardwareInsightWidget(rows: filtered(insights.hardware), loading: insights.loading.contains("hardware"), error: insights.errors["hardware"])
+        }
+    }
+
+    private var activityColumn: some View {
+        VStack(spacing: 20) {
+            RecentEventsWidget(events: events, connectionStatus: model.connectionStatus, lastUpdate: model.lastUpdate)
+            PlatformDistributionWidget(devices: devices)
+            osVersionRow
         }
     }
 

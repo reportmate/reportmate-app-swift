@@ -219,7 +219,12 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
                         }
                         .buttonStyle(.plain)
                         if widgetsExpanded {
-                            ScrollView(.horizontal) { widgets(rows).padding(.horizontal, 16).padding(.bottom, 12) }
+                            // Widgets stretch to fill a wide window and scroll sideways when they cannot fit.
+                            ViewThatFits(in: .horizontal) {
+                                widgets(rows).frame(maxWidth: .infinity, alignment: .leading)
+                                ScrollView(.horizontal) { widgets(rows) }
+                            }
+                            .padding(.horizontal, 16).padding(.bottom, 12)
                         }
                     }
                     .overlay(alignment: .bottom) { Divider() }
@@ -290,5 +295,13 @@ struct ReportEmptyRows: View {
             Text(message).appFont(.caption).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity).padding(40)
+    }
+}
+
+extension View {
+    /// A report widget's width: at least `width` (its old fixed size), growing to
+    /// share the row when the window is wider than the widgets need.
+    func reportWidgetWidth(_ width: CGFloat) -> some View {
+        frame(minWidth: width, idealWidth: width, maxWidth: .infinity, alignment: .topLeading)
     }
 }

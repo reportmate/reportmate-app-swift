@@ -77,8 +77,8 @@ struct PeripheralsReportView: View {
         let printers = countLabels(all.flatMap(\.printerNames))
         let usb = countLabels(all.flatMap(\.usbTypes))
         return HStack(alignment: .top, spacing: 12) {
-            SingleCountListWidget(title: "Printers (\(printers.reduce(0) { $0 + $1.count }))", counts: printers.map { ($0.label, $0.count, Color.purple) }, selected: $printerFilter, emptyText: "No printers found").frame(width: 360)
-            SingleCountListWidget(title: "USB Devices (\(usb.reduce(0) { $0 + $1.count }))", counts: usb.map { ($0.label, $0.count, Color.green) }, selected: $usbTypeFilter, emptyText: "No USB devices found").frame(width: 360)
+            SingleCountListWidget(title: "Printers (\(printers.reduce(0) { $0 + $1.count }))", counts: printers.map { ($0.label, $0.count, Color.purple) }, selected: $printerFilter, emptyText: "No printers found").reportWidgetWidth(360)
+            SingleCountListWidget(title: "USB Devices (\(usb.reduce(0) { $0 + $1.count }))", counts: usb.map { ($0.label, $0.count, Color.green) }, selected: $usbTypeFilter, emptyText: "No USB devices found").reportWidgetWidth(360)
         }
     }
 
