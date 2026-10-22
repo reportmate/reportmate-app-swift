@@ -129,7 +129,7 @@ public struct LastRunSummary: Sendable, Hashable {
             .map { $0.replacingOccurrences(of: #"^(?:WARNING|ERROR):\s*"#, with: "", options: [.regularExpression, .caseInsensitive]).trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && $0.range(of: #"^(?:warning|error)$"#, options: [.regularExpression, .caseInsensitive]) == nil }
         return segments.map { segment in
-            if let m = capture(segment, #"\bfor\s+([A-Za-z0-9][\w.-]*)[\s;,.]*$"#) { return Item(name: m, version: "", status: status) }
+            if let m = capture(segment, #"\bfor\s+([A-Za-z0-9][\w-]*(?:\.[\w-]+)*)[\s;,.]*$"#) { return Item(name: m, version: "", status: status) }
             if let refs = capture(segment, #"^Package\s+[\w.]+\s+references are:\s*\[([^\]]+)\]"#) {
                 let names = refs.components(separatedBy: "\"").enumerated().filter { $0.offset % 2 == 1 }.map(\.element)
                 if let best = names.sorted(by: { $0.count < $1.count }).first { return Item(name: best, version: "", status: status) }
@@ -143,7 +143,9 @@ public struct LastRunSummary: Sendable, Hashable {
         }
     }
 
-    private static func capture(_ s: String, _ pattern: String) -> String? {
+    /// Run text is device-reported; a segment is matched on its first 1,024 characters.
+    private static func capture(_ text: String, _ pattern: String) -> String? {
+        let s = String(text.prefix(1_024))
         guard let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
               let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)), m.numberOfRanges > 1,
               let r = Range(m.range(at: 1), in: s) else { return nil }

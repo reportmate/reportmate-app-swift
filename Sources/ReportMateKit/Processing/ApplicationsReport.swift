@@ -6,8 +6,12 @@ import Foundation
 /// Applications page. Every JavaScript `replace` there runs without the `g`
 /// flag, so each pattern here replaces its first match only.
 public enum AppNameNormalizer {
+    /// App names are device-reported; nothing longer is a real name, and the cap keeps
+    /// every pattern below linear-time in practice.
+    static let maxLength = 256
+
     public static func normalize(_ appName: String) -> String {
-        var n = appName.trimmingCharacters(in: .whitespacesAndNewlines)
+        var n = String(appName.prefix(maxLength)).trimmingCharacters(in: .whitespacesAndNewlines)
         if n.isEmpty { return "" }
         if n.contains("${{") || n.contains("}}") { return "" }
         if n == "Unknown" || n == "N/A" { return "" }
@@ -42,12 +46,12 @@ public enum AppNameNormalizer {
         if n.hasPrefix("HP ") || n.contains("HP ") { return "HP Software" }
 
         // Trailing version numbers.
-        n = replaceFirst(n, #"\s+v?\d+(\.\d+)*(\.\d+)*(\.\d+)*$"#)
+        n = replaceFirst(n, #"\s+v?\d+(?:\.\d+)*$"#)
         n = replaceFirst(n, #"\s+\d{4}(\.\d+)*$"#)
         n = replaceFirst(n, #"\s+-\s+\d+(\.\d+)*$"#)
-        n = replaceFirst(n, #"\s+\(\d+(\.\d+)*(\.\d+)*\)$"#)
+        n = replaceFirst(n, #"\s+\(\d+(?:\.\d+)*\)$"#)
         n = replaceFirst(n, #"\s+build\s+\d+"#)
-        n = replaceFirst(n, #"\s+\d+(\.\d+)*(\.\d+)*(\.\d+)*$"#)
+        n = replaceFirst(n, #"\s+\d+(?:\.\d+)*$"#)
         // Versions in the middle.
         n = replaceFirst(n, #"\s+\d{4}\.\d{2}-\d+"#)
         n = replaceFirst(n, #"\s+\d{1,2}\.\d+\.\d+"#)

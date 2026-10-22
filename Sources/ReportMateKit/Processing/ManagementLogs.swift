@@ -502,11 +502,15 @@ public struct LogsInfo: Sendable, Hashable {
 }
 
 extension NSRegularExpression {
+    /// Log lines past this length are matched on their first part only: the line parsers
+    /// run on device text, and the cap bounds their work on a hostile line.
+    static let maxMatchLength = 8_192
+
     /// Capture groups of the first match, nil when the pattern does not match;
     /// a group that did not participate is nil.
     func captures(in text: String) -> [String?]? {
-        let ns = text as NSString
-        guard let m = firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        let ns = (text.utf16.count > Self.maxMatchLength ? String(text.prefix(Self.maxMatchLength)) : text) as NSString
+        guard let m = firstMatch(in: ns as String, range: NSRange(location: 0, length: ns.length)) else { return nil }
         return (1..<m.numberOfRanges).map { i in
             let r = m.range(at: i)
             return r.location == NSNotFound ? nil : ns.substring(with: r)

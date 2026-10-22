@@ -758,3 +758,37 @@ let appUsageEnvelope = #"""
         #expect(text == "\"Device\",\"Tool\"\n\"'=cmd|' /C calc'!A0\",\"Munki\"\n\"SAMPLE2\",\"'@x\"")
     }
 }
+
+@Suite struct ReDoSTests {
+    private func seconds(_ work: () -> Void) -> Double {
+        let start = Date()
+        work()
+        return Date().timeIntervalSince(start)
+    }
+
+    @Test func versionSuffixesStayFastOnHostileNames() {
+        // A long run of ".1" ending in a character that defeats the `$` anchor is the
+        // classic case for `(\.\d+)*(\.\d+)*(\.\d+)*$`.
+        let hostile = "App " + String(repeating: ".1", count: 5_000) + "x"
+        let spaces = "App" + String(repeating: " ", count: 20_000) + "!"
+        let elapsed = seconds {
+            _ = AppNameNormalizer.normalize(hostile)
+            _ = AppNameNormalizer.normalize(spaces)
+            _ = AppNameNormalizer.normalize("App (" + String(repeating: "1.2.3", count: 2_000) + "x")
+        }
+        #expect(elapsed < 1)
+        #expect(AppNameNormalizer.normalize("Sample Tool 1.2.3.4") == AppNameNormalizer.normalize("Sample Tool"))
+    }
+
+    @Test func logLinesAndMessagesStayFast() {
+        let line = "[2026-10-22 09:00:00] ERROR " + String(repeating: "a.", count: 50_000)
+        let elapsed = seconds {
+            _ = LogsInfo.parseStructured(index: 0, line: line)
+            _ = LogsInfo.parseStructured(index: 0, line: String(repeating: "[", count: 50_000))
+            _ = ManagementToolMessages.normalize(String(repeating: "<ts> ", count: 20_000))
+            _ = LastRunSummary.textItems("Install failed for " + String(repeating: "a.", count: 20_000) + "!", status: "error")
+        }
+        #expect(elapsed < 1)
+        #expect(LastRunSummary.textItems("WARNING: Could not install for Sample.App.", status: "warning").first?.name == "Sample.App")
+    }
+}

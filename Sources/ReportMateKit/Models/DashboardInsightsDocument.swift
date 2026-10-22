@@ -112,7 +112,7 @@ public struct InsightItem: Sendable, Hashable, Identifiable {
 public enum ManagementToolMessages {
     /// `<ts> -<n>:<n> [ERR] Device registration failed` → `Device registration failed`.
     public static func normalize(_ message: String) -> String {
-        var m = message.trimmingCharacters(in: .whitespaces)
+        var m = String(message.prefix(2_000)).trimmingCharacters(in: .whitespaces)
         let prefixes = [
             #"^(<ts>|\d{4}-\d{2}-\d{2}[T ][\d:.,]+Z?)\s*"#,
             #"^[+-]?(<n>|\d{1,2}):?(<n>|\d{2})\s+"#,
