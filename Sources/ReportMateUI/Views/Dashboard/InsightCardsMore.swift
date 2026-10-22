@@ -50,6 +50,8 @@ struct InstallHealthWidget: View {
 struct CheckInGapsWidget: View {
     let page: IngestFailuresPage?
     let devices: [DeviceSummary]
+    /// The platform toggle is on: the check-in figures cannot follow it, so they say so.
+    var platformFiltered = false
     let loading: Bool
     let error: String?
 
@@ -57,7 +59,7 @@ struct CheckInGapsWidget: View {
         let gaps = DashboardInsights.checkInGaps(devices)
         let reasons = page?.summary.sorted { $0.count > $1.count } ?? []
         let max = reasons.first?.count ?? 1
-        InsightCard(title: "Check-in Gaps", subtitle: "Rejected check-ins and silent devices", systemImage: "antenna.radiowaves.left.and.right.slash", tone: .red, link: DashboardLinks.failures(), loading: loading, error: error, empty: page == nil && devices.isEmpty) {
+        InsightCard(title: "Check-in Gaps", subtitle: platformFiltered ? "Check-ins: all platforms · silent devices: filtered" : "Rejected check-ins and silent devices", systemImage: "antenna.radiowaves.left.and.right.slash", tone: .red, link: DashboardLinks.failures(), loading: loading, error: error, empty: page == nil && devices.isEmpty) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 8) {
                     InsightFigure(value: page?.rejected, label: "rejected in 24h", tone: .red, link: outcome("rejected"))
@@ -232,13 +234,14 @@ struct IdentityInsightWidget: View {
 
 struct AppUsageWidget: View {
     let usage: UtilizationData?
+    var platformFiltered = false
     let loading: Bool
     let error: String?
 
     var body: some View {
         let r = DashboardInsights.appUsage(usage?.applications ?? [])
         let maxHours = r.top.first?.totalHours ?? 1
-        InsightCard(title: "App Usage", subtitle: "Last 30 days", systemImage: "chart.bar.xaxis", tone: .blue, link: DashboardLinks.report("applications", ["type": "usage", "period": "30"]), loading: loading, error: error, empty: (usage?.applications ?? []).isEmpty) {
+        InsightCard(title: "App Usage", subtitle: platformFiltered ? "Last 30 days · All platforms" : "Last 30 days", systemImage: "chart.bar.xaxis", tone: .blue, link: DashboardLinks.report("applications", ["type": "usage", "period": "30"]), loading: loading, error: error, empty: (usage?.applications ?? []).isEmpty) {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     InsightHeading("Most used")

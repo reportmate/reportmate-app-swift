@@ -58,7 +58,8 @@ public enum DashboardInsights {
             if OSCurrency.isWindows10(r) { s.windows10 += 1 }
             guard r.isMac, let v = r.osVersion, OSCurrency.major(v) != nil else { continue }
             s.macTotal += 1
-            if currency.isOnLatest(r) { s.onLatest += 1 } else { s.behind += 1; behindVersions[v, default: 0] += 1 }
+            // Three-part names, so `?osVersion=27.0.0` keeps 27.0 and leaves out 27.0.1.
+            if currency.isOnLatest(r) { s.onLatest += 1 } else { s.behind += 1; behindVersions[OSCurrency.threePart(v), default: 0] += 1 }
             if currency.isUnsupported(r) { s.unsupported += 1 }
         }
         s.lagging = top(behindVersions, limit: 3).map { v in

@@ -155,7 +155,10 @@ public enum SystemBuckets {
 }
 
 /// OS currency across the fleet. For each macOS major the latest patch is the
-/// highest version seen in the fleet, and a Mac below it is behind. A Mac more
+/// highest version at least `minimumDevices` Macs report (so one beta Mac does
+/// not put the rest behind), and a Mac below it is behind. A major where no
+/// version reaches that count takes its highest version. Unsupported is more than
+/// two majors behind the newest major at least `minimumDevices` Macs run. A Mac more
 /// than two majors behind the newest major seen is unsupported. Majors count in
 /// release order, so 26 follows 15 (Apple skipped 16 to 25).
 public struct OSCurrency: Sendable, Hashable {
@@ -164,15 +167,32 @@ public struct OSCurrency: Sendable, Hashable {
     /// Release ordinal of the newest macOS major seen.
     public let newestOrdinal: Int?
 
-    public init(rows: [SystemReportRow]) {
-        var latest: [Int: String] = [:]
+    public static let minimumDevices = 5
+
+    public init(rows: [SystemReportRow], minimumDevices: Int = OSCurrency.minimumDevices) {
+        var counts: [Int: [String: Int]] = [:]
         for r in rows where r.isMac {
             guard let v = r.osVersion, let major = OSCurrency.major(v) else { continue }
-            if let cur = latest[major], OSCurrency.compare(v, cur) != .orderedDescending { continue }
-            latest[major] = v
+            counts[major, default: [:]][v, default: 0] += 1
+        }
+        var latest: [Int: String] = [:]
+        for (major, versions) in counts {
+            let common = versions.filter { $0.value >= minimumDevices }.map(\.key)
+            let pool = common.isEmpty ? Array(versions.keys) : common
+            latest[major] = pool.max { OSCurrency.compare($0, $1) == .orderedAscending }
         }
         latestByMajor = latest
-        newestOrdinal = latest.keys.map(OSCurrency.ordinal).max()
+        // Unsupported is measured from the newest major at least `minimumDevices` Macs run,
+        // so a beta major on one Mac does not push the fleet back; else the newest seen.
+        let established = counts.filter { $0.value.values.reduce(0, +) >= minimumDevices }.map(\.key)
+        newestOrdinal = (established.isEmpty ? Array(latest.keys) : established).map(OSCurrency.ordinal).max()
+    }
+
+    /// "27.0" -> "27.0.0", the exact form `?osVersion=` matches.
+    public static func threePart(_ version: String) -> String {
+        var parts = version.split(separator: ".").map(String.init)
+        while parts.count < 3 { parts.append("0") }
+        return parts.joined(separator: ".")
     }
 
     public static func major(_ version: String) -> Int? { Int(version.split(separator: ".").first ?? "") }

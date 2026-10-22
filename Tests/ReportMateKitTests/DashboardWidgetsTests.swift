@@ -127,12 +127,33 @@ private func json(_ text: String) -> JSONValue { try! JSONValue.parse(Data(text.
         // 15 is two majors behind 27 (26 follows 15), so only 14 is unsupported.
         #expect(stats.unsupported == 1)
         #expect(stats.windows10 == 1)
-        #expect(stats.lagging.first == DashboardInsights.NamedCount(name: "26.4", count: 2))
+        #expect(stats.lagging.first == DashboardInsights.NamedCount(name: "26.4.0", count: 2))
         func count(_ q: [String: String]) -> Int { rows.filter { ReportLinkFilter(report: "system", query: q).matches(system: $0, currency: currency) }.count }
         #expect(count(["patch": "behind"]) == stats.behind)
         #expect(count(["os": "unsupported"]) == stats.unsupported)
         #expect(count(["os": "windows10"]) == stats.windows10)
-        #expect(count(["osVersion": "26.4"]) == 2)
+        #expect(count(["osVersion": "26.4.0"]) == 2)
+    }
+
+    @Test func aBetaOnOneMacDoesNotSetTheLatestPatch() {
+        let rows = [row("macOS", "27.2", platform: "macOS")]
+            + Array(repeating: row("macOS", "27.0.1", platform: "macOS"), count: 6)
+            + Array(repeating: row("macOS", "27.0", platform: "macOS"), count: 5)
+        let currency = OSCurrency(rows: rows)
+        #expect(currency.latestByMajor[27] == "27.0.1")
+        let stats = DashboardInsights.osCurrency(rows, currency: currency)
+        #expect(stats.onLatest == 7)
+        #expect(stats.behind == 5)
+        #expect(stats.lagging.first == DashboardInsights.NamedCount(name: "27.0.0", count: 5))
+    }
+
+    @Test func unsupportedCountsFromAnEstablishedMajor() {
+        let rows = [row("macOS", "28.0", platform: "macOS")]
+            + Array(repeating: row("macOS", "27.0.1", platform: "macOS"), count: 5)
+            + [row("macOS", "15.7", platform: "macOS"), row("macOS", "14.6", platform: "macOS")]
+        let currency = OSCurrency(rows: rows)
+        #expect(currency.newestOrdinal == 17)
+        #expect(DashboardInsights.osCurrency(rows, currency: currency).unsupported == 1)
     }
 
     @Test func rapidSecurityResponseCountsAsNewer() {

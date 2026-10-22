@@ -302,13 +302,13 @@ struct DashboardView: View {
         case 4: HardwareInsightWidget(rows: filtered(i.rows(.hardware)), loading: i.isLoading(.hardware), error: i.error(.hardware))
         case 5: InstallHealthWidget(stats: model.data?.installStats, platform: appState.platformFilter, staleAgents: staleAgents, records: installRecords,
                                     recordsLoading: i.installRecordsLoading, recordsFailed: i.installRecordsFailed, loading: i.isLoading(.installsFilters), error: i.error(.installsFilters))
-        case 6: CheckInGapsWidget(page: i.failures, devices: devices, loading: i.isLoading(.failures), error: i.error(.failures))
+        case 6: CheckInGapsWidget(page: i.failures, devices: devices, platformFiltered: appState.platformFilter != .all, loading: i.isLoading(.failures), error: i.error(.failures))
         case 7: OSCurrencyWidget(rows: filtered(i.rows(.system)), allRows: i.rows(.system), loading: i.isLoading(.system), error: i.error(.system))
         case 8: SoftwareRiskWidget(security: filtered(i.rows(.security)), records: installRecords, recordsLoading: i.installRecordsLoading, recordsFailed: i.installRecordsFailed,
                                    loading: i.isLoading(.security), error: i.error(.security))
         case 9: CertificatesWidget(expiring: expiringCertificates, security: filtered(i.rows(.security)), loading: i.isLoading(.certificates) || i.isLoading(.security), error: i.error(.certificates))
         case 10: IdentityInsightWidget(rows: filtered(i.rows(.identity)), loading: i.isLoading(.identity), error: i.error(.identity))
-        case 11: AppUsageWidget(usage: i.appUsage, loading: i.isLoading(.appUsage), error: i.error(.appUsage))
+        case 11: AppUsageWidget(usage: i.appUsage, platformFiltered: appState.platformFilter != .all, loading: i.isLoading(.appUsage), error: i.error(.appUsage))
         default: NetworkPeripheralsWidget(network: filtered(i.rows(.network)), peripherals: filtered(i.rows(.peripherals)),
                                           loading: i.isLoading(.network) || i.isLoading(.peripherals), error: i.error(.network) ?? i.error(.peripherals))
         }
