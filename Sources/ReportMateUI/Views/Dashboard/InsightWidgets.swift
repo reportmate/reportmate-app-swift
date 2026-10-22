@@ -10,7 +10,7 @@ import ReportMateKit
 @MainActor
 @Observable
 final class DashboardInsightsModel {
-    /// The sources in load order. Install rows load last and on their own (see `loadInstallRecords`).
+    /// The sources in load order. The bulk `/installs` rows are not fetched.
     enum Source: String, CaseIterable, Sendable {
         case system, security, management, hardware, identity, failures, appUsage, certificates, network, peripherals, installsFilters
     }
