@@ -65,11 +65,13 @@ struct NetworkReportView: View {
         }
     }
 
-    /// `?connection=wired|wifi` selects the Wired or Wireless pill; `?signal=weak` narrows the rows.
+    /// `?connection=wired|wifi` and `?vpn=1` select the Wired, Wireless or VPN pill;
+    /// `?signal=weak` and `?quality=poor` narrow the rows.
     private var linking: ReportLinking {
         var q: [String: String] = [:]
         if connection == .wired { q["connection"] = "wired" }
         if connection == .wireless { q["connection"] = "wifi" }
+        if connection == .vpn { q["vpn"] = "1" }
         return ReportLinking(absorb: { f in
             speedFilter = nil
             connection = nil
@@ -77,6 +79,10 @@ struct NetworkReportView: View {
             if c.count == 1, let only = c.first?.lowercased(), only == "wired" || only == "wifi" {
                 _ = f.take("connection")
                 connection = only == "wired" ? .wired : .wireless
+            }
+            if f.params["vpn"] == "1", connection == nil {
+                _ = f.take("vpn")
+                connection = .vpn
             }
         }, matches: { row, f in f.matches(network: NetworkReportRow(json: row.json)) }, widgetQuery: q)
     }

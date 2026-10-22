@@ -173,12 +173,12 @@ struct DashboardView: View {
             model.startLive(api: appState.api)
             defer { model.stopLive() }
             await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: true)
-            Task { await insights.load(api: appState.api) }
+            Task { await loadInsights() }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { break }
                 await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: false)
-                await insights.load(api: appState.api)
+                await loadInsights()
             }
         }
         .task {
@@ -187,10 +187,13 @@ struct DashboardView: View {
                 model.clockTick += 1
             }
         }
+        .onChange(of: appState.platformFilter) { _, _ in Task { await loadInsights() } }
+        .environment(insights)
+        .environment(\.insightsRetry) { Task { await loadInsights(force: true) } }
         .onChange(of: appState.refreshRequested) { _, _ in
             guard !placeholder else { return }
             Task { await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: model.data == nil) }
-            Task { await insights.load(api: appState.api, force: true) }
+            Task { await loadInsights(force: true) }
         }
     }
 
@@ -286,45 +289,15 @@ struct DashboardView: View {
 
     // MARK: Insight cards
 
-    private func filtered(_ rows: [ReportRow]) -> [ReportRow] {
-        appState.platformFilter == .all ? rows : rows.filter { appState.platformFilter.includes($0.platform) }
+    /// One request for every card, cached by the API for five minutes and asked again
+    /// here at most that often (the 30-second tick finds it fresh).
+    private func loadInsights(force: Bool = false) async {
+        guard !placeholder, appState.isConfigured else { return }
+        await insights.load(api: appState.api, platform: appState.platformFilter, includeArchived: appState.includeArchived, force: force)
     }
 
-    /// The top-item lists need the 130k-row `/installs` list, which the dashboard no longer
-    /// pages (it held the API at its memory limit); they show as unavailable until the
-    /// cached insights endpoint serves them.
-    private var installRecords: [InstallRecord]? { nil }
-
-    private var staleAgents: [StaleAgent]? {
-        insights.installsFilters.map { f in appState.platformFilter == .all ? f.staleAgents : f.staleAgents.filter { appState.platformFilter.includes($0.platform) } }
-    }
-
-    private var expiringCertificates: [JSONValue]? {
-        guard let rows = insights.certificates else { return nil }
-        guard appState.platformFilter != .all else { return rows }
-        return rows.filter { appState.platformFilter.includes(Platform.detect(device: $0)) }
-    }
-
-    @ViewBuilder
     private func card(_ number: Int) -> some View {
-        let i = insights
-        switch number {
-        case 1: SystemInsightWidget(rows: filtered(i.rows(.system)), loading: i.isLoading(.system), error: i.error(.system))
-        case 2: SecurityPostureWidget(rows: filtered(i.rows(.security)), loading: i.isLoading(.security), error: i.error(.security))
-        case 3: ManagementInsightWidget(rows: filtered(i.rows(.management)), loading: i.isLoading(.management), error: i.error(.management))
-        case 4: HardwareInsightWidget(rows: filtered(i.rows(.hardware)), loading: i.isLoading(.hardware), error: i.error(.hardware))
-        case 5: InstallHealthWidget(stats: model.data?.installStats, platform: appState.platformFilter, staleAgents: staleAgents, records: installRecords,
-                                    recordsLoading: false, recordsFailed: true, loading: i.isLoading(.installsFilters), error: i.error(.installsFilters))
-        case 6: CheckInGapsWidget(page: i.failures, devices: devices, platformFiltered: appState.platformFilter != .all, loading: i.isLoading(.failures), error: i.error(.failures))
-        case 7: OSCurrencyWidget(rows: filtered(i.rows(.system)), allRows: i.rows(.system), loading: i.isLoading(.system), error: i.error(.system))
-        case 8: SoftwareRiskWidget(security: filtered(i.rows(.security)), records: installRecords, recordsLoading: false, recordsFailed: true,
-                                   loading: i.isLoading(.security), error: i.error(.security))
-        case 9: CertificatesWidget(expiring: expiringCertificates, security: filtered(i.rows(.security)), loading: i.isLoading(.certificates) || i.isLoading(.security), error: i.error(.certificates))
-        case 10: IdentityInsightWidget(rows: filtered(i.rows(.identity)), loading: i.isLoading(.identity), error: i.error(.identity))
-        case 11: AppUsageWidget(usage: i.appUsage, platformFiltered: appState.platformFilter != .all, loading: i.isLoading(.appUsage), error: i.error(.appUsage))
-        default: NetworkPeripheralsWidget(network: filtered(i.rows(.network)), peripherals: filtered(i.rows(.peripherals)),
-                                          loading: i.isLoading(.network) || i.isLoading(.peripherals), error: i.error(.network) ?? i.error(.peripherals))
-        }
+        InsightCardView(number: number, platform: appState.platformFilter)
     }
 
     @ViewBuilder

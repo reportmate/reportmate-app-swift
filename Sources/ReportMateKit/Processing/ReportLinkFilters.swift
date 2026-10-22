@@ -46,7 +46,7 @@ public struct ReportLinkFilter: Sendable, Hashable {
         "installs": ["filter", "item", "stale", "view"],
         "failures": ["hours", "reason", "outcome"],
         "identity": ["admins", "join", "usage"],
-        "network": ["connection", "signal"],
+        "network": ["connection", "signal", "quality", "vpn"],
         "peripherals": ["kind", "room"],
     ]
 
@@ -89,6 +89,8 @@ public struct ReportLinkFilter: Sendable, Hashable {
         case "usage": return "Usage: \(joined)"
         case "connection": return v.map { $0 == "wifi" ? "Wi-Fi" : $0 == "wired" ? "Wired" : $0 }.joined(separator: ", ")
         case "signal": return "Weak signal"
+        case "quality": return "Poor network quality"
+        case "vpn": return "On VPN"
         case "kind": return v.map { k in PeripheralsReportRow.kinds.first { $0.key == k }?.label ?? k }.joined(separator: ", ")
         case "room": return "Room: \(joined)"
         case "item": return "Item: \(joined)"
@@ -367,6 +369,8 @@ public extension ReportLinkFilter {
             if !hit { return false }
         }
         if params["signal"] == "weak", n.signal != .poor { return false }
+        if params["quality"] == "poor", !n.isPoorQuality { return false }
+        if params["vpn"] == "1", !n.info.vpnActive { return false }
         return true
     }
 

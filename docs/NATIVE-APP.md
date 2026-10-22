@@ -190,9 +190,10 @@ re-flow as the window is resized:
 The dashboard's twelve insight cards and the link parameters behind them are a
 contract shared with the web and Windows apps, written up in the web repo as
 [`docs/DASHBOARD-WIDGETS.md`](https://github.com/reportmate/reportmate-app-web/blob/main/docs/DASHBOARD-WIDGETS.md).
-The cards are 1 System Health, 2 Security Posture, 3 Management, 4 Hardware,
-5 Install Health, 6 Check-in Gaps, 7 OS Currency, 8 Software Risk,
-9 Certificates, 10 Identity, 11 App Usage and 12 Network & Peripherals
+Each card answers one question about the fleet: 1 Reboot & Update Debt,
+2 Protection Gaps, 3 Unmanaged Devices, 4 Hardware at Risk, 5 Install Health,
+6 Check-in Gaps, 7 OS Currency, 8 Software Risk, 9 Expiring Certificates,
+10 Local Admin Exposure, 11 Unused Software and 12 Connectivity Problems
 (`Views/Dashboard/InsightWidgets.swift`, `InsightCardsMore.swift`).
 
 Every count, bar, legend row and chip on the dashboard, the Fleet Status legend,
@@ -203,10 +204,11 @@ web uses: clicking Unmanaged in Management opens
 unfiltered. Each item's context menu copies its link, and its tooltip says where
 it goes.
 
-`ReportMateKit` holds the logic: `DashboardLinks` builds the links,
+`ReportMateKit` holds the logic: `DashboardInsightsDocument` reads the insights
+endpoint and turns each item's `link: {path, params}` into a `reportmate://`
+link, `DashboardLinks` builds the dashboard's other links, and
 `ReportLinkFilter` reads each report's parameters and applies them as row
-predicates, and `DashboardInsights` computes the card figures with those same
-predicates, so a card's number is the number of rows its link shows. On a
+predicates. On a
 report, a parameter that matches a widget selects it, the rest narrow the rows
 and appear as removable chips under the header, and Copy Link carries both.
 
@@ -221,15 +223,17 @@ and appear as removable chips under the header, and Copy Link carries both.
 | `/events/failures` | `hours`, `reason`, `outcome` |
 | `/identity` | `admins=extra`, `join=entra\|domain\|hybrid\|workgroup`, `usage` |
 | `/applications` | `type=usage&apps=&period=`; `/applications/usage/<app>?days=30` |
-| `/network` | `connection=wired\|wifi`, `signal=weak` |
+| `/network` | `connection=wired\|wifi`, `signal=weak`, `quality=poor`, `vpn=1` |
 | `/peripherals` | `kind=printers\|displays`, `room` |
 
-The cards load from the endpoints their reports use, two at a time with one
-retry on a 5xx, and refresh every five minutes. The dashboard does not page the bulk `/installs` rows (130k rows held the API at its
-memory limit), so Install Health's top failing items and Software Risk's
-most-behind items show as unavailable beside their counts until the cards move
-to the cached `/api/v1/dashboard/insights` endpoint. Check-in failures and App Usage are fleet-wide;
-the API does not split them by platform.
+Every card comes from one request, `GET /api/v1/dashboard/insights?platform=all|macOS|Windows`,
+which the API computes in SQL and caches for five minutes. The dashboard asks
+again at most every five minutes and when the platform toggle changes, and never
+pulls the bulk reports (on 2026-10-22 clients doing that held the API at its
+memory limit). Cards show skeletons until the first answer. A card the server
+could not compute, or a failed request, shows its error with Retry, which asks
+again. Check-in counts and reasons cover every platform; the card says so when
+the toggle is set.
 
 ## Parity matrix
 
@@ -238,7 +242,7 @@ where the native counterpart lives.
 
 | Web page | Native view | Status |
 |---|---|---|
-| `/dashboard` (fleet status donut, error and warning counters, new clients, recent events with type filter, platform distribution with drill-downs and filters, macOS and Windows version donuts with drill-down) | `Views/Dashboard/DashboardView.swift`, `RecentEventsWidget.swift`, `InsightWidgets.swift` | Complete, plus the twelve insight cards of the shared widget spec (see Dashboard widgets and their links). The first four: System Health (uptime buckets, pending and deferred updates), Security Posture (encryption, firewall, antivirus, SIP, Secure Boot compliance, threats, expired certificates, critical CVEs), Management (MDM enrollment and providers) and Hardware (architecture, low storage, low memory, laptops), each built from the bulk report its page reads and linking to it. They load two at a time after the dashboard payload, retry once on a 5xx, and refresh every five minutes. Opens the Web PubSub event stream through `/negotiate` and shows Live, Reconnecting or Polling like the web page; polls every 30 s underneath either way. If the negotiate call fails or the hub is not configured the feed stays on polling. Version donuts link to the System report's OS version filter. |
+| `/dashboard` (fleet status donut, error and warning counters, new clients, recent events with type filter, platform distribution with drill-downs and filters, macOS and Windows version donuts with drill-down) | `Views/Dashboard/DashboardView.swift`, `RecentEventsWidget.swift`, `InsightWidgets.swift` | Complete, plus the twelve insight cards of the shared widget spec, read from the cached `/dashboard/insights` endpoint (see Dashboard widgets and their links). Opens the Web PubSub event stream through `/negotiate` and shows Live, Reconnecting or Polling like the web page; polls every 30 s underneath either way. If the negotiate call fails or the hub is not configured the feed stays on polling. Version donuts link to the System report's OS version filter. |
 | `/devices` (search, Selections accordion, sortable table, status and inventory pills, `?status=` from the dashboard) | `Views/Devices/DevicesView.swift` | Complete. Adds a Registered column. |
 | `/device/[serial]` header and tabs: Info, Installs, Applications, Hardware, Network, Security, Management (with logs), Identity, Peripherals, System, Events | `Views/Device/DeviceDetailView.swift`, `Views/Device/Tabs/*` | Complete for all tabs, including the management log viewer (MDM root first, structured line parsers for the convention, CMTrace, Intune daemon, Munki, syslog and ISO-stamped logs, level toggles with counts, tag pills, JSON tails as a tree, tool version with a fallback to the installs module), the security certificate and CVE tables, launchd and scheduled task tables, and the identity session analytics. |
 | `/events` (date range, kind chips with System and Info shown alone, search, infinite scroll, live refresh, expanded rows with run summary, details, raw payload copy and search) | `Views/Events/EventsView.swift`, `EventRows.swift` | Complete. |

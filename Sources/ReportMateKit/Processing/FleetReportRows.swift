@@ -318,6 +318,17 @@ public struct NetworkReportRow: Sendable, Hashable {
         return .unknown
     }
 
+    /// A Low network-quality rating (or, with no overall rating, a Low download or
+    /// upload rating), the rule the dashboard's Connectivity Problems card counts.
+    public var isPoorQuality: Bool {
+        let raw = json["raw"].isNull ? json["modules"]["network"] : json["raw"]
+        let nq = raw["networkQuality"]
+        guard nq.object != nil else { return false }
+        let rating = (nq["rating"].string ?? "").lowercased()
+        if !rating.isEmpty { return rating == "low" }
+        return (nq.firstString("dlRating", "dl_rating") ?? "").lowercased() == "low" || (nq.firstString("ulRating", "ul_rating") ?? "").lowercased() == "low"
+    }
+
     public var isWired: Bool { let ct = (info.connectionType ?? "").lowercased(); return ct.contains("ethernet") || ct.contains("wired") }
     public var isWireless: Bool { let ct = (info.connectionType ?? "").lowercased(); return ct.contains("wireless") || ct.contains("wifi") }
     public var ssid: String? { info.ssid ?? info.activeWifiSsid ?? info.raw["networkName"].nonEmptyString }
