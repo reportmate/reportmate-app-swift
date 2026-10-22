@@ -17,6 +17,7 @@ struct SystemReportView: View {
     @State private var licenseSources: Set<String> = []
     @State private var uptimeBuckets: Set<String> = []
     @State private var pendingBuckets: Set<String> = []
+    @State private var currencyCache = OSCurrencyCache()
 
     struct Bucket { let key: String; let label: String; let tone: Tone }
     static let uptimeBuckets: [(Bucket, ClosedRange<Double>)] = [
@@ -121,18 +122,38 @@ struct SystemReportView: View {
                     }
                 }
             },
-            widgets: { rows in widgets(rows) }
+            widgets: { rows in widgets(rows) },
+            linking: linking
         ) { rows in
             table(filtered(rows))
         }
-        .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
-            guard let link = appState.consumeDeepLink(for: .system) else { return }
-            osVersionFilter = link.query["osVersion"]
-        }
-        .onChange(of: osVersionFilter, initial: true) { _, v in appState.linkQuery = v.map { ["osVersion": $0] } ?? [:] }
         .onReceive(NotificationCenter.default.publisher(for: .systemVersionFilter)) { note in
             if let v = note.object as? String { osVersionFilter = v }
         }
+    }
+
+    /// OS version, uptime, pending and edition parameters select their widgets; deferred
+    /// updates, unsupported macOS, Windows 10 and "behind the latest patch" narrow the rows,
+    /// judged against every row the report loaded.
+    private var linking: ReportLinking {
+        var q: [String: String] = [:]
+        if let osVersionFilter { q["osVersion"] = osVersionFilter }
+        let up = uptimeBuckets.compactMap { SystemBuckets.uptime(label: $0)?.key }.sorted()
+        if !up.isEmpty { q["uptime"] = up.joined(separator: ",") }
+        let pend = pendingBuckets.compactMap { SystemBuckets.pending(label: $0)?.key }.sorted()
+        if !pend.isEmpty { q["pending"] = pend.joined(separator: ",") }
+        if !editions.isEmpty { q["edition"] = editions.sorted().joined(separator: ",") }
+        let cache = currencyCache
+        let all = model.rows
+        return ReportLinking(absorb: { f in
+            let versions = f.values("osVersion")
+            osVersionFilter = nil
+            activations = []; licenseSources = []
+            if versions.count == 1 { osVersionFilter = f.take("osVersion").first }
+            uptimeBuckets = Set(f.take("uptime").compactMap { SystemBuckets.uptime(key: $0)?.label })
+            pendingBuckets = Set(f.take("pending").compactMap { SystemBuckets.pending(key: $0)?.label })
+            editions = Set(f.take("edition"))
+        }, matches: { row, f in f.matches(system: SystemReportRow(json: row.json), currency: cache.currency(all)) }, widgetQuery: q)
     }
 
     // MARK: Widgets
@@ -321,5 +342,21 @@ struct OSVersionFilterWidget: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// The fleet's OS currency, worked out once per load of the report's rows.
+@MainActor
+final class OSCurrencyCache {
+    private var key: [String] = []
+    private var value = OSCurrency(rows: [])
+
+    func currency(_ rows: [ReportRow]) -> OSCurrency {
+        let k = [String(rows.count), rows.first?.id ?? "", rows.last?.id ?? ""]
+        if k != key {
+            value = OSCurrency(rows: rows.map { SystemReportRow(json: $0.json) })
+            key = k
+        }
+        return value
     }
 }

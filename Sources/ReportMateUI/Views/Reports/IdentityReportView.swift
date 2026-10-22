@@ -87,7 +87,8 @@ struct IdentityReportView: View {
                     filtered(rows).map { p in [p.row.deviceName, p.row.serialNumber, p.i.platformText, String(p.i.totalUsers), String(p.i.adminUsers), String(p.i.currentlyLoggedIn), p.row.json["lastSeen"].string ?? ""] }
                 }
             },
-            widgets: { rows in widgets(rows.map(i)) }
+            widgets: { rows in widgets(rows.map(i)) },
+            linking: ReportLinking(absorb: { _ in clearWidgetFilters() }, matches: { row, f in f.matches(identity: IdentityReportRow(json: row.json)) })
         ) { rows in
             let pairs = filtered(rows)
             VStack(spacing: 0) {

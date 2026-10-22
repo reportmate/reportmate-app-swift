@@ -70,10 +70,21 @@ struct HardwareReportView: View {
                     sorted(applyWidgetFilters(rows)).map { p in [p.row.deviceName, p.row.serialNumber, p.row.inventory.assetTag ?? "", p.hw.model, p.hw.processorGroup, p.hw.memoryText, p.hw.storageText.total, p.hw.architecture] }
                 }
             },
-            widgets: { rows in widgets(rows.map(hw)) }
+            widgets: { rows in widgets(rows.map(hw)) },
+            linking: linking
         ) { rows in
             table(sorted(applyWidgetFilters(rows)))
         }
+    }
+
+    /// `?processor=` selects the Processors widget; architecture family, low storage,
+    /// low memory and laptop or desktop narrow the rows.
+    private var linking: ReportLinking {
+        ReportLinking(absorb: { f in
+            clearWidgetFilters()
+            processors = Set(f.take("processor"))
+        }, matches: { row, f in f.matches(hardware: HardwareReportRow(json: row.json), platform: row.platform) },
+        widgetQuery: processors.isEmpty ? [:] : ["processor": processors.sorted().joined(separator: ",")])
     }
 
     private func widgets(_ all: [HardwareReportRow]) -> some View {

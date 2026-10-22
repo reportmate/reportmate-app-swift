@@ -120,12 +120,19 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
     var toolbar: ([ReportRow]) -> Toolbar
     var widgets: (([ReportRow]) -> Widgets)?
     var content: ([ReportRow]) -> Content
+    /// Link parameters (`?provider=Unmanaged`): the report reads them from a link,
+    /// hands the ones a widget shows to `absorbLink`, and narrows the rows by the
+    /// rest with `linkMatches`. `widgetLinkQuery` is the widget filters in link form,
+    /// so Copy Link carries every filter on screen.
+    var linking: ReportLinking? = nil
 
     init(section: AppSection, model: FleetReportModel, activeFilterCount: Int = 0, clearFilters: (() -> Void)? = nil, query: [String: String?] = [:], subtitle: String? = nil, searchPlaceholder: String = "Search…",
          searchKeys: @escaping (ReportRow) -> [String?] = { [$0.deviceName, $0.serialNumber, $0.inventory.assetTag] },
          @ViewBuilder toolbar: @escaping ([ReportRow]) -> Toolbar = { _ in EmptyView() },
          widgets: (([ReportRow]) -> Widgets)?,
+         linking: ReportLinking? = nil,
          @ViewBuilder content: @escaping ([ReportRow]) -> Content) {
+        self.linking = linking
         self.section = section
         self.model = model
         self.activeFilterCount = activeFilterCount
@@ -143,6 +150,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
     @State private var selections = DeviceSelections()
     @State private var filtersExpanded = false
     @State private var widgetsExpanded = true
+    @State private var linkFilter = ReportLinkFilter(report: "")
 
     private var summaries: [DeviceSummary] { model.rows.map(\.asDeviceSummary) }
 
@@ -159,6 +167,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
         var list = model.rows
         if appState.platformFilter != .all { list = list.filter { appState.platformFilter.includes($0.platform) } }
         if !selections.isEmpty { list = list.filter { selections.matches($0.asDeviceSummary) } }
+        if let linking, !linkFilter.isEmpty { let f = linkFilter; list = list.filter { linking.matches($0, f) } }
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
         if !q.isEmpty { list = list.filter { row in searchKeys(row).contains { $0?.lowercased().contains(q) ?? false } } }
         return list
@@ -176,11 +185,12 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
                 if model.loading { ProgressView().controlSize(.small) }
                 toolbar(rows)
                 // One button clears everything narrowing the rows: widget filters, selections and search.
-                let narrowing = activeFilterCount + selections.count + (search.isEmpty ? 0 : 1)
+                let narrowing = activeFilterCount + linkFilter.count + selections.count + (search.isEmpty ? 0 : 1)
                 if narrowing > 0 {
                     Button(narrowing == 1 ? "Clear Filter" : "Clear Filters (\(narrowing))") {
                         search = ""
                         selections.clear()
+                        linkFilter.params = [:]
                         clearFilters?()
                     }
                     .buttonStyle(.bordered).tint(.orange)
@@ -196,6 +206,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
             .overlay(alignment: .bottom) { Divider() }
+            if !linkFilter.isEmpty { linkFilterBar }
             DeviceFiltersView(options: DeviceFilterOptions(devices: summaries), selections: $selections, expanded: $filtersExpanded)
             if model.loading, model.rows.isEmpty {
                 LoadingView(message: "Loading \(section.title.lowercased()) report…")
@@ -235,6 +246,46 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
         .navigationTitle(section.title)
         .task(id: appState.configuration) { await model.load(api: appState.api, query: query) }
         .onChange(of: appState.refreshRequested) { _, _ in Task { await model.load(api: appState.api, query: query, force: true) } }
+        .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
+            guard let linking, let link = appState.consumeDeepLink(for: section) else { return }
+            var f = ReportLinkFilter(report: linking.report ?? section.rawValue, query: link.query)
+            linking.absorb(&f)
+            linkFilter = f
+        }
+        .onChange(of: linkQuery, initial: true) { _, q in if linking != nil { appState.linkQuery = q } }
+    }
+
+    /// The link form of every filter on screen.
+    private var linkQuery: [String: String] {
+        var q = linking?.widgetQuery ?? [:]
+        q.merge(linkFilter.params) { _, link in link }
+        return q
+    }
+
+    /// The filters a link brought, each removable on its own.
+    private var linkFilterBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal.decrease.circle").foregroundStyle(.secondary).accessibilityHidden(true)
+            FlowLayout(spacing: 6) {
+                ForEach(linkFilter.chips, id: \.key) { chip in
+                    Button { linkFilter.params[chip.key] = nil } label: {
+                        HStack(spacing: 4) {
+                            Text(chip.label).appFont(.caption, weight: .medium)
+                            Image(systemName: "xmark").appFont(.caption2)
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.accentColor.opacity(0.14), in: Capsule())
+                        .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove this filter")
+                    .accessibilityLabel("Remove filter \(chip.label)")
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
@@ -304,4 +355,16 @@ extension View {
     func reportWidgetWidth(_ width: CGFloat) -> some View {
         frame(minWidth: width, idealWidth: width, maxWidth: .infinity, alignment: .topLeading)
     }
+}
+
+/// How a report reads its link parameters. See `FleetReportContainer.linking`.
+struct ReportLinking {
+    /// The parameter set to read, when it differs from the section (`failures`).
+    var report: String? = nil
+    /// Moves parameters a widget shows into that widget's state.
+    var absorb: (inout ReportLinkFilter) -> Void = { _ in }
+    /// Whether a row passes the parameters left after `absorb`.
+    var matches: (ReportRow, ReportLinkFilter) -> Bool
+    /// The widget filters as link parameters.
+    var widgetQuery: [String: String] = [:]
 }

@@ -15,11 +15,14 @@ struct EventsView: View {
     @State private var mode: Mode = .feed
     @State private var model = EventsFeedModel()
     @State private var search = ""
+    /// A `/events/failures` link for the failures view to apply, and that view's filters in link form.
+    @State private var failuresLink: DeepLink?
+    @State private var failuresQuery: [String: String] = [:]
 
     private static let soloKinds: Set<EventKind> = [.system, .info]
 
     private var linkQuery: [String: String] {
-        if mode == .failures { return ["failures": "1"] }
+        if mode == .failures { return failuresQuery.merging(["failures": "1"]) { _, new in new } }
         var q: [String: String] = [:]
         if model.active != EventsFeedModel.defaultKinds { q["filter"] = model.active.map(\.rawValue).sorted().joined(separator: ",") }
         return q
@@ -77,7 +80,7 @@ struct EventsView: View {
 
             switch mode {
             case .feed: feed
-            case .failures: IngestFailuresView()
+            case .failures: IngestFailuresView(link: $failuresLink, linkQuery: $failuresQuery)
             }
         }
         .navigationTitle("Events")
@@ -94,7 +97,7 @@ struct EventsView: View {
         .onChange(of: model.active) { _, _ in model.scheduleReload(api: appState.api) }
         .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
             guard let link = appState.consumeDeepLink(for: .events) else { return }
-            if case .eventsFailures = link.target { mode = .failures; return }
+            if case .eventsFailures = link.target { mode = .failures; failuresLink = link; return }
             mode = .feed
             let kinds = (link.query["filter"] ?? "").split(separator: ",").compactMap { EventKind(rawValue: String($0).lowercased()) }
             if !kinds.isEmpty { model.active = Set(kinds) }
@@ -284,6 +287,10 @@ final class EventsFeedModel {
 /// turned away, grouped by reason, with the raw rows below.
 struct IngestFailuresView: View {
     @Environment(AppState.self) private var appState
+    /// `?hours=`, `?reason=` and `?outcome=` from a link, applied once and cleared.
+    @Binding var link: DeepLink?
+    /// The filters on screen, for Copy Link.
+    @Binding var linkQuery: [String: String]
     @State private var page: IngestFailuresPage?
     @State private var loading = false
     @State private var error: String?
@@ -389,6 +396,19 @@ struct IngestFailuresView: View {
             }
         }
         .task(id: "\(outcome)|\(hours)|\(reason ?? "")") { await load() }
+        .onChange(of: link, initial: true) { _, l in
+            guard let l else { return }
+            hours = Int(l.query["hours"] ?? "") ?? 168
+            outcome = l.query["outcome"] ?? "rejected"
+            reason = l.query["reason"]
+            link = nil
+        }
+        .onChange(of: "\(outcome)|\(hours)|\(reason ?? "")", initial: true) { _, _ in
+            var q = ["hours": String(hours)]
+            if outcome != "rejected" { q["outcome"] = outcome }
+            if let reason { q["reason"] = reason }
+            linkQuery = q
+        }
         .onChange(of: appState.refreshRequested) { _, _ in Task { await load() } }
     }
 

@@ -41,7 +41,12 @@ struct PeripheralsReportView: View {
             section: .peripherals, model: model, activeFilterCount: selectedKinds.count + (printerFilter == nil ? 0 : 1) + (usbTypeFilter == nil ? 0 : 1), clearFilters: { selectedKinds = []; printerFilter = nil; usbTypeFilter = nil }, subtitle: "USB, Bluetooth, and other connected devices", searchPlaceholder: "Search peripherals...",
             searchKeys: { row in [row.deviceName, row.serialNumber, PeripheralsReportRow(json: row.json).searchableText] },
             toolbar: { _ in EmptyView() },
-            widgets: { rows in widgets(base(rows).map(\.p)) }
+            widgets: { rows in widgets(base(rows).map(\.p)) },
+            linking: ReportLinking(absorb: { f in
+                printerFilter = nil; usbTypeFilter = nil
+                selectedKinds = Set(f.take("kind"))
+            }, matches: { row, f in f.matches(peripherals: PeripheralsReportRow(json: row.json), room: row.inventory.location) },
+            widgetQuery: selectedKinds.isEmpty ? [:] : ["kind": selectedKinds.sorted().joined(separator: ",")])
         ) { rows in
             VStack(spacing: 0) {
                 kindPills(rows)

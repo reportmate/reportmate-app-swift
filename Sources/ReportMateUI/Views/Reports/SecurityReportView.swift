@@ -91,7 +91,8 @@ struct SecurityReportView: View {
                     }
                 }, label: "Export")
             },
-            widgets: { rows in widgets(rows.map(s)) }
+            widgets: { rows in widgets(rows.map(s)) },
+            linking: linking
         ) { rows in
             VStack(spacing: 0) {
                 ActiveFiltersBar(labels: widgetFilters, clear: clearWidgetFilters)
@@ -99,6 +100,42 @@ struct SecurityReportView: View {
                 table(filtered(rows))
             }
         }
+    }
+
+    /// Link parameters that match a donut select it; the rest (antivirus, SIP, Secure Boot,
+    /// expiring certificates, exploited CVEs) narrow the rows. `certSearch` runs the
+    /// certificate search and filters the table to that certificate.
+    private var linking: ReportLinking {
+        var q: [String: String] = [:]
+        if encryptionFilter == "Not Encrypted" { q["encryption"] = "off" }
+        if firewallFilter == "Disabled" { q["firewall"] = "off" }
+        if detectionFilter == "Threats Detected" { q["threats"] = "1" }
+        if certFilter == "Has Expired" { q["certs"] = "expired" }
+        if cveFilter == "Critical" { q["cve"] = "critical" }
+        if let selectedCertName {
+            q["certSearch"] = selectedCertName
+            if certStatus != "all" { q["certStatus"] = certStatus }
+        }
+        return ReportLinking(absorb: { f in
+            clearWidgetFilters()
+            selectedCertName = nil
+            if f.params["encryption"] == "off" { _ = f.take("encryption"); encryptionFilter = "Not Encrypted" }
+            if f.params["firewall"] == "off" { _ = f.take("firewall"); firewallFilter = "Disabled" }
+            if f.params["threats"] == "1" { _ = f.take("threats"); detectionFilter = "Threats Detected" }
+            if f.params["certs"] == "expired" { _ = f.take("certs"); certFilter = "Has Expired" }
+            if f.params["cve"] == "critical" { _ = f.take("cve"); cveFilter = "Critical" }
+            let name = f.take("certSearch").joined(separator: ",")
+            let status = f.take("certStatus").first
+            if !name.isEmpty {
+                certQuery = name
+                certStatus = status ?? "all"
+                certSearchExpanded = true
+                Task {
+                    await searchCertificates()
+                    selectedCertName = certGroups.first { $0.commonName == name }?.commonName ?? certGroups.first?.commonName
+                }
+            }
+        }, matches: { row, f in f.matches(security: SecurityReportRow(json: row.json, platform: row.platform)) }, widgetQuery: q)
     }
 
     private func donutData(_ all: [SecurityReportRow], _ label: (SecurityReportRow) -> String) -> [(label: String, value: Int)] {

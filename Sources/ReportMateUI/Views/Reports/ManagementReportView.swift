@@ -51,13 +51,28 @@ struct ManagementReportView: View {
                     filtered(rows).map { p in [p.row.deviceName, p.row.serialNumber, p.row.inventory.assetTag ?? "", p.m.provider, p.m.enrollmentStatus, p.m.enrollmentType, p.row.inventory.usage ?? "", p.row.inventory.catalog ?? "", p.row.inventory.location ?? ""] }
                 }
             },
-            widgets: { rows in widgets(rows.map(m)) }
+            widgets: { rows in widgets(rows.map(m)) },
+            linking: linking
         ) { rows in
             VStack(spacing: 0) {
                 ActiveFiltersBar(labels: widgetFilters) { providerFilter = nil; statusFilter = nil; typeFilter = nil }
                 table(filtered(rows))
             }
         }
+    }
+
+    /// `?provider=` and `?enrollmentType=` select the widget rows; `?enrolled=` narrows the rows.
+    private var linking: ReportLinking {
+        var q: [String: String] = [:]
+        if let providerFilter { q["provider"] = providerFilter }
+        if let typeFilter { q["enrollmentType"] = typeFilter }
+        return ReportLinking(absorb: { f in
+            providerFilter = nil; typeFilter = nil; statusFilter = nil
+            let providers = f.values("provider")
+            if providers.count == 1 { providerFilter = f.take("provider").first }
+            let types = f.values("enrollmentType")
+            if types.count == 1 { typeFilter = f.take("enrollmentType").first }
+        }, matches: { row, f in f.matches(management: ManagementReportRow(json: row.json)) }, widgetQuery: q)
     }
 
     private func widgets(_ all: [ManagementReportRow]) -> some View {

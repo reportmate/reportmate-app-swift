@@ -34,6 +34,9 @@ final class InstallsReportModel {
     var itemsStatusFilter: InstallItems.Category?
     var deviceStatusFilter: DeviceStatus?
     var installStatusFilter: InstallStatusClass?
+    /// `?stale=1`: only devices whose agent has been silent for over a week.
+    var staleOnly = false
+    var staleSerials: Set<String> { InstallsStale.serials(filters.staleAgents) }
     var statusView: StatusView = .devices
     var widgetsExpanded = true
     var selectionsExpanded = false
@@ -157,6 +160,7 @@ final class InstallsReportModel {
         searchQuery = ""
         itemsStatusFilter = nil
         widgetsExpanded = true
+        staleOnly = false
     }
 
     func toggleInstall(_ name: String) {
@@ -211,7 +215,9 @@ final class InstallsReportModel {
     /// `filteredConfigData` before sorting.
     func filteredConfigRows(_ platform: PlatformFilter) -> [ConfigReportRow] {
         let q = searchQuery.lowercased()
+        let stale = staleOnly ? staleSerials : nil
         return configRows(platform).filter { row in
+            if let stale, !stale.contains(row.serialNumber) { return false }
             if let f = deviceStatusFilter, InstallsReport.deviceStatus(lastSeen: row.lastSeen) != f { return false }
             if let f = installStatusFilter, row.count(for: f) == 0 { return false }
             if !matchesWidgets(row) { return false }

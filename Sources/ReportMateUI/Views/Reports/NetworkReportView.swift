@@ -58,10 +58,27 @@ struct NetworkReportView: View {
                     }
                 }
             },
-            widgets: { rows in widgets(rows.map(n)) }
+            widgets: { rows in widgets(rows.map(n)) },
+            linking: linking
         ) { rows in
             table(filtered(rows))
         }
+    }
+
+    /// `?connection=wired|wifi` selects the Wired or Wireless pill; `?signal=weak` narrows the rows.
+    private var linking: ReportLinking {
+        var q: [String: String] = [:]
+        if connection == .wired { q["connection"] = "wired" }
+        if connection == .wireless { q["connection"] = "wifi" }
+        return ReportLinking(absorb: { f in
+            speedFilter = nil
+            connection = nil
+            let c = f.values("connection")
+            if c.count == 1, let only = c.first?.lowercased(), only == "wired" || only == "wifi" {
+                _ = f.take("connection")
+                connection = only == "wired" ? .wired : .wireless
+            }
+        }, matches: { row, f in f.matches(network: NetworkReportRow(json: row.json)) }, widgetQuery: q)
     }
 
     private func widgets(_ all: [NetworkReportRow]) -> some View {

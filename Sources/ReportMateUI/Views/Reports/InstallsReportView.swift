@@ -33,7 +33,12 @@ struct InstallsReportView: View {
         var q: [String: String] = [:]
         switch model.itemsStatusFilter { case .error: q["filter"] = "errors"; case .warning: q["filter"] = "warnings"; case .pending: q["filter"] = "pending"; case .success: q["filter"] = "success"; case nil: break }
         if model.statusView == .messages, model.itemsStatusFilter != nil { q["view"] = "messages" }
-        if !model.selectedInstalls.isEmpty { q["items"] = model.selectedInstalls.joined(separator: ",") }
+        if model.selectedInstalls.count == 1, let item = model.selectedInstalls.first { q["item"] = item }
+        else if !model.selectedInstalls.isEmpty { q["items"] = model.selectedInstalls.joined(separator: ",") }
+        if !model.installs.isEmpty, q["filter"] == nil {
+            switch model.installStatusFilter { case .error: q["filter"] = "errors"; case .warning: q["filter"] = "warnings"; default: break }
+        }
+        if model.staleOnly { q["stale"] = "1" }
         if !model.selections.catalogs.isEmpty { q["catalogs"] = model.selections.catalogs.sorted().joined(separator: ",") }
         if !model.selections.usages.isEmpty { q["usages"] = model.selections.usages.sorted().joined(separator: ",") }
         if !model.searchQuery.isEmpty { q["q"] = model.searchQuery }
@@ -58,6 +63,7 @@ struct InstallsReportView: View {
                         DeviceFiltersView(options: model.filterOptions(platform), selections: $m.selections, expanded: $m.selectionsExpanded)
                         if model.isGeneratingReport { itemPicker }
                         if !model.isGeneratingReport { searchRow }
+                        if model.staleOnly, model.isConfigReport { staleBar }
                         if model.loading { reportProgress }
                         if !model.loading, model.hasGeneratedReport, model.installs.isEmpty, !model.isConfigReport { noResults }
                         if !model.installs.isEmpty, !model.isConfigReport { installsTable }
@@ -76,17 +82,25 @@ struct InstallsReportView: View {
         .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
             guard let link = appState.consumeDeepLink(for: .installs) else { return }
             model.searchQuery = link.query["q"] ?? ""
-            model.selectStatus(Self.category(link.query["filter"]))
+            model.staleOnly = link.query["stale"] == "1"
+            // `item` (the dashboard's top-item links) opens that item's report, where
+            // `filter` narrows the records rather than opening the status drill-down.
+            let item = link.query["item"]
+            let itemStatus: InstallStatusClass? = item == nil ? nil : link.query["filter"] == "errors" ? .error : link.query["filter"] == "warnings" ? .warning : nil
+            model.selectStatus(item == nil ? Self.category(link.query["filter"]) : nil)
             model.statusView = link.query["view"] == "messages" ? .messages : .devices
             // items, catalogs and usages take comma-separated lists; fleets stays
             // unbound because the installs rows never carry one.
             func list(_ key: String) -> [String] { (link.query[key] ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
-            let items = list("items"), catalogs = list("catalogs"), usages = list("usages")
+            let items = list("items") + list("item"), catalogs = list("catalogs"), usages = list("usages")
             if !items.isEmpty || !catalogs.isEmpty || !usages.isEmpty {
                 model.selectedInstalls = items
                 model.selections.catalogs = Set(catalogs)
                 model.selections.usages = Set(usages)
-                Task { await model.generateReport(api: appState.api) }
+                Task {
+                    await model.generateReport(api: appState.api)
+                    if let itemStatus { model.installStatusFilter = itemStatus }
+                }
             }
             if model.itemsStatusFilter != nil { model.selectionsExpanded = false }
         }
@@ -98,6 +112,26 @@ struct InstallsReportView: View {
             model.selectStatus(category)
             model.selectionsExpanded = false
         }
+    }
+
+    /// The `?stale=1` filter as a removable chip.
+    private var staleBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal.decrease.circle").foregroundStyle(.secondary).accessibilityHidden(true)
+            Button { model.staleOnly = false } label: {
+                HStack(spacing: 4) {
+                    Text(ReportLinkFilter.label(key: "stale", value: "1") + " (\(model.staleSerials.count))").appFont(.caption, weight: .medium)
+                    Image(systemName: "xmark").appFont(.caption2)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Color.accentColor.opacity(0.14), in: Capsule())
+                .foregroundStyle(Color.accentColor)
+            }
+            .buttonStyle(.plain)
+            .help("Remove this filter")
+            Spacer()
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
     }
 
     // MARK: Header
