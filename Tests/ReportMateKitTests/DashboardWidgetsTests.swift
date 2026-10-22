@@ -507,3 +507,35 @@ let appUsageEnvelope = #"""
         #expect(IdentityDirectory.label("domain") == "Domain Joined")
     }
 }
+
+@Suite struct MacSecuritySpellingTests {
+    private func info(_ security: String) -> SecurityInfo {
+        SecurityInfo(modules: json(#"{"security": \#(security)}"#), platform: .macOS)
+    }
+
+    @Test func readsTheMacClientsSpellings() {
+        let client = info(#"""
+        {"firewall": {"stealthModeEnabled": true, "allowSignedEnabled": true},
+         "securityReleaseInfo": {"updateName": "macOS 26.4", "osVersion": "26.4"},
+         "unpatchedCVEs": [{"cve": "CVE-2026-0001", "activelyExploited": true}, "CVE-2026-0002"]}
+        """#)
+        #expect(client.firewallStealthMode)
+        #expect(client.firewallAllowsSigned)
+        #expect(client.sofaRelease?.updateName == "macOS 26.4")
+        #expect(client.cves.filter { $0.source == .sofa }.map(\.cve) == ["CVE-2026-0001", "CVE-2026-0002"])
+        #expect(client.cves.first?.activelyExploited == true)
+        #expect(client.cves.last?.osVersion == "26.4")
+    }
+
+    @Test func stillReadsTheWebSpellings() {
+        let web = info(#"""
+        {"firewall": {"stealthMode": true, "allowSignedSoftware": false},
+         "sofaSecurityReleaseInfo": {"updateName": "macOS 26.5"},
+         "sofaUnpatchedCves": [{"cve": "CVE-2026-0003"}]}
+        """#)
+        #expect(web.firewallStealthMode)
+        #expect(!web.firewallAllowsSigned)
+        #expect(web.sofaRelease?.updateName == "macOS 26.5")
+        #expect(web.cves.map(\.cve).contains("CVE-2026-0003"))
+    }
+}

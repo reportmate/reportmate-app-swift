@@ -445,9 +445,9 @@ struct SecurityTabView: View {
         return card("Firewall", icon: "square.grid.3x3", tone: .blue) {
             if s.isMac {
                 status("Global State", s.firewallEnabled, on: "On", off: "Off", severity: s.severity("firewall", s.firewallEnabled))
-                status("Stealth Mode", SecurityInfo.on(fw["stealthMode"]), neutral: true)
+                status("Stealth Mode", s.firewallStealthMode, neutral: true)
                 status("Logging", SecurityInfo.on(fw["loggingEnabled"]), neutral: true)
-                status("Allow Signed Apps", SecurityInfo.on(fw["allowSignedSoftware"]), on: "Allowed", off: "Blocked", neutral: true)
+                status("Allow Signed Apps", s.firewallAllowsSigned, on: "Allowed", off: "Blocked", neutral: true)
             } else {
                 groupTitle("Windows Firewall")
                 row("Profile", fw["profile"].nonEmptyString ?? "Domain/Private/Public")

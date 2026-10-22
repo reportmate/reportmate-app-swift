@@ -44,6 +44,15 @@ public struct SecurityInfo: Sendable, Hashable {
     }
     public var sipEnabled: Bool { SecurityInfo.on(security["systemIntegrityProtection"]["enabled"]) }
     public var gatekeeperEnabled: Bool { SecurityInfo.on(security["gatekeeper"]["enabled"]) }
+    // The Mac client spells four security keys differently from what the web app reads
+    // (stealthModeEnabled, allowSignedEnabled, securityReleaseInfo, unpatchedCVEs); each
+    // lookup takes both spellings, as the Windows app's reader does.
+
+    /// The Mac firewall's stealth mode (`stealthMode`, or the client's `stealthModeEnabled`).
+    public var firewallStealthMode: Bool { SecurityInfo.on(security["firewall"].first("stealthMode", "stealthModeEnabled", "stealth_mode")) }
+    /// Whether signed software is allowed (`allowSignedSoftware`, or the client's `allowSignedEnabled`).
+    public var firewallAllowsSigned: Bool { SecurityInfo.on(security["firewall"].first("allowSignedSoftware", "allowSignedEnabled", "allow_signed_software")) }
+
     public var firewallEnabled: Bool {
         let fw = security["firewall"]
         if fw["isEnabled"].boolish || SecurityInfo.on(fw["enabled"]) { return true }
@@ -149,7 +158,7 @@ public struct SecurityInfo: Sendable, Hashable {
     }
 
     public var sofaRelease: SofaRelease? {
-        let r = security.first("sofaSecurityReleaseInfo", "sofa_security_release_info")
+        let r = security.first("sofaSecurityReleaseInfo", "securityReleaseInfo", "sofa_security_release_info", "security_release_info")
         guard !r.isNull else { return nil }
         return SofaRelease(updateName: r.firstString("updateName", "update_name"), releaseDate: r.firstString("releaseDate", "release_date"),
                            daysSincePreviousRelease: r.first("daysSincePreviousRelease", "days_since_previous_release").int,
@@ -159,9 +168,15 @@ public struct SecurityInfo: Sendable, Hashable {
 
     public var cves: [CVE] {
         var out: [CVE] = []
-        let sofa = security.first("sofaUnpatchedCves", "sofa_unpatched_cves").elements
+        let sofa = security.first("sofaUnpatchedCves", "unpatchedCVEs", "unpatchedCves", "sofa_unpatched_cves", "unpatched_cves").elements
         let release = sofaRelease
         for c in sofa {
+            // The client may list bare CVE ids.
+            if let id = c.string {
+                out.append(CVE(cve: id, osVersion: release?.osVersion ?? "", patchedVersion: "", activelyExploited: false, severity: nil, url: nil,
+                               source: .sofa, status: "Unpatched", installedDate: nil, kbArticle: nil))
+                continue
+            }
             let exploited = c.first("activelyExploited", "actively_exploited")
             out.append(CVE(cve: c.firstString("cve", "cveId", "cve_id") ?? "Unknown",
                            osVersion: c.firstString("osVersion", "os_version") ?? release?.osVersion ?? "",
