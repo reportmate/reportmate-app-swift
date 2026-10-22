@@ -296,6 +296,8 @@ struct InsightDonut: View {
     var center: String? = nil
 
     var body: some View {
+        // A zero slice is not shown, in the ring or the legend.
+        let data = data.filter { $0.count > 0 }
         let total = data.reduce(0) { $0 + $1.count }
         HStack(alignment: .center, spacing: 14) {
             ZStack {

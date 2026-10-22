@@ -74,9 +74,9 @@ struct ProtectionGapsCard: View {
     var body: some View {
         InsightCard(key: "protectionGaps", title: "Protection Gaps", subtitle: "Devices missing a protection, worst first", systemImage: "lock.trianglebadge.exclamationmark", tone: .red, link: DashboardLinks.report("security")) { c in
             VStack(alignment: .leading, spacing: 12) {
-                let gaps = c.items("gaps")
+                let gaps = c.items("gaps").filter { $0.count > 0 }
                 if gaps.isEmpty {
-                    Text("No protection data reported").appFont(.caption).foregroundStyle(.secondary)
+                    Text(c.items("gaps").isEmpty ? "No protection data reported" : "No device is missing a protection").appFont(.caption).foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(gaps) { g in
@@ -167,7 +167,7 @@ struct StorageCard: View {
                 let low = c.item("lowStorage")
                 HStack(alignment: .top, spacing: 8) {
                     InsightFigure(value: low?.count, label: "under 10% free", tone: .red, link: low?.link)
-                    ForEach(low?.items("byPlatform") ?? []) { p in
+                    ForEach((low?.items("byPlatform") ?? []).filter { $0.count > 0 }) { p in
                         InsightFigure(value: p.count, label: "\(p.name ?? "") under 10%", tone: .orange, link: p.link)
                     }
                 }
@@ -267,7 +267,7 @@ struct InstallHealthCard: View {
     private func details(_ c: InsightCardData?) -> some View {
         if let c {
             // Munki against Cimian: devices with errors and warnings, then items.
-            let agents = c.items("byAgent")
+            let agents = c.items("byAgent").filter { ($0.int("devices") ?? 0) > 0 }
             if !agents.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(agents) { a in
@@ -296,7 +296,7 @@ struct InstallHealthCard: View {
                 StatChip(value: pending?.int("items") ?? 0, label: "pending on \(pending?.int("devices") ?? 0) devices", tone: .blue, link: pending?.link)
                 StatChip(value: silent?.count ?? 0, label: "agents silent over \(silent?.int("thresholdDays") ?? 7) days", tone: .orange, link: silent?.link)
             }
-            let top = c.items("topFailing")
+            let top = c.items("topFailing").filter { $0.count > 0 }
             VStack(alignment: .leading, spacing: 2) {
                 InsightHeading("Top failing items")
                 if top.isEmpty {
@@ -336,7 +336,7 @@ struct CheckInGapsCard: View {
                 if c.bool("checkinsAllPlatforms"), platform != .all {
                     Text("Check-ins and reasons cover all platforms.").appFont(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)
                 }
-                let reasons = c.items("reasons")
+                let reasons = c.items("reasons").filter { $0.count > 0 }
                 if !reasons.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         InsightHeading("Reasons")
@@ -382,7 +382,7 @@ struct UpdateDebtCard: View {
                     StatChip(value: c.count("unsupportedMac") ?? 0, label: "unsupported macOS", tone: .red, link: c.item("unsupportedMac")?.link)
                     StatChip(value: c.count("windows10") ?? 0, label: "on Windows 10", tone: .orange, link: c.item("windows10")?.link)
                 }
-                let lagging = c.items("lagging")
+                let lagging = c.items("lagging").filter { $0.count > 0 }
                 if !lagging.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         InsightHeading("Most common lagging versions")
@@ -408,7 +408,7 @@ struct SoftwareRiskCard: View {
                     InsightFigure(value: c.count("criticalCves"), label: "devices with critical CVEs", tone: .red, link: c.item("criticalCves")?.link)
                     InsightFigure(value: c.count("exploitedCves"), label: "with actively exploited CVEs", tone: .red, link: c.item("exploitedCves")?.link)
                 }
-                let behind = c.items("itemsBehind")
+                let behind = c.items("itemsBehind").filter { $0.count > 0 }
                 VStack(alignment: .leading, spacing: 2) {
                     InsightHeading("Most devices behind")
                     if behind.isEmpty {
@@ -496,7 +496,7 @@ struct DirectoryServicesCard: View {
             // API sent three views, of which the toggle picks one.
             let section = c.json["segments"].array != nil ? InsightItem(json: c.json)
                 : InsightItem(json: c.json["views"][platform == .macOS ? "mac" : platform == .windows ? "windows" : "all"])
-            let segments = section.items("segments")
+            let segments = section.items("segments").filter { $0.count > 0 }
             VStack(alignment: .leading, spacing: 12) {
                 if segments.isEmpty {
                     Text("No directory data reported").appFont(.caption).foregroundStyle(.secondary)
@@ -505,7 +505,7 @@ struct DirectoryServicesCard: View {
                                  center: "\(section.int("total") ?? section.int("devices") ?? segments.reduce(0) { $0 + $1.count })")
                     // Domain Joined's trust breakdown, as the identity report expands it.
                     ForEach(segments) { s in
-                        let parts = s.items("children")
+                        let parts = s.items("children").filter { $0.count > 0 }
                         if !parts.isEmpty {
                             VStack(alignment: .leading, spacing: 2) {
                                 InsightHeading("\(s.label ?? s.key ?? "") trust")
@@ -536,7 +536,7 @@ struct UserAccountsCard: View {
         InsightCard(key: "userAccounts", title: "User Accounts", subtitle: "Authentication and administrator accounts", systemImage: AppSection.identity.systemImage, tone: .indigo, link: DashboardLinks.report("identity")) { c in
             VStack(alignment: .leading, spacing: 12) {
                 // The authentication split, as a list or as {segments: […]}.
-                let auth = c.items("authentication") + (c.item("authentication")?.items("segments") ?? []) + c.items("auth")
+                let auth = (c.items("authentication") + (c.item("authentication")?.items("segments") ?? []) + c.items("auth")).filter { $0.count > 0 }
                 if !auth.isEmpty {
                     InsightDonut(data: auth.map { s in
                         InsightSlice(label: s.label ?? s.key?.capitalized ?? "", count: s.count,
@@ -544,7 +544,7 @@ struct UserAccountsCard: View {
                                      link: s.link ?? s.key.map { DashboardLinks.report("identity", ["auth": $0.lowercased()]) })
                     }, center: c.int("total").map(String.init))
                 }
-                let admins = Array((c.items("topAdmins") + c.items("adminAccounts") + c.items("admins")).prefix(5))
+                let admins = Array((c.items("topAdmins") + c.items("adminAccounts") + c.items("admins")).filter { $0.count > 0 }.prefix(5))
                 if !admins.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         InsightHeading("Administrator accounts")
