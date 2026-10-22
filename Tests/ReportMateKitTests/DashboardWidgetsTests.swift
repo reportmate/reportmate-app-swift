@@ -454,3 +454,56 @@ let appUsageEnvelope = #"""
         #expect(ReportLinkFilter.label(key: "directory", value: "cloud-joined") == "Directory: Cloud Joined")
     }
 }
+
+@Suite struct DirectoryServicesCardTests {
+    /// The final `directoryServices` card the web and Windows apps read.
+    let card = InsightCardData(json: json(#"""
+    {"generatedAt": "2026-10-22T17:00:00+00:00", "total": 900,
+     "segments": [
+       {"key": "cloud", "label": "Cloud Joined", "count": 500, "link": {"path": "/identity", "params": {"directory": "cloud"}}},
+       {"key": "domain", "label": "Domain Joined", "count": 60, "link": {"path": "/identity", "params": {"directory": "domain"}},
+        "children": [
+          {"key": "trusted", "label": "Trusted", "count": 40, "link": {"path": "/identity", "params": {"directory": "trusted"}}},
+          {"key": "unconfirmed", "label": "Unconfirmed", "count": 15, "link": {"path": "/identity", "params": {"directory": "unconfirmed"}}},
+          {"key": "broken", "label": "Broken", "count": 5, "link": {"path": "/identity", "params": {"directory": "broken"}}}]},
+       {"key": "standard", "label": "Standard", "count": 300, "link": {"path": "/identity", "params": {"directory": "standard"}}},
+       {"key": "unjoined", "label": "Unjoined", "count": 40, "link": {"path": "/identity", "params": {"directory": "unjoined"}}}],
+     "extraAdmins": {"count": 488, "link": {"path": "/identity", "params": {"admins": "extra"}}},
+     "shared": {"count": 538, "link": {"path": "/identity", "params": {"usage": "shared"}}},
+     "assigned": {"count": 342, "link": {"path": "/identity", "params": {"usage": "assigned"}}}}
+    """#))
+
+    @Test func readsSegmentsChildrenAndChips() {
+        #expect(card.error == nil)
+        #expect(card.int("total") == 900)
+        let segments = card.items("segments")
+        #expect(segments.map(\.key) == ["cloud", "domain", "standard", "unjoined"])
+        #expect(segments.map(\.count).reduce(0, +) == 900)
+        let domain = segments[1]
+        #expect(domain.items("children").map(\.key) == ["trusted", "unconfirmed", "broken"])
+        #expect(domain.items("children").map(\.count).reduce(0, +) == domain.count)
+        #expect(domain.items("children").last?.link?.url.absoluteString == "reportmate://identity?directory=broken")
+        #expect(card.item("extraAdmins")?.count == 488)
+        #expect(card.item("shared")?.link?.query == ["usage": "shared"])
+        #expect(card.item("assigned")?.count == 342)
+    }
+
+    @Test func everyLinkFiltersTheIdentityReport() {
+        let cloud = IdentityReportRow(json: json(#"{"directoryServices": {"azureAd": {"joined": true}}}"#))
+        let broken = IdentityReportRow(json: json(#"{"directoryServices": {"activeDirectory": {"bound": true}}, "domainTrust": {"trustStatus": "Broken"}}"#))
+        let trusted = IdentityReportRow(json: json(#"{"directoryServices": {"activeDirectory": {"bound": true}}, "domainTrust": {"trustStatus": "Healthy"}}"#))
+        let standard = IdentityReportRow(json: json(#"{}"#))
+        let unjoined = IdentityReportRow(json: json(#"{"directoryServices": {"workgroup": "WORKGROUP"}}"#))
+        let rows = [cloud, broken, trusted, standard, unjoined]
+        func count(_ link: DeepLink?) -> Int {
+            guard let link else { return -1 }
+            let f = ReportLinkFilter(report: "identity", query: link.query)
+            return rows.filter { f.matches(identity: $0, platform: .windows) }.count
+        }
+        let segments = card.items("segments")
+        #expect(segments.map { count($0.link) } == [1, 2, 1, 1])
+        #expect(segments[1].items("children").map { count($0.link) } == [1, 0, 1])
+        #expect(ReportLinkFilter.label(key: "directory", value: "cloud") == "Directory: Cloud Joined")
+        #expect(IdentityDirectory.label("domain") == "Domain Joined")
+    }
+}

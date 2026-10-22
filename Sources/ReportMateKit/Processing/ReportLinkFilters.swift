@@ -510,10 +510,19 @@ public enum MacDirectory: String, Sendable, CaseIterable {
 
 /// `?directory=` values: the Identity report's Directory Services classes (Cloud
 /// Joined, Domain Joined, Standard, Unjoined) and Domain Joined's trust states
-/// (Trusted, Unconfirmed, Broken), as labels or kebab keys, and the earlier Mac
+/// (Trusted, Unconfirmed, Broken), as labels, kebab keys or the API's keys (cloud, domain,
+/// standard, unjoined, trusted, unconfirmed, broken), and the earlier Mac
 /// keys (psso, bound, unbound).
 public enum IdentityDirectory {
-    static func fold(_ s: String) -> String { s.lowercased().filter { $0.isLetter } }
+    /// Lower-cased letters only, with the API's short keys (`cloud`, `domain`) widened to the classes.
+    static func fold(_ s: String) -> String {
+        let f = s.lowercased().filter { $0.isLetter }
+        switch f {
+        case "cloud": return "cloudjoined"
+        case "domain": return "domainjoined"
+        default: return f
+        }
+    }
 
     /// The identity report's widget label for a key, when it names one.
     public static func label(_ key: String) -> String? {

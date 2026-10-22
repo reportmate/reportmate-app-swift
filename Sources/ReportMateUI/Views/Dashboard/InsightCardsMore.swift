@@ -456,6 +456,7 @@ struct DirectoryServicesCard: View {
 
     private static let colors: [String: Color] = [
         "cloud joined": .green, "domain joined": .orange, "standard": .blue, "unjoined": .red,
+        "cloud": .green,
         "trusted": .yellow, "unconfirmed": .orange, "broken": .red,
         // The API's earlier keys.
         "entra": .green, "domain": .orange, "hybrid": .teal, "workgroup": .red, "psso": .green, "bound": .orange, "unbound": .red,
@@ -477,10 +478,10 @@ struct DirectoryServicesCard: View {
                     Text("No directory data reported").appFont(.caption).foregroundStyle(.secondary)
                 } else {
                     InsightDonut(data: segments.map { InsightSlice(label: $0.label ?? $0.key ?? "", count: $0.count, color: color($0), link: $0.link) },
-                                 center: "\(section.int("devices") ?? segments.reduce(0) { $0 + $1.count })")
+                                 center: "\(section.int("total") ?? section.int("devices") ?? segments.reduce(0) { $0 + $1.count })")
                     // Domain Joined's trust breakdown, as the identity report expands it.
                     ForEach(segments) { s in
-                        let parts = s.items("breakdown") + s.items("children") + s.items("trust")
+                        let parts = s.items("children")
                         if !parts.isEmpty {
                             VStack(alignment: .leading, spacing: 2) {
                                 InsightHeading("\(s.label ?? s.key ?? "") trust")
