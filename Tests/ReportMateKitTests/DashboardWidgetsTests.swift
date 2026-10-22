@@ -735,3 +735,26 @@ let appUsageEnvelope = #"""
         #expect(link?.query["message"] == "a1b2c3d4e5f6")
     }
 }
+
+@Suite struct CSVInjectionTests {
+    @Test func formulaStartsAreDefused() {
+        #expect(CSVText.cell("=HYPERLINK(\"http://x\",\"y\")") == "\"'=HYPERLINK(\"\"http://x\"\",\"\"y\"\")\"")
+        #expect(CSVText.cell("+1+1") == "\"'+1+1\"")
+        #expect(CSVText.cell("-2+3") == "\"'-2+3\"")
+        #expect(CSVText.cell("@SUM(A1)") == "\"'@SUM(A1)\"")
+        #expect(CSVText.cell("\tcmd") == "\"'\tcmd\"")
+        #expect(CSVText.cell("\rcmd") == "\"'\rcmd\"")
+    }
+
+    @Test func ordinaryValuesAreOnlyQuoted() {
+        #expect(CSVText.cell("SAMPLE1") == "\"SAMPLE1\"")
+        #expect(CSVText.cell("Lab \"A\"") == "\"Lab \"\"A\"\"\"")
+        #expect(CSVText.cell("a=b") == "\"a=b\"")
+        #expect(CSVText.cell("") == "\"\"")
+    }
+
+    @Test func everyCellOfAnExportGoesThroughIt() {
+        let text = CSVText.encode(headers: ["Device", "Tool"], rows: [["=cmd|' /C calc'!A0", "Munki"], ["SAMPLE2", "@x"]])
+        #expect(text == "\"Device\",\"Tool\"\n\"'=cmd|' /C calc'!A0\",\"Munki\"\n\"SAMPLE2\",\"'@x\"")
+    }
+}

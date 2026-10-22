@@ -24,11 +24,20 @@ public enum ChipNames {
     }
 }
 
-/// Builds CSV text the way the web export buttons do.
+/// Builds CSV text the way the web export buttons do. Every cell goes through `cell`,
+/// the app's only CSV writer, because the cells are device-reported text.
 public enum CSVText {
     public static func encode(headers: [String], rows: [[String]]) -> String {
-        func esc(_ s: String) -> String { "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
-        return ([headers.map(esc).joined(separator: ",")] + rows.map { $0.map(esc).joined(separator: ",") }).joined(separator: "\n")
+        ([headers.map(cell).joined(separator: ",")] + rows.map { $0.map(cell).joined(separator: ",") }).joined(separator: "\n")
+    }
+
+    /// One quoted CSV cell, safe to open in a spreadsheet. A value starting with `=`, `+`,
+    /// `-`, `@`, a tab or a carriage return would run as a formula there (a device can
+    /// name itself `=HYPERLINK(…)`), so it gets a leading `'`; quotes are doubled.
+    public static func cell(_ value: String) -> String {
+        var v = value
+        if let first = v.unicodeScalars.first, ["=", "+", "-", "@", "\t", "\r"].contains(Character(first)) { v = "'" + v }
+        return "\"" + v.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 
     public static func dateStamp(_ date: Date = Date()) -> String {
