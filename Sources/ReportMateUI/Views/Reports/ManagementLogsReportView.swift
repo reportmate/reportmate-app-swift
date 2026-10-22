@@ -344,7 +344,7 @@ struct ManagementViewSwitch: View {
             appState.pages.managementMode = mode
         })) {
             Text("Enrollment").tag(PageModels.ManagementMode.enrollment)
-            Text("Tools Logs").tag(PageModels.ManagementMode.logs)
+            Text("Logs").tag(PageModels.ManagementMode.logs)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
