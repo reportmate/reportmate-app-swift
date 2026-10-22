@@ -756,3 +756,119 @@ final class ScriptedURLProtocol: URLProtocol, @unchecked Sendable {
         #expect(await keyed.preferringEntra() == keyed)
     }
 }
+
+@Suite struct ActionableCertificateTests {
+    /// A fixed clock: 2026-06-01T00:00:00Z.
+    static let now = Date(timeIntervalSince1970: 1_780_272_000)
+    static let day: Double = 86_400
+
+    static func cert(_ fields: [String: JSONValue]) -> SecurityInfo.Certificate {
+        var base: [String: JSONValue] = ["commonName": "SAMPLE-CERT", "issuer": "CN=SAMPLE-CA", "status": "Valid", "isExpired": false]
+        for (k, v) in fields { base[k] = v }
+        return SecurityInfo.Certificate(json: .object(base))
+    }
+
+    @Test func classDefaultsToActionable() {
+        #expect(CertificateClass(.null) == .actionable)
+        #expect(CertificateClass("system-managed") == .systemManaged)
+        #expect(CertificateClass("Trust-Store") == .trustStore)
+        #expect(CertificateClass("something-new") == .actionable)
+        #expect(Self.cert([:]).certClass == .actionable)
+        #expect(Self.cert(["class": "system-managed"]).certClass == .systemManaged)
+    }
+
+    @Test func statusIsLiveFromNotAfter() {
+        // Stored as Valid at collection time, but notAfter has since passed.
+        let lapsed = Self.cert(["notAfterEpoch": .number(Self.now.timeIntervalSince1970 - 2 * Self.day), "status": "Valid", "daysUntilExpiry": 40])
+        #expect(lapsed.storedStatus == .valid)
+        #expect(lapsed.status(at: Self.now) == .expired)
+        #expect(lapsed.daysUntilExpiry(at: Self.now) == -2)
+
+        let soon = Self.cert(["notAfter": "2026-06-11T00:00:00Z", "status": "Valid"])
+        #expect(soon.status(at: Self.now) == .expiringSoon)
+        #expect(soon.daysUntilExpiry(at: Self.now) == 10)
+
+        let later = Self.cert(["notAfterEpoch": .number(Self.now.timeIntervalSince1970 + 90 * Self.day), "status": "ExpiringSoon"])
+        #expect(later.status(at: Self.now) == .valid)
+
+        // No date at all: the stored status is all there is.
+        let undated = Self.cert(["status": "Expired", "daysUntilExpiry": -5])
+        #expect(undated.status(at: Self.now) == .expired)
+        #expect(undated.daysUntilExpiry(at: Self.now) == -5)
+    }
+
+    @Test func readableNamesWinOverRawOnes() {
+        let stamped = Self.cert(["commonName": "00000000-0000-0000-0000-000000000000", "displayName": "SAMPLE Device Identity", "issuerName": "SAMPLE Issuing CA"])
+        #expect(stamped.displayName == "SAMPLE Device Identity")
+        #expect(stamped.displayIssuer == "SAMPLE Issuing CA")
+        #expect(stamped.matches("issuing"))
+        let plain = Self.cert([:])
+        #expect(plain.displayName == "SAMPLE-CERT")
+        #expect(plain.displayIssuer == "CN=SAMPLE-CA")
+    }
+
+    @Test func visibleCertificatesHideSystemManagedByDefault() {
+        let certs = [Self.cert(["thumbprint": "AA"]), Self.cert(["thumbprint": "BB", "class": "system-managed"]),
+                     Self.cert(["thumbprint": "CC", "class": "trust-store"]), Self.cert(["thumbprint": "DD", "class": "actionable"])]
+        #expect(SecurityInfo.visibleCertificates(certs, showSystemManaged: false).map(\.thumbprint) == ["AA", "DD"])
+        #expect(SecurityInfo.visibleCertificates(certs, showSystemManaged: true).count == 4)
+    }
+
+    @Test func searchQueryAsksForEveryClassOnlyWhenShown() {
+        let actionable = CertificateSearchGroup.query(search: " SAMPLE ", status: "expiring", showSystemManaged: false)
+        #expect(actionable["class"] == "actionable")
+        #expect(actionable["search"] == "SAMPLE")
+        #expect(actionable["status"] == "expiring")
+        let all = CertificateSearchGroup.query(search: "", status: "all", showSystemManaged: true)
+        #expect(all["class"] == "all")
+        #expect(all["search"] == .some(nil))
+        #expect(all["status"] == .some(nil))
+    }
+
+    @Test func searchGroupsUseDisplayNameIssuerNameAndClass() throws {
+        let rows = try JSONValue.parse(Data("""
+        [{"serialNumber":"SAMPLE1","deviceName":"SAMPLE-MAC-1","commonName":"0f0f","displayName":"SAMPLE Peer Access","issuer":"CN=raw","issuerName":"SAMPLE Access CA","class":"system-managed","isExpired":true,"isExpiringSoon":false},
+         {"serialNumber":"SAMPLE2","deviceName":"SAMPLE-PC-2","commonName":"0f0f","displayName":"SAMPLE Peer Access","class":"system-managed","isExpired":false,"isExpiringSoon":true},
+         {"serialNumber":"SAMPLE3","deviceName":"SAMPLE-PC-3","commonName":"SAMPLE Wi-Fi","issuer":"CN=SAMPLE-CA","isExpired":false,"isExpiringSoon":false}]
+        """.utf8))
+        let groups = CertificateSearchGroup.group(rows.elements)
+        #expect(groups.count == 2)
+        let peer = try #require(groups.first { $0.commonName == "SAMPLE Peer Access" })
+        #expect(peer.issuer == "SAMPLE Access CA")
+        #expect(peer.certClass == .systemManaged)
+        #expect(peer.devices.count == 2)
+        #expect(peer.expiredCount == 1 && peer.expiringCount == 1)
+        let wifi = try #require(groups.first { $0.commonName == "SAMPLE Wi-Fi" })
+        #expect(wifi.certClass == .actionable)
+        #expect(wifi.issuer == "CN=SAMPLE-CA")
+    }
+
+    @Test func bulkRowReadsNewCountsAndOldResponses() {
+        let new = SecurityReportRow(json: ["expiredCertCount": 0, "expiringSoonCertCount": 1, "actionableCertCount": 4, "systemManagedCertCount": 9,
+                                           "trustStoreCertCount": 120, "systemManagedExpiredCertCount": 2, "certificateCount": 133], platform: .windows)
+        #expect(new.actionableCertCount == 4)
+        #expect(new.systemManagedCertCount == 9)
+        #expect(new.trustStoreCertCount == 120)
+        #expect(new.certificateCount == 133)
+        #expect(new.certLabel == "Expiring Soon")
+        #expect(new.certLabel(includingSystemManaged: true) == "Has Expired")
+
+        let old = SecurityReportRow(json: ["expiredCertCount": 3, "expiringSoonCertCount": 0], platform: .macOS)
+        #expect(old.actionableCertCount == nil)
+        #expect(old.systemManagedExpiredCertCount == nil)
+        #expect(old.certLabel == "Has Expired")
+        #expect(old.certLabel(includingSystemManaged: true) == "Has Expired")
+    }
+
+    @Test func deviceTabReadsClassesFromTheSecurityModule() throws {
+        let modules = try JSONValue.parse(Data("""
+        {"security":{"certificates":[
+          {"commonName":"SAMPLE User","class":"actionable","displayName":"SAMPLE User","notAfterEpoch":1780272000},
+          {"commonName":"SAMPLE Push","class":"system-managed"},
+          {"commonName":"SAMPLE Root","class":"trust-store"}]}}
+        """.utf8))
+        let info = SecurityInfo(modules: modules, platform: .macOS)
+        #expect(info.certificatesAreClassified)
+        #expect(SecurityInfo.visibleCertificates(info.certificates, showSystemManaged: false).map(\.displayName) == ["SAMPLE User"])
+    }
+}

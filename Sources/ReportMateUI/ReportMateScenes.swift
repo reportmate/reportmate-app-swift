@@ -81,6 +81,10 @@ struct AppCommands: Commands {
             Button("Show Windows Only") { appState?.platformFilter = .windows }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
             Divider()
+            Toggle("Show System-Managed Certificates", isOn: Binding(get: { appState?.showSystemManagedCertificates ?? false }, set: { appState?.showSystemManagedCertificates = $0 }))
+                .keyboardShortcut(".", modifiers: [.command, .shift])
+                .disabled(appState == nil)
+            Divider()
             Toggle("Kiosk Mode", isOn: Binding(get: { kiosk.enabled }, set: { kiosk.setEnabled($0) }))
                 .keyboardShortcut("k", modifiers: [.command, .control])
         }

@@ -34,6 +34,11 @@ final class AppState {
     /// Filters the visible page contributes to Copy Link.
     var linkQuery: [String: String] = [:]
 
+    /// Show system-managed and trust-store certificates beside the actionable ones,
+    /// on the Security report and the device Security tab. Off at launch, so the
+    /// certificate figures match the dashboard until someone asks for more.
+    var showSystemManagedCertificates = false
+
     private enum HistoryEntry { case section(AppSection) }
     private var history: [HistoryEntry] = []
     var canGoBack: Bool { !path.isEmpty || !history.isEmpty }

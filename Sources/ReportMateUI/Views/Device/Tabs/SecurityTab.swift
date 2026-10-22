@@ -493,12 +493,18 @@ struct SecurityTabView: View {
 
     private func certificates(_ s: SecurityInfo) -> some View {
         let all = s.certificates
-        let visible = showOsRoots ? all : all.filter { !($0.isOsTrustedRoot && $0.isExpired) }
-        let expired = (!showOsRoots ? s.userExpiredCount : nil) ?? visible.filter(\.isExpired).count
+        let showSystemManaged = appState.showSystemManagedCertificates
+        // Actionable certificates only unless asked; a device that reported before the
+        // API classified certificates has no classes, and all of its certificates count.
+        let classed = SecurityInfo.visibleCertificates(all, showSystemManaged: showSystemManaged)
+        let hiddenCount = all.count - classed.count
+        let visible = showOsRoots || showSystemManaged ? classed : classed.filter { !($0.isOsTrustedRoot && $0.isExpired) }
+        // Status is worked out from notAfter now; the stored status is as old as the report.
+        let expired = visible.filter(\.isExpired).count
         let expiring = visible.filter { $0.status == .expiringSoon }.count
         let valid = visible.filter { $0.status == .valid }.count
         let selfSigned = visible.filter(\.isSelfSigned).count
-        let osRootExpired = s.osRootExpiredCount
+        let osRootExpired = showSystemManaged ? 0 : classed.filter { $0.isOsTrustedRoot && $0.isExpired }.count
         let stores = Array(Set(visible.map(\.store))).sorted()
         let q = certSearch.trimmingCharacters(in: .whitespaces).lowercased()
         let filtered = visible.filter { c in
@@ -528,10 +534,14 @@ struct SecurityTabView: View {
                             .frame(width: 32, height: 32)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Certificates").appFont(.title3, weight: .semibold)
-                                Text("\(visible.count) certificates" + (!showOsRoots && osRootExpired > 0 ? " (\(osRootExpired) expired OS roots hidden)" : "")).appFont(.caption).foregroundStyle(.secondary)
+                                Text(certificateSubtitle(count: visible.count, hidden: hiddenCount, osRootsHidden: !showOsRoots ? osRootExpired : 0)).appFont(.caption).foregroundStyle(.secondary)
                             }
                         }
                         Spacer()
+                        Toggle("Show System-Managed", isOn: Binding(get: { appState.showSystemManagedCertificates }, set: { appState.showSystemManagedCertificates = $0 }))
+                            .toggleStyle(.checkbox)
+                            .appFont(.caption)
+                            .help("Include certificates the OS or an agent renews on its own, and OS trust-store roots (⇧⌘.)")
                         TextField("Search certificates...", text: $certSearch).textFieldStyle(.roundedBorder).frame(width: 220)
                     }
                     if !all.isEmpty {
@@ -597,6 +607,13 @@ struct SecurityTabView: View {
         }
     }
 
+    private func certificateSubtitle(count: Int, hidden: Int, osRootsHidden: Int) -> String {
+        var notes: [String] = []
+        if hidden > 0 { notes.append("\(hidden) system-managed hidden") }
+        if osRootsHidden > 0 { notes.append("\(osRootsHidden) expired OS roots hidden") }
+        return "\(count) certificate\(count == 1 ? "" : "s")" + (notes.isEmpty ? "" : " (" + notes.joined(separator: ", ") + ")")
+    }
+
     private func certTable(_ certs: [SecurityInfo.Certificate]) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
@@ -615,8 +632,9 @@ struct SecurityTabView: View {
                         HStack(spacing: 6) {
                             Text(c.displayName).appFont(.callout, weight: .medium).lineLimit(1)
                             if c.isSelfSigned { Text("(self-signed)").appFont(.caption2).foregroundStyle(.secondary) }
+                            if !c.isActionable { Pill(c.certClass.label, tone: c.certClass == .trustStore ? .indigo : .gray) }
                         }
-                        if !c.issuer.isEmpty { Text(c.displayIssuer).appFont(.caption2).foregroundStyle(.secondary).lineLimit(1).help(c.issuer) }
+                        if !c.issuer.isEmpty || c.issuerName != nil { Text(c.displayIssuer).appFont(.caption2).foregroundStyle(.secondary).lineLimit(1).help(c.issuer) }
                         if !c.thumbprint.isEmpty { Text(String(c.thumbprint.prefix(20)) + "...").appFont(.caption2, design: .monospaced).foregroundStyle(.secondary).help(c.thumbprint) }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
