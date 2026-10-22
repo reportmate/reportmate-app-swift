@@ -173,9 +173,9 @@ re-flow as the window is resized:
   tiles), Management Tools Logs and Check-in Gaps. The wide column holds Recent
   Events, Platform Distribution and the OS version charts. At 2000 pt of content
   width or more (a 27-inch display) two columns the width of column 1 sit between
-  them: column 2 is New Clients, Directory Services, Connectivity Problems,
+  them: column 2 is New Clients, Directory Services, User Accounts, Connectivity Problems,
   Protection Gaps and Expiring Certificates; column 3 is Update Debt, Storage, App
-  Usage, Software Risk and Reboot Debt (1fr each, the wide one 2fr). From 1500 pt
+  Usage, Software Risk and Uptime Overview (1fr each, the wide one 2fr). From 1500 pt
   there are three columns, column 2 as on the wide layout and column 3's cards four
   across underneath. Below that the cards sit in a two-column grid in the same
   order. No card has a platform control
@@ -212,12 +212,13 @@ The top bar keeps every section tab on a device page too.
 The dashboard's twelve insight cards and the link parameters behind them are a
 contract shared with the web and Windows apps, written up in the web repo as
 [`docs/DASHBOARD-WIDGETS.md`](https://github.com/reportmate/reportmate-app-web/blob/main/docs/DASHBOARD-WIDGETS.md).
-Each card answers one question about the fleet: Installs, Reboot Debt (uptime),
+Each card answers one question about the fleet: Installs, Uptime Overview,
 Update Debt (patch level against the fleet's latest, pending and deferred updates),
 Protection Gaps, Management Tools Logs (the MDM agent's own logs left out,
 messages grouped with their timestamps stripped), Storage, Check-in Gaps, Software Risk, Expiring Certificates, Directory Services (the Identity
 report's classes: Cloud Joined, Domain Joined with Trusted, Unconfirmed and
-Broken, Standard, Unjoined), Connectivity Problems, and App Usage (the top ten
+Broken, Standard, Unjoined), User Accounts (authentication, the top admin
+accounts, devices with extra local admins), Connectivity Problems, and App Usage (the top ten
 apps on a fixed grid, with Usage and Catalog chips)
 (`Views/Dashboard/InsightWidgets.swift`, `InsightCardsMore.swift`).
 
@@ -240,13 +241,14 @@ and appear as removable chips under the header, and Copy Link carries both.
 | Report | Parameters |
 |---|---|
 | `/devices` | `status`, `search`, `platform`, `tool`, `level` (named above the list; it has no log levels to narrow by) |
-| `/system` | `osVersion`, `uptime`, `pending`, `deferred=1`, `edition`, `os=unsupported\|windows10`, `patch=behind` |
+| `/system` | `osVersion`, `uptime`, `pending`, `deferred=1`, `edition`, `os=unsupported\|windows10`, `patch=behind\|latest` |
 | `/security` | `encryption=off`, `firewall=off`, `antivirus=off`, `sip=off`, `secureBoot=off`, `threats=1`, `certs=expired\|expiring`, `cve=critical\|exploited`, `certSearch`, `certStatus` |
 | `/management` | `provider`, `enrolled=0\|1`, `enrollmentType`, `platform=macOS\|Windows` (this report only; the global toggle is `platform=mac\|win`), `lastSeen=24h\|1-7d\|7d+` |
+| `/management/logs` | `tool`, `level=error\|warning`, `hours=24\|168`, `message` (the management tools' logs across the fleet) |
 | `/hardware` | `arch`, `storage=low\|lt5\|5-10\|10-20\|20+`, `capacity=le256\|512\|1t\|2t+`, `platform=macOS\|Windows`, `memory=le8`, `type=laptop\|desktop`, `processor` |
 | `/installs` | `filter` (`errors`, `warnings`, `pending`), `agent=munki\|cimian`, `item`, `stale=1`, `view` |
 | `/events/failures` | `hours`, `reason`, `outcome` |
-| `/identity` | `admins=extra\|2\|3\|4+`, `join=entra\|domain\|hybrid\|workgroup`, `directory=` (Cloud Joined, Domain Joined, Standard, Unjoined, Trusted, Unconfirmed, Broken, as labels or kebab keys; and psso, bound, unbound), `platform=macOS\|Windows`, `usage` |
+| `/identity` | `admins=extra\|2\|3\|4+`, `auth=modern\|standard\|legacy`, `admin=<account>`, `join=entra\|domain\|hybrid\|workgroup`, `directory=` (Cloud Joined, Domain Joined, Standard, Unjoined, Trusted, Unconfirmed, Broken, as labels or kebab keys; and psso, bound, unbound), `platform=macOS\|Windows`, `usage` |
 | `/device/<serial>` | `tab=management&tool=<tool>&level=error\|warning` opens the log viewer on that tool, errors (or warnings) only |
 | `/applications` | `type=usage&apps=&period=`; `/applications/usage/<app>?days=30` |
 | `/network` | `connection=wired\|wifi`, `signal=weak`, `quality=poor`, `vpn=1` |
@@ -282,6 +284,7 @@ where the native counterpart lives.
 | `/applications/coverage` (usage telemetry collection health) | `Views/Reports/ApplicationCoverageView.swift` | Complete; reachable from the Usage report's Coverage button. |
 | `/system` (OS version filter widget, uptime and pending update buckets, Windows edition, activation and license widgets) | `Views/Reports/SystemReportView.swift` | Complete. |
 | `/management` (providers, enrollment status and type widgets, enrollment table) | `Views/Reports/ManagementReportView.swift` | Complete. |
+| `/management/logs` (the management tools' logs across the fleet: per tool with a trend, common messages, devices; Enrollment \| Tools Logs switch) | `Views/Reports/ManagementLogsReportView.swift` | New with the dashboard work. Reads `/api/v1/management/logs/fleet`; on a server without it, the dashboard card's last 24 hours with one example device per message. |
 | `/identity` (directory and authentication donuts with drill-downs, admin accounts, admins and utilization reports) | `Views/Reports/IdentityReportView.swift` | Complete.  Reads FastAPI's raw row shape (the web's own API route flattens it), so directory, auth and user counts fill without the Next.js layer. |
 | `/hardware` (architecture, chip, processor, graphics, memory and storage widgets) | `Views/Reports/HardwareReportView.swift` | Complete. |
 | `/peripherals` (kind and printer widgets) | `Views/Reports/PeripheralsReportView.swift` | Complete. |

@@ -348,6 +348,7 @@ let insightsFixture = #"""
                 "assigned": {"count": 150, "link": {"path": "/identity", "params": {"usage": "assigned", "platform": "macOS"}}}}
       }
     },
+    "userAccounts": {"total": 900, "authentication": [{"key": "modern", "label": "Modern", "count": 500}], "topAdmins": [{"name": "admin", "devices": 400}], "extraAdmins": {"count": 488}},
     "connectivityProblems": {
       "devices": 550,
       "weakSignal": {"count": 4, "link": {"path": "/network", "params": {"signal": "weak"}}},
@@ -595,5 +596,79 @@ let appUsageEnvelope = #"""
         #expect(ByteFormatting.bytes(1e-300) == "0 Bytes" || ByteFormatting.bytes(1e-300).hasSuffix("Bytes"))
         #expect(ByteFormatting.gigabytes(1e300).hasSuffix("GB"))
         #expect(ByteFormatting.bytes(1e300).hasSuffix("PB"))
+    }
+}
+
+@Suite struct RevisionSixTests {
+    @Test func managementLogsLinkRoundTrips() {
+        let link = DashboardLinks.managementLogs(tool: "installs", level: "error")
+        #expect(link.url.absoluteString == "reportmate://management/logs?level=error&tool=installs")
+        #expect(DeepLink(url: link.url) == link)
+        #expect(DeepLink(url: URL(string: "https://reportmate.example/management/logs?hours=168")!)?.target == .managementLogs)
+        #expect(DeepLink(url: URL(string: "reportmate://management?provider=Unmanaged")!)?.target == .report("management"))
+    }
+
+    @Test func identityAuthAndAdminAccount() {
+        let modern = IdentityReportRow(json: json(#"{"platformSSOUsers": {"deviceRegistered": true}, "adminUsernames": ["macadmins", "SampleUser"]}"#))
+        let standard = IdentityReportRow(json: json(#"{"adminUsernames": ["admin"]}"#))
+        func count(_ q: [String: String]) -> Int { [modern, standard].filter { ReportLinkFilter(report: "identity", query: q).matches(identity: $0) }.count }
+        #expect(count(["auth": "modern"]) == 1)
+        #expect(count(["auth": "standard"]) == 1)
+        #expect(count(["admin": "MacAdmins"]) == 1)
+        #expect(count(["admin": "nobody"]) == 0)
+        #expect(ReportLinkFilter.label(key: "auth", value: "modern") == "Authentication: Modern")
+    }
+
+    /// The fleet endpoint's shape, with SAMPLE values.
+    let fleetFixture = #"""
+    {"hours": 168,
+     "tools": [{"tool": "installs", "name": "Munki", "platform": "macOS", "devices": 550, "devicesWithErrors": 12, "devicesWithWarnings": 40, "errorLines": 300, "warningLines": 900,
+                "lastSeen": "2026-10-22T15:00:00+00:00", "trend": [{"at": "2026-10-21", "errors": 5, "warnings": 9}, {"at": "2026-10-22", "errors": 7, "warnings": 31}]},
+               {"tool": "mdm", "name": "Intune", "devicesWithErrors": 300}],
+     "messages": [{"id": "m1", "message": "<ts> -<n>:<n> [ERR] Could not download <n> bytes", "tool": "installs", "name": "Munki", "level": "error", "devices": 5, "lines": 40, "lastSeen": "2026-10-22T14:00:00+00:00"},
+                  {"id": "m2", "message": "Retry later", "tool": "installs", "name": "Munki", "level": "warning", "devices": 9, "lines": 20}],
+     "devices": [{"serialNumber": "SAMPLE1", "deviceName": "Sample Mac", "tool": "installs", "toolName": "Munki", "errors": 3, "warnings": 0, "lastAt": "2026-10-22T14:00:00+00:00", "messageIds": ["m1"]},
+                 {"serialNumber": "SAMPLE2", "deviceName": "Sample Lab", "tool": "installs", "toolName": "Munki", "errors": 0, "warnings": 2, "messageIds": ["m2"]}]}
+    """#
+
+    @Test func fleetToolsLogs() {
+        let fleet = ManagementToolsFleet(json: json(fleetFixture))
+        #expect(fleet.hours == 168 && !fleet.isPartial)
+        #expect(fleet.tools.map(\.tool) == ["installs"])
+        #expect(fleet.tools.first?.trend.count == 2)
+        #expect(fleet.messages.first?.message == "Could not download <n> bytes")
+        #expect(fleet.filtered(tool: nil, level: "error", message: nil).devices.map(\.serialNumber) == ["SAMPLE1"])
+        #expect(fleet.filtered(tool: nil, level: nil, message: "m2").devices.map(\.serialNumber) == ["SAMPLE2"])
+        #expect(fleet.filtered(tool: "cimian", level: nil, message: nil).tools.isEmpty)
+    }
+
+    @Test func fleetFromTheDashboardCard() {
+        let card = InsightCardData(json: json(#"""
+        {"windowHours": 24, "tools": [{"tool": "installs", "name": "Munki", "devicesWithErrors": 4}],
+         "topErrors": [{"message": "[ERR] Could not download", "tool": "installs", "name": "Munki", "devices": 4, "lines": 9,
+                        "sampleDevice": {"serialNumber": "SAMPLE3", "link": {"path": "/device/SAMPLE3", "params": {"tab": "management"}}}}]}
+        """#))
+        let fleet = ManagementToolsFleet(card: card)
+        #expect(fleet.isPartial && fleet.hours == 24)
+        let id = ManagementToolsFleet.messageID(tool: "installs", message: "Could not download")
+        #expect(fleet.messages.first?.id == id)
+        #expect(fleet.filtered(tool: nil, level: nil, message: id).devices.map(\.serialNumber) == ["SAMPLE3"])
+    }
+}
+
+@Suite struct DeepLinkAuditTests {
+    @Test func windowsVersionChildMatchesItsFeatureUpdate() {
+        let row = SystemReportRow(json: json(#"{"operatingSystem": "Windows 11 Enterprise 25H2", "osVersion": "10.0.26200", "buildNumber": "26200", "featureUpdate": "6899"}"#))
+        let currency = OSCurrency(rows: [row])
+        #expect(ReportLinkFilter(report: "system", query: ["osVersion": "11.26200.6899"]).matches(system: row, currency: currency))
+        #expect(ReportLinkFilter(report: "system", query: ["osVersion": "11.26200"]).matches(system: row, currency: currency))
+        #expect(!ReportLinkFilter(report: "system", query: ["osVersion": "11.26200.1000"]).matches(system: row, currency: currency))
+    }
+
+    @Test func onTheLatestPatch() {
+        let rows = ["27.0.1", "27.0.1", "27.0.1", "27.0.1", "27.0.1", "27.0"].map { SystemReportRow(json: .object(["operatingSystem": .string("macOS"), "platform": .string("macOS"), "osVersion": .string($0)])) }
+        let currency = OSCurrency(rows: rows)
+        #expect(rows.filter { ReportLinkFilter(report: "system", query: ["patch": "latest"]).matches(system: $0, currency: currency) }.count == 5)
+        #expect(rows.filter { ReportLinkFilter(report: "system", query: ["patch": "behind"]).matches(system: $0, currency: currency) }.count == 1)
     }
 }

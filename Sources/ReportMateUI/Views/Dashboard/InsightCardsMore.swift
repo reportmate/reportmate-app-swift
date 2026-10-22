@@ -31,6 +31,7 @@ struct InsightCardView: View {
         case "checkinGaps": CheckInGapsCard(platform: platform)
         case "updateDebt", "osCurrency": UpdateDebtCard()
         case "appUsage": AppUsageCard()
+        case "userAccounts": UserAccountsCard()
         case "softwareRisk": SoftwareRiskCard()
         case "expiringCertificates": ExpiringCertificatesCard()
         case "directoryServices", "directoryJoin": DirectoryServicesCard(platform: platform)
@@ -39,11 +40,11 @@ struct InsightCardView: View {
     }
 }
 
-// MARK: - Reboot Debt
+// MARK: - Uptime Overview
 
 struct RebootDebtCard: View {
     var body: some View {
-        InsightCard(key: "rebootDebt", title: "Reboot Debt", subtitle: "Devices that have not restarted in a while", systemImage: "arrow.clockwise.circle", tone: .orange, link: DashboardLinks.system()) { c in
+        InsightCard(key: "rebootDebt", title: "Uptime Overview", subtitle: "How long devices have been up", systemImage: "arrow.clockwise.circle", tone: .orange, link: DashboardLinks.system()) { c in
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 8) {
                     InsightFigure(value: c.count("uptime30dPlus"), label: "up 30+ days", tone: .red, link: c.item("uptime30dPlus")?.link)
@@ -97,7 +98,7 @@ struct ProtectionGapsCard: View {
 /// agent's own logs are left out.
 struct ManagementToolLogsCard: View {
     var body: some View {
-        InsightCard(key: "managementToolLogs", title: "Management Tools Logs", subtitle: "Errors and warnings in the tools' own logs", systemImage: "wrench.and.screwdriver", tone: .purple, link: DashboardLinks.devices()) { c in
+        InsightCard(key: "managementToolLogs", title: "Management Tools Logs", subtitle: "Errors and warnings in the tools' own logs", systemImage: AppSection.management.systemImage, tone: .yellow, link: DashboardLinks.managementLogs()) { c in
             VStack(alignment: .leading, spacing: 12) {
                 let tools = ManagementToolMessages.tools(c).filter { ($0.int("devicesWithErrors") ?? 0) + ($0.int("devicesWithWarnings") ?? 0) > 0 }
                 let hours = c.int("windowHours") ?? 24
@@ -109,11 +110,14 @@ struct ManagementToolLogsCard: View {
                         ForEach(tools) { t in
                             let errors = t.int("devicesWithErrors") ?? 0, warnings = t.int("devicesWithWarnings") ?? 0
                             HStack(spacing: 8) {
-                                Text(t.name ?? t.string("tool") ?? "").appFont(.callout, weight: .medium).lineLimit(1).frame(width: 110, alignment: .leading)
-                                MaybeInsightLink(link: t.link) {
+                                let tool = t.string("tool")
+                                MaybeInsightLink(link: DashboardLinks.managementLogs(tool: tool)) {
+                                    Text(t.name ?? tool ?? "").appFont(.callout, weight: .medium).lineLimit(1).frame(width: 110, alignment: .leading)
+                                }
+                                MaybeInsightLink(link: DashboardLinks.managementLogs(tool: tool, level: "error")) {
                                     Text("\(errors) errors").appFont(.callout).foregroundStyle(errors == 0 ? Color.secondary : Tone.red.color).monospacedDigit()
                                 }
-                                MaybeInsightLink(link: InsightItem.deepLink(t.json["warningsLink"])) {
+                                MaybeInsightLink(link: DashboardLinks.managementLogs(tool: tool, level: "warning")) {
                                     Text("\(warnings) warnings").appFont(.callout).foregroundStyle(warnings == 0 ? Color.secondary : Tone.yellow.color).monospacedDigit()
                                 }
                                 Spacer(minLength: 0)
@@ -129,8 +133,9 @@ struct ManagementToolLogsCard: View {
                         InsightHeading("Commonest errors")
                         ForEach(Array(top.enumerated()), id: \.offset) { _, g in
                             let e = g.item
+                            let tool = e.string("tool") ?? ""
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                MaybeInsightLink(link: e.link) {
+                                MaybeInsightLink(link: DashboardLinks.managementLogs(tool: tool, message: ManagementToolsFleet.messageID(tool: tool, message: g.message))) {
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(g.message).appFont(.callout).lineLimit(2).truncationMode(.middle)
                                         Text("\(e.string("name") ?? "") · \(g.devices) devices · \(g.lines) lines").appFont(.caption).foregroundStyle(.secondary)
@@ -360,7 +365,7 @@ struct UpdateDebtCard: View {
                 let behind = c.item("behind")
                 if (c.int("rated") ?? 0) > 0 {
                     InsightDonut(data: [
-                        InsightSlice(label: "On latest patch", count: c.int("onLatest") ?? 0, color: .green),
+                        InsightSlice(label: "On latest patch", count: c.int("onLatest") ?? 0, color: .green, link: DashboardLinks.system(["patch": "latest"])),
                         InsightSlice(label: "Behind", count: behind?.count ?? 0, color: .orange, link: behind?.link),
                     ], center: "\(c.int("pctOnLatest") ?? 0)%")
                 }
@@ -483,7 +488,7 @@ struct DirectoryServicesCard: View {
     }
 
     var body: some View {
-        InsightCard(key: "directoryServices", title: "Directory Services", subtitle: "How devices are joined, local admins and use", systemImage: "person.badge.key", tone: .indigo, link: DashboardLinks.report("identity")) { c in
+        InsightCard(key: "directoryServices", title: "Directory Services", subtitle: "How devices are joined, and shared or assigned use", systemImage: "person.badge.key", tone: .indigo, link: DashboardLinks.report("identity")) { c in
             // The current card is one classification for the toggle's platform; an earlier
             // API sent three views, of which the toggle picks one.
             let section = c.json["segments"].array != nil ? InsightItem(json: c.json)
@@ -508,9 +513,50 @@ struct DirectoryServicesCard: View {
                     }
                 }
                 InsightChips {
-                    StatChip(value: section.item("extraAdmins")?.count ?? 0, label: "with extra local admins", tone: .red, link: section.item("extraAdmins")?.link)
                     StatChip(value: section.item("shared")?.count ?? 0, label: "shared", tone: .blue, link: section.item("shared")?.link)
                     StatChip(value: section.item("assigned")?.count ?? 0, label: "assigned", tone: .indigo, link: section.item("assigned")?.link)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - User Accounts
+
+/// Accounts, from the Identity report's own rules: the Authentication donut (Modern
+/// against Standard), the admin accounts on the most devices, and devices with
+/// more local admins than the managed ones. Follows the global platform toggle.
+struct UserAccountsCard: View {
+    private static let authColors: [String: Color] = ["modern": .green, "legacy": .orange, "standard": .blue]
+
+    var body: some View {
+        InsightCard(key: "userAccounts", title: "User Accounts", subtitle: "Authentication and administrator accounts", systemImage: AppSection.identity.systemImage, tone: .indigo, link: DashboardLinks.report("identity")) { c in
+            VStack(alignment: .leading, spacing: 12) {
+                // The authentication split, as a list or as {segments: […]}.
+                let auth = c.items("authentication") + (c.item("authentication")?.items("segments") ?? []) + c.items("auth")
+                if !auth.isEmpty {
+                    InsightDonut(data: auth.map { s in
+                        InsightSlice(label: s.label ?? s.key?.capitalized ?? "", count: s.count,
+                                     color: Self.authColors[(s.key ?? s.label ?? "").lowercased()] ?? .gray,
+                                     link: s.link ?? s.key.map { DashboardLinks.report("identity", ["auth": $0.lowercased()]) })
+                    }, center: c.int("total").map(String.init))
+                }
+                let admins = Array((c.items("topAdmins") + c.items("adminAccounts") + c.items("admins")).prefix(5))
+                if !admins.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        InsightHeading("Administrator accounts")
+                        let max = admins.map(\.count).max() ?? 1
+                        ForEach(admins) { a in
+                            let name = a.string("name") ?? a.string("account") ?? a.label ?? ""
+                            InsightBarRow(label: name, count: a.count, max: max, tone: .indigo,
+                                          link: a.link ?? DashboardLinks.report("identity", ["admin": name]), valueText: "\(a.count) devices")
+                        }
+                    }
+                }
+                let extra = c.item("extraAdmins")
+                InsightChips {
+                    StatChip(value: extra?.count ?? 0, label: "devices with extra local admins", tone: .red,
+                             link: extra?.link ?? DashboardLinks.report("identity", ["admins": "extra"]))
                 }
             }
         }

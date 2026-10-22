@@ -9,7 +9,7 @@ public struct DashboardInsightsDocument: Sendable, Hashable {
     /// The card keys the API serves at `/dashboard/insights/{card}` and in the combined document.
     public static let cardKeys = [
         "installHealth", "rebootDebt", "protectionGaps", "managementToolLogs", "storage",
-        "checkinGaps", "updateDebt", "softwareRisk", "expiringCertificates", "directoryServices", "connectivityProblems",
+        "checkinGaps", "updateDebt", "softwareRisk", "expiringCertificates", "directoryServices", "userAccounts", "connectivityProblems",
     ]
     /// App Usage has its own endpoint, `/dashboard/insights/appUsage`, because it takes filters.
     public static let appUsageKey = "appUsage"

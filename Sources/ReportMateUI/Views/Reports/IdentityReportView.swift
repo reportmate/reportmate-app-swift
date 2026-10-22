@@ -34,6 +34,15 @@ struct IdentityReportView: View {
          bootstrapFilter.map { $0 == .escrowed ? "Bootstrap: escrowed" : "Bootstrap: not escrowed" }].compactMap { $0 }
     }
 
+    /// The widget filters as link parameters, for Copy Link.
+    private var identityWidgetQuery: [String: String] {
+        var q: [String: String] = [:]
+        if let directoryFilter { q["directory"] = directoryFilter }
+        if let authFilter { q["auth"] = authFilter.lowercased() }
+        if let adminAccountFilter { q["admin"] = adminAccountFilter }
+        return q
+    }
+
     private func clearWidgetFilters() {
         directoryFilter = nil; authFilter = nil; adminAccountFilter = nil; showAdminsReport = false; tokenFilter = nil; bootstrapFilter = nil
     }
@@ -94,8 +103,13 @@ struct IdentityReportView: View {
                 // A Directory Services class or trust state selects the Directory Services widget.
                 let d = f.values("directory")
                 if d.count == 1, let label = IdentityDirectory.label(d[0]) { _ = f.take("directory"); directoryFilter = label }
+                // `auth` and `admin` select the Authentication and Administrator Accounts widgets.
+                let auth = f.values("auth")
+                if auth.count == 1 { _ = f.take("auth"); authFilter = auth[0].prefix(1).uppercased() + auth[0].dropFirst().lowercased() }
+                let admin = f.values("admin")
+                if admin.count == 1 { _ = f.take("admin"); adminAccountFilter = admin[0] }
             }, matches: { row, f in f.matches(identity: IdentityReportRow(json: row.json), platform: row.platform) },
-            widgetQuery: directoryFilter.map { ["directory": $0] } ?? [:])
+            widgetQuery: identityWidgetQuery)
         ) { rows in
             let pairs = filtered(rows)
             VStack(spacing: 0) {

@@ -51,7 +51,7 @@ public struct ReportLinkFilter: Sendable, Hashable {
         "hardware": ["arch", "storage", "memory", "type", "processor", "capacity", "platform"],
         "installs": ["filter", "item", "stale", "view", "agent"],
         "failures": ["hours", "reason", "outcome"],
-        "identity": ["admins", "join", "usage", "directory", "platform"],
+        "identity": ["admins", "join", "usage", "directory", "platform", "auth", "admin"],
         "network": ["connection", "signal", "quality", "vpn"],
         "peripherals": ["kind", "room"],
     ]
@@ -94,12 +94,14 @@ public struct ReportLinkFilter: Sendable, Hashable {
         case "deferred": return "Deferred updates"
         case "edition": return "Edition: \(joined)"
         case "os": return v.map { $0 == "windows10" ? "Windows 10" : $0 == "unsupported" ? "Unsupported macOS" : $0 }.joined(separator: ", ")
-        case "patch": return "Behind the latest patch"
+        case "patch": return value == "latest" ? "On the latest patch" : "Behind the latest patch"
         case "admins": return v.first == "extra" ? "Extra local admins" : "Local admins: " + v.joined(separator: ", ")
         case "platform": return "Platform: \(joined)"
         case "lastSeen": return "Last seen: " + v.map { LastSeenBucket(rawValue: $0)?.label ?? $0 }.joined(separator: ", ")
         case "join": return "Join: " + v.map { IdentityJoin(rawValue: $0.lowercased())?.label ?? $0 }.joined(separator: ", ")
         case "usage": return "Usage: \(joined)"
+        case "auth": return "Authentication: " + v.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: ", ")
+        case "admin": return "Admin account: \(joined)"
         case "connection": return v.map { $0 == "wifi" ? "Wi-Fi" : $0 == "wired" ? "Wired" : $0 }.joined(separator: ", ")
         case "signal": return "Weak signal"
         case "quality": return "Poor network quality"
@@ -163,7 +165,9 @@ public enum SystemBuckets {
             let win = d.operatingSystem[r].filter(\.isNumber)
             let build = d.buildNumber ?? "0"
             groupKey = "\(win).\(build)"
-            childKey = "\(win).\(build).0"
+            // The OS version chart's child is <major>.<build>.<feature update>; 0 when none.
+            let feature = Int(d.json.firstString("featureUpdate", "feature_update") ?? "0") ?? 0
+            childKey = "\(win).\(build).\(feature > 0 ? feature : 0)"
         }
         return childKey == filter || groupKey == filter || version == filter || normalize(version) == normalize(filter) || version.hasPrefix(filter + ".")
     }
@@ -378,7 +382,11 @@ public extension ReportLinkFilter {
             }
             if !hit { return false }
         }
-        if params["patch"] == "behind", !currency.isBehind(d) { return false }
+        switch params["patch"] {
+        case "behind": if !currency.isBehind(d) { return false }
+        case "latest": if !currency.isOnLatest(d) { return false }
+        default: break
+        }
         return true
     }
 
@@ -403,6 +411,10 @@ public extension ReportLinkFilter {
         if !joins.isEmpty, !joins.contains(IdentityJoin.of(i).rawValue) { return false }
         let usage = values("usage").map { $0.lowercased() }
         if !usage.isEmpty, !usage.contains((i.usage ?? "").lowercased()) { return false }
+        let auth = values("auth").map { $0.lowercased() }
+        if !auth.isEmpty, !auth.contains(i.authLabel.lowercased()) { return false }
+        let accounts = values("admin")
+        if !accounts.isEmpty, !accounts.contains(where: { i.hasAdmin($0) }) { return false }
         return true
     }
 

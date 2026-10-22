@@ -14,6 +14,10 @@ final class PageModels {
     let events = EventsFeedModel()
     let installs = InstallsReportModel()
     let applications = ApplicationsReportModel()
+    /// Management's two views: MDM enrollment, or the management tools' logs.
+    enum ManagementMode { case enrollment, logs }
+    var managementMode: ManagementMode = .enrollment
+    let managementLogs = ManagementLogsModel()
 
     @ObservationIgnored private var reports: [String: FleetReportModel] = [:]
     @ObservationIgnored private var devices: [String: DeviceDetailModel] = [:]

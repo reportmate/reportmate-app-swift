@@ -31,6 +31,18 @@ public enum DashboardLinks {
         return DeepLink(target: .eventsFailures, query: q)
     }
 
+    // MARK: Management tools logs
+
+    /// `/management/logs`, the fleet view of the management tools' logs.
+    public static func managementLogs(tool: String? = nil, level: String? = nil, message: String? = nil, platform: String? = nil) -> DeepLink {
+        var q: [String: String] = [:]
+        if let tool { q["tool"] = tool }
+        if let level { q["level"] = level }
+        if let message { q["message"] = message }
+        if let platform { q["platform"] = platform }
+        return DeepLink(target: .managementLogs, query: q)
+    }
+
     // MARK: System
 
     public static func system(_ query: [String: String] = [:]) -> DeepLink { report("system", query) }

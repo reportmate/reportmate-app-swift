@@ -16,6 +16,7 @@ import Foundation
 ///     reportmate://applications/usage/<app>?days=30
 ///     reportmate://applications/coverage
 ///     reportmate://system?osVersion=15.4  (and the other reports)
+///     reportmate://management/logs?tool=installs&level=error&hours=24
 ///     reportmate://settings
 ///     reportmate://this-mac                                    (this-device, this-pc and local are aliases)
 ///     reportmate://<web host>/device/<serial>#installs   (a pasted web URL, scheme swapped)
@@ -31,6 +32,8 @@ public struct DeepLink: Sendable, Hashable {
         case report(String)
         case applicationUsage(app: String)
         case applicationCoverage
+        /// `/management/logs`: the management tools' logs across the fleet.
+        case managementLogs
         case settings
         case thisMac
     }
@@ -87,6 +90,8 @@ public struct DeepLink: Sendable, Hashable {
             target = .settings
         case "this-mac", "this-device", "this-pc", "local":
             target = .thisMac
+        case "management" where segments.count >= 2 && segments[1].lowercased() == "logs":
+            target = .managementLogs
         case "profiles":
             // The web nav still links /profiles; the module lives inside management.
             target = .report("management")
@@ -110,6 +115,7 @@ public struct DeepLink: Sendable, Hashable {
         case .report(let name): return "/\(name)"
         case .applicationUsage(let app): return "/applications/usage/\(DeepLink.encode(app))"
         case .applicationCoverage: return "/applications/coverage"
+        case .managementLogs: return "/management/logs"
         case .settings: return "/settings"
         case .thisMac: return "/this-mac"
         }

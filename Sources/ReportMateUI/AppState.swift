@@ -209,7 +209,12 @@ final class AppState {
             open(device: serial, tab: tab.flatMap(DeviceTab.init(rawValue:)), filter: logFocus ?? link.query["filter"])
         case .events, .eventsFailures: section = .events; pendingDeepLink = link
         case .report(let name):
+            if name == "management" { pages.managementMode = .enrollment }
             if let s = AppSection(rawValue: name) { section = s; pendingDeepLink = link }
+        case .managementLogs:
+            pages.managementMode = .logs
+            section = .management
+            pendingDeepLink = link
         case .applicationUsage(let app):
             section = .applications
             let list: (String) -> [String] = { link.query[$0]?.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) } ?? [] }
@@ -274,6 +279,7 @@ final class AppState {
         case .dashboard: return DeepLink(target: .dashboard)
         case .devices: return DeepLink(target: .devices, query: linkQuery)
         case .events: return DeepLink(target: linkQuery["failures"] == "1" ? .eventsFailures : .events, query: linkQuery.filter { $0.key != "failures" })
+        case .management where pages.managementMode == .logs: return DeepLink(target: .managementLogs, query: linkQuery)
         default: return DeepLink(target: .report(section.rawValue), query: linkQuery)
         }
     }

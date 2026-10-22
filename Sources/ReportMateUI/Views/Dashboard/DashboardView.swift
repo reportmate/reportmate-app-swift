@@ -155,7 +155,7 @@ struct DashboardView: View {
     /// Column 2, under New Clients, and column 3, by API key (revision 5 of the spec).
     /// Narrower tiers flow the same order into fewer columns: column 2's cards, then
     /// column 3's. Installs, Management Tools Logs and Check-in Gaps sit in column 1.
-    static let column2 = ["directoryServices", "connectivityProblems", "protectionGaps", "expiringCertificates"]
+    static let column2 = ["directoryServices", "userAccounts", "connectivityProblems", "protectionGaps", "expiringCertificates"]
     static let column3 = ["updateDebt", "storage", "appUsage", "softwareRisk", "rebootDebt"]
 
     private var devices: [DeviceSummary] {
