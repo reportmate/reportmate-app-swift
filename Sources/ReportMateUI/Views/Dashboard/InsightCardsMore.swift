@@ -462,6 +462,15 @@ struct DirectoryServicesCard: View {
         "entra": .green, "domain": .orange, "hybrid": .teal, "workgroup": .red, "psso": .green, "bound": .orange, "unbound": .red,
     ]
 
+    /// Domain Joined's trust states, as the identity report colours them.
+    private func trustTone(_ key: String?) -> Tone {
+        switch (key ?? "").lowercased() {
+        case "trusted": return .yellow
+        case "broken": return .red
+        default: return .orange
+        }
+    }
+
     private func color(_ s: InsightItem) -> Color {
         Self.colors[(s.label ?? "").lowercased()] ?? Self.colors[(s.key ?? "").lowercased().replacingOccurrences(of: "-", with: " ")] ?? .gray
     }
@@ -486,7 +495,7 @@ struct DirectoryServicesCard: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 InsightHeading("\(s.label ?? s.key ?? "") trust")
                                 let max = parts.map(\.count).max() ?? 1
-                                ForEach(parts) { p in InsightBarRow(label: p.label ?? p.key ?? "", count: p.count, max: max, tone: .orange, link: p.link) }
+                                ForEach(parts) { p in InsightBarRow(label: p.label ?? p.key ?? "", count: p.count, max: max, tone: trustTone(p.key), link: p.link) }
                             }
                         }
                     }
