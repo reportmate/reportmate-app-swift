@@ -4,33 +4,43 @@ import SwiftUI
 // soft highlight sweeping across them. They take the window's appearance (light,
 // dark, increased contrast), and with Reduce Motion on they hold still.
 
-/// The sweep, shared in time by every block on screen so they shimmer together.
+/// The motion, driven by the clock rather than a per-view animation so every block
+/// shares one phase (they breathe and sweep together) and a block re-created by a
+/// model change picks up mid-cycle instead of restarting or standing still. Two
+/// layers, like the web: a pulse from half to full strength over two seconds, and
+/// a highlight band sweeping left to right every 1.5 seconds.
 private struct Shimmer: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
+
+    static let sweep: Double = 1.5
+    static let pulse: Double = 2.0
 
     func body(content: Content) -> some View {
         if reduceMotion {
             content
         } else {
-            content.overlay {
-                TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
-                    let period = 1.6
-                    let t = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
-                    GeometryReader { geo in
-                        let band = max(geo.size.width * 0.5, 80)
-                        LinearGradient(colors: [.clear, highlight, .clear], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: band)
-                            .offset(x: -band + (geo.size.width + band * 2) * t)
+            TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
+                let now = context.date.timeIntervalSinceReferenceDate
+                let sweep = now.truncatingRemainder(dividingBy: Self.sweep) / Self.sweep
+                let pulse = 0.75 + 0.25 * cos(now / Self.pulse * 2 * .pi)
+                content
+                    .opacity(pulse)
+                    .overlay {
+                        GeometryReader { geo in
+                            let band = max(geo.size.width * 0.45, 90)
+                            LinearGradient(colors: [.clear, highlight, .clear], startPoint: .leading, endPoint: .trailing)
+                                .frame(width: band, height: geo.size.height)
+                                .offset(x: -band + (geo.size.width + band) * sweep)
+                        }
+                        .mask(content)
+                        .allowsHitTesting(false)
                     }
-                }
-                .mask(content)
-                .allowsHitTesting(false)
             }
         }
     }
 
-    private var highlight: Color { scheme == .dark ? Color.white.opacity(0.07) : Color.white.opacity(0.55) }
+    private var highlight: Color { scheme == .dark ? Color.white.opacity(0.22) : Color.white.opacity(0.85) }
 }
 
 extension View {

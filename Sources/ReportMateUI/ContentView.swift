@@ -182,8 +182,12 @@ struct ContentView: View {
     @ViewBuilder
     private var sectionView: some View {
         if appState.connectionResolving {
-            ProgressView("Connecting to ReportMate…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The page's skeleton while the credential settles; nothing is requested yet.
+            switch appState.section {
+            case .dashboard: DashboardView(placeholder: true)
+            case .devices, .events: VStack(spacing: 0) { SkeletonTableRows(rows: 18, columns: [240, 110, 140, nil, 120]); Spacer(minLength: 0) }
+            default: ReportSkeleton()
+            }
         } else if !appState.isConfigured {
             NotConfiguredView()
         } else {

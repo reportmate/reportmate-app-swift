@@ -128,6 +128,8 @@ struct DashboardView: View {
     @State private var insights = DashboardInsightsModel()
     /// Width inside the page padding; drives the switch between layouts.
     @State private var contentWidth: CGFloat = 0
+    /// Draw only the skeleton layout and load nothing: shown while the connection settles.
+    var placeholder = false
 
     /// Content width at which the dashboard goes to three columns, with insight
     /// cards 5–12 in a grid underneath. The web app's matching switch is 1680 px.
@@ -167,6 +169,7 @@ struct DashboardView: View {
         }
         .navigationTitle("ReportMate")
         .task(id: appState.configuration) {
+            guard !placeholder else { return }
             model.startLive(api: appState.api)
             defer { model.stopLive() }
             await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: true)
@@ -185,6 +188,7 @@ struct DashboardView: View {
             }
         }
         .onChange(of: appState.refreshRequested) { _, _ in
+            guard !placeholder else { return }
             Task { await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: model.data == nil) }
             Task { await insights.load(api: appState.api, force: true) }
         }
@@ -235,7 +239,7 @@ struct DashboardView: View {
     }
 
     /// Until the dashboard payload arrives the columns draw as skeletons in the same layout.
-    private var awaitingData: Bool { model.data == nil }
+    private var awaitingData: Bool { placeholder || model.data == nil }
 
     private var statusColumn: some View {
         Group {
