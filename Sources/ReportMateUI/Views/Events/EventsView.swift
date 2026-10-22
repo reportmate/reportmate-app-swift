@@ -126,7 +126,7 @@ struct EventsView: View {
             Spacer()
             Text(model.events.count < model.loadedTotal || model.hasMore ? "\(filtered.count) shown" : "Showing all \(model.events.count) events")
                 .appFont(.caption).foregroundStyle(.secondary)
-            if model.loading || model.loadingMore { ProgressView().controlSize(.small) }
+            if (model.loading || model.loadingMore), !model.events.isEmpty { Text("Updating…").appFont(.caption).foregroundStyle(.secondary) }
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
         .background(Color.subtleBackground)
@@ -165,7 +165,9 @@ struct EventsView: View {
     @ViewBuilder
     private var feed: some View {
         if model.loading, model.events.isEmpty {
-            LoadingView(message: "Loading events…")
+            chips
+            SkeletonTableRows(rows: 18, columns: [24, nil, 200, 120])
+            Spacer(minLength: 0)
         } else if let error = model.error, model.events.isEmpty {
             ErrorBanner(message: error) { Task { await model.reload(api: appState.api) } }.padding()
             Spacer()
@@ -180,7 +182,7 @@ struct EventsView: View {
                         EventsTableView(events: filtered, style: .feed, autoFetchRows: 80, maxRows: 2000, onNearEnd: { model.loadMore(api: appState.api) })
                     }
                     if model.loadingMore {
-                        ProgressView().controlSize(.small).padding(12)
+                        SkeletonTableRows(rows: 3, columns: [24, nil, 200, 120], header: false)
                     } else if !model.hasMore, !model.events.isEmpty {
                         Text("Showing all \(model.events.count.formatted()) events").appFont(.caption).foregroundStyle(.secondary).padding(12)
                     }
@@ -335,7 +337,12 @@ struct IngestFailuresView: View {
             .overlay(alignment: .bottom) { Divider() }
 
             if loading, page == nil {
-                LoadingView(message: "Loading check-in failures…")
+                VStack(alignment: .leading, spacing: 16) {
+                    SkeletonCard { SkeletonBars(count: 3) }
+                    Card { VStack(spacing: 0) { SkeletonCardHeader(); SkeletonTableRows(rows: 10, columns: [140, 90, 180, nil, 80, 90]) } }.skeletonAccessibility()
+                }
+                .padding(16)
+                Spacer(minLength: 0)
             } else if let error, page == nil {
                 ErrorBanner(message: error) { Task { await load() } }.padding()
                 Spacer()

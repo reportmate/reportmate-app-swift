@@ -54,7 +54,7 @@ struct InstallsReportView: View {
                     .padding(.horizontal, 16).padding(.top, 8)
             }
             if model.filtersLoading {
-                LoadingView(message: model.loadingMessage.isEmpty ? "Loading managed installs data..." : model.loadingMessage)
+                ReportSkeleton(widgets: 5, columns: [220, 70, 70, 70, 70, nil, 120])
             } else {
                 ScrollView {
                     VStack(spacing: 0) {
@@ -152,14 +152,6 @@ struct InstallsReportView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Managed Software Update Reporting").appFont(.title3, weight: .semibold)
                 Text(subtitle).appFont(.caption).foregroundStyle(.secondary)
-            }
-            if model.filtersLoading {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(model.loadingMessage.isEmpty ? "Loading managed installs data..." : model.loadingMessage).appFont(.caption2).foregroundStyle(.secondary)
-                    ProgressView().progressViewStyle(.linear).tint(.green)
-                }
-                .frame(maxWidth: 320)
-                .padding(.leading, 12)
             }
             Spacer()
             if !model.loading, !model.filtersLoading {

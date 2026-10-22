@@ -154,9 +154,7 @@ struct DashboardView: View {
 
     var body: some View {
         Group {
-            if model.loading, model.data == nil {
-                LoadingView(message: "Loading dashboard…")
-            } else if let error = model.error, model.data == nil {
+            if let error = model.error, model.data == nil {
                 ErrorBanner(message: error) { Task { await model.load(api: appState.api, includeArchived: appState.includeArchived, initial: true) } }
                     .padding()
                 Spacer()
@@ -236,22 +234,37 @@ struct DashboardView: View {
         }
     }
 
+    /// Until the dashboard payload arrives the columns draw as skeletons in the same layout.
+    private var awaitingData: Bool { model.data == nil }
+
     private var statusColumn: some View {
-        VStack(spacing: 20) {
-            StatusWidget(devices: devices)
-            HStack(spacing: 14) {
-                InstallStatWidget(kind: .error, stats: model.data?.installStats, filter: appState.platformFilter)
-                InstallStatWidget(kind: .warning, stats: model.data?.installStats, filter: appState.platformFilter)
+        Group {
+            if awaitingData {
+                DashboardStatusSkeleton()
+            } else {
+                VStack(spacing: 20) {
+                    StatusWidget(devices: devices)
+                    HStack(spacing: 14) {
+                        InstallStatWidget(kind: .error, stats: model.data?.installStats, filter: appState.platformFilter)
+                        InstallStatWidget(kind: .warning, stats: model.data?.installStats, filter: appState.platformFilter)
+                    }
+                    NewClientsWidget(devices: devices)
+                }
             }
-            NewClientsWidget(devices: devices)
         }
     }
 
     private var activityColumn: some View {
-        VStack(spacing: 20) {
-            RecentEventsWidget(events: events, connectionStatus: model.connectionStatus, lastUpdate: model.lastUpdate)
-            PlatformDistributionWidget(devices: devices)
-            osVersionRow
+        Group {
+            if awaitingData {
+                DashboardActivitySkeleton()
+            } else {
+                VStack(spacing: 20) {
+                    RecentEventsWidget(events: events, connectionStatus: model.connectionStatus, lastUpdate: model.lastUpdate)
+                    PlatformDistributionWidget(devices: devices)
+                    osVersionRow
+                }
+            }
         }
     }
 

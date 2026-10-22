@@ -212,7 +212,13 @@ struct DeviceDetailView: View {
     var body: some View {
         Group {
             if model.loading, model.device == nil {
-                LoadingView(message: "Loading device…")
+                // The page as it will look: header, the real tab bar (tabs can be chosen
+                // while it loads) and the chosen tab's layout.
+                VStack(spacing: 0) {
+                    DeviceHeaderSkeleton()
+                    tabBar
+                    ScrollView { DeviceTabSkeleton(tab: tab).padding(16) }
+                }
             } else if model.notFound {
                 EmptyStateView(title: isLocal ? "No local report" : "Device not found",
                                message: isLocal ? "The runner has not written a report to \(LocalReportStore.defaultCache.path) yet." : "No device matches “\(serial)”. It may have been deleted or never registered.",
@@ -250,7 +256,7 @@ struct DeviceDetailView: View {
                         HStack(spacing: 6) {
                             Image(systemName: t.systemImage).appFont(fixed: 12)
                             Text(t.title).appFont(.callout, weight: active ? .semibold : .regular)
-                            if loading { ProgressView().controlSize(.mini) }
+                            if loading { SkeletonCircle(size: 7).accessibilityLabel("Loading") }
                         }
                         .padding(.horizontal, 12).padding(.vertical, 9)
                         .foregroundStyle(active ? t.tone.color : Color.secondary)
@@ -290,7 +296,7 @@ struct DeviceDetailView: View {
     @ViewBuilder
     private func moduleTab(_ tab: DeviceTab, module: ModuleName, device: DeviceDetail) -> some View {
         if model.loadingModules.contains(module), !device.loadedModules.contains(module.rawValue) {
-            LoadingView(message: "Loading \(tab.title.lowercased()) data…")
+            DeviceTabSkeleton(tab: tab)
         } else if let err = model.moduleErrors[module], !device.loadedModules.contains(module.rawValue) {
             ErrorBanner(message: err) { Task { await model.reloadModule(module, api: appState.api) } }
         } else {
@@ -378,7 +384,7 @@ struct DeviceHeaderView: View {
             Spacer()
             if !model.loadingModules.isEmpty {
                 HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
+                    SkeletonCircle(size: 8)
                     Text("Loading \(model.loadingModules.count) modules…").appFont(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -414,7 +420,7 @@ struct DeviceEventsTabView: View {
                     EventTypeFilterMenu(hidden: $hidden, defaultHidden: [])
                 })
                 if model.eventsLoading, !model.eventsLoaded {
-                    LoadingView(message: "Loading events…").frame(height: 200)
+                    SkeletonTableRows(rows: 8, columns: [24, nil, 160])
                 } else if bundled.isEmpty {
                     EmptyStateView(title: "No events", message: "This device has not reported any events yet.", systemImage: "clock")
                 } else {

@@ -46,7 +46,9 @@ final class DashboardInsightsModel {
     private var inFlight: AppConfiguration?
 
     func rows(_ source: Source) -> [ReportRow] { reports[source] ?? [] }
-    func isLoading(_ source: Source) -> Bool { loading.contains(source) }
+    /// Loading, or not asked yet: either way the card draws its skeleton.
+    func isLoading(_ source: Source) -> Bool { loading.contains(source) || (!answered.contains(source) && errors[source] == nil) }
+    private var answered: Set<Source> = []
     func error(_ source: Source) -> String? { errors[source] }
 
     func load(api: ReportMateAPI, force: Bool = false) async {
@@ -74,6 +76,7 @@ final class DashboardInsightsModel {
                 if let more = next.next() { group.addTask { (more, await Self.fetch(more, api: api)) } }
                 switch result {
                 case .success(let payload):
+                    answered.insert(source)
                     errors[source] = nil
                     apply(payload, to: source)
                 case .failure(let error):
@@ -191,7 +194,7 @@ struct InsightCard<Content: View>: View {
                     if let error, empty {
                         Label(error, systemImage: "exclamationmark.triangle").appFont(.caption).foregroundStyle(.secondary).padding(16)
                     } else if loading, empty {
-                        HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Loading…").appFont(.caption).foregroundStyle(.secondary) }.padding(16)
+                        InsightBodySkeleton().padding(16)
                     } else if empty {
                         Text("No data").appFont(.caption).foregroundStyle(.secondary).padding(16)
                     } else {

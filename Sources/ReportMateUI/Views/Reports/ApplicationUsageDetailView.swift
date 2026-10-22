@@ -56,7 +56,7 @@ struct ApplicationUsageDetailView: View {
                                       aggregates: UsageAggregates(devices: report.devices, metric: metric))
             }
             if loading {
-                LoadingView(message: "Loading per-device usage for \(appName)...")
+                ReportSkeleton(widgets: 4, columns: [220, 120, 120, 120, nil])
             } else if let error {
                 ErrorBanner(message: error) { Task { await load() } }.padding()
                 Spacer()

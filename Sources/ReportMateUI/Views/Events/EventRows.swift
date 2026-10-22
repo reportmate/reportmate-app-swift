@@ -73,7 +73,7 @@ struct EventInlineLinesView: View {
                     .appFont(.body)
                     .foregroundStyle(summaryColor(successTone))
                     .fixedSize(horizontal: false, vertical: true)
-                if loading { Text("Loading details…").appFont(.caption).foregroundStyle(.tertiary).italic() }
+                if loading { SkeletonLine(width: 220, height: 8).skeletonAccessibility("Loading details") }
             } else {
                 ForEach(Array(errors.enumerated()), id: \.offset) { _, line in lineView(line, tone: .red) }
                 ForEach(Array(warnings.enumerated()), id: \.offset) { _, line in lineView(line, tone: .yellow) }
@@ -142,7 +142,8 @@ struct EventDetailsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if store.loading, store.payloads.isEmpty {
-                ProgressView().controlSize(.small)
+                VStack(alignment: .leading, spacing: 7) { SkeletonLine(width: 260, height: 9); SkeletonLine(width: 200, height: 9); SkeletonLine(width: 230, height: 9) }
+                    .skeletonAccessibility("Loading details")
             }
             ForEach(event.eventIds, id: \.self) { id in
                 if let p = store.payloads[id] {
@@ -356,7 +357,7 @@ struct EventExpandedPanel: View {
                 Text(event.isBundle ? "Bundle of \(event.count)" : "#\(event.id)").appFont(.caption, design: .monospaced).foregroundStyle(.secondary)
                     .help(event.isBundle ? "Bundle: \(event.eventIds.joined(separator: ", "))" : "#\(event.id)")
                 Text(TimeFormatting.exact(event.ts)).appFont(.caption).foregroundStyle(.secondary)
-                if store.loading { ProgressView().controlSize(.mini) }
+                if store.loading { SkeletonCircle(size: 7).accessibilityLabel("Loading") }
             }
             if let summary { LastRunSummaryView(summary: summary) }
             EventDetailsView(event: event, includeRaw: false)
@@ -375,7 +376,8 @@ struct EventExpandedPanel: View {
                     CopyButton(value: text)
                 }
                 if store.loading, store.payloads.isEmpty {
-                    Text("Loading full payload...").appFont(.caption).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 7) { ForEach(0..<8, id: \.self) { i in SkeletonLine(fraction: [0.4, 0.6, 0.5, 0.7, 0.35, 0.55, 0.45, 0.3][i], height: 9) } }
+                        .padding(10).skeletonAccessibility("Loading payload")
                 } else {
                     ScrollView([.horizontal, .vertical]) {
                         Text(EventPayloadText.highlighted(text, search: search))

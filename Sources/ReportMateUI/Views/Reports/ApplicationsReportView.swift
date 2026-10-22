@@ -149,7 +149,7 @@ struct ApplicationsReportView: View {
                 .background(Color.subtleBackground, in: RoundedRectangle(cornerRadius: 8))
                 .frame(width: 260)
                 HStack(spacing: 8) {
-                    if model.loading { ProgressView().controlSize(.small) }
+                    if model.loading { Text("Updating…").appFont(.caption).foregroundStyle(.secondary) }
                     if model.reportType == .usage, model.utilization != nil { periodPicker }
                     actionButtons
                     exportButton
@@ -245,18 +245,18 @@ struct ApplicationsReportView: View {
 
     // MARK: Loading and builder
 
+    /// The chip cloud and the report as skeletons while the filters load (60-90 s the first time).
     private var filtersProgress: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Text("Loading applications data from all devices...").appFont(.callout, weight: .medium)
-                Spacer()
+        VStack(alignment: .leading, spacing: 12) {
+            Text(model.loadingMessage.isEmpty ? "Loading applications from every device; the first load takes a minute or so." : model.loadingMessage)
+                .appFont(.caption).foregroundStyle(.secondary)
+            FlowLayout(spacing: 6) {
+                ForEach(0..<48, id: \.self) { i in SkeletonBlock(width: CGFloat([70, 110, 90, 140, 60, 100, 80, 120][i % 8]), height: 22, radius: 11) }
             }
-            ProgressView().progressViewStyle(.linear)
-            Text(model.loadingMessage.isEmpty ? "First load may take 60-90 seconds" : model.loadingMessage).appFont(.caption).foregroundStyle(.secondary)
+            .skeletonAccessibility("Loading applications")
+            SkeletonTableRows(rows: 8, columns: [nil, 120, 120, 120])
         }
-        .frame(maxWidth: 560)
-        .padding(.vertical, 32)
-        .frame(maxWidth: .infinity)
+        .padding(16)
     }
 
     private var builder: some View {

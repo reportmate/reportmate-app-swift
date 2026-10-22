@@ -182,7 +182,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
                     Text(subtitleText(rows.count)).appFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if model.loading { ProgressView().controlSize(.small) }
+                if model.loading, !model.rows.isEmpty { Text("Updating…").appFont(.caption).foregroundStyle(.secondary) }
                 toolbar(rows)
                 // One button clears everything narrowing the rows: widget filters, selections and search.
                 let narrowing = activeFilterCount + linkFilter.count + selections.count + (search.isEmpty ? 0 : 1)
@@ -209,7 +209,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
             if !linkFilter.isEmpty { linkFilterBar }
             DeviceFiltersView(options: DeviceFilterOptions(devices: summaries), selections: $selections, expanded: $filtersExpanded)
             if model.loading, model.rows.isEmpty {
-                LoadingView(message: "Loading \(section.title.lowercased()) report…")
+                ReportSkeleton(widgets: widgets == nil ? 0 : 4)
             } else if let error = model.error, model.rows.isEmpty {
                 ErrorBanner(message: error) { Task { await model.load(api: appState.api, query: query, force: true) } }.padding()
                 Spacer()

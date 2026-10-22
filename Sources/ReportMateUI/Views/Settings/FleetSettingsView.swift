@@ -58,6 +58,8 @@ final class FleetSettingsStore {
     var status: String?
     var saving = false
     private var loadedOnce = false
+    /// No answer from the API yet: the tabs draw their layout as placeholders.
+    var awaiting: Bool { response == nil && status == nil }
 
     /// The API has no saved document yet, or setup never finished.
     var isFirstTime: Bool {
@@ -159,6 +161,9 @@ struct FleetSettingsView: View {
                 }
             }
             .disabled(readOnly && section != .kiosk)
+            // The editors over the defaults, greyed into placeholders until the API answers.
+            .redacted(reason: store.awaiting && section != .maintenance ? .placeholder : [])
+            .modifier(ShimmerWhile(active: store.awaiting && section != .maintenance))
         }
         .task { await store.loadIfNeeded(appState) }
         .sheet(isPresented: $showWizard) {

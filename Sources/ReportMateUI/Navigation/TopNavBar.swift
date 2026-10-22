@@ -77,7 +77,7 @@ struct TopNavBar: View {
     }
 
     private func tab(_ section: AppSection) -> some View {
-        let active = appState.section == section
+        let active = appState.highlightedSection == section
         return Button { select(section) } label: {
             HStack(spacing: 5) {
                 Image(systemName: section.systemImage).appFont(fixed: 11)
@@ -101,7 +101,7 @@ struct TopNavBar: View {
     }
 
     private var reportsMenu: some View {
-        let current = appState.section.isReport ? appState.section : nil
+        let current = appState.highlightedSection.flatMap { $0.isReport ? $0 : nil }
         return Menu {
             ForEach(AppSection.reports) { section in
                 Button { select(section) } label: { Label(section.title, systemImage: section.systemImage) }

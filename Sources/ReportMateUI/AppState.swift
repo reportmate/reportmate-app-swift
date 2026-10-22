@@ -256,6 +256,16 @@ final class AppState {
         }
     }
 
+    /// The section the top bar highlights. A device page belongs to no section, as on
+    /// the web, where `/device/<serial>` highlights no tab; a drill-down such as one
+    /// application's usage stays under its report.
+    var highlightedSection: AppSection? {
+        switch currentRoute {
+        case .device, .localDevice: return nil
+        default: return section
+        }
+    }
+
     /// The route on top of the navigation stack, tracked alongside `path`.
     private(set) var currentRoute: Route?
     private var routeStack: [Route] = []

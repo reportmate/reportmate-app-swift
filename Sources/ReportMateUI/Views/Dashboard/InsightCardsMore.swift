@@ -33,7 +33,7 @@ struct InstallHealthWidget: View {
                             InsightBarRow(label: item.name, count: item.count, max: max, tone: .red, link: DashboardLinks.installs(item: item.name, filter: "errors"))
                         }
                     } else if recordsLoading {
-                        HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Loading install records…").appFont(.caption).foregroundStyle(.secondary) }.padding(4)
+                        SkeletonBars(count: 4).padding(4).skeletonAccessibility("Loading install records")
                     } else if recordsFailed {
                         Text("Install records unavailable; showing counts only.").appFont(.caption).foregroundStyle(.secondary).padding(4)
                     } else {
@@ -155,7 +155,7 @@ struct SoftwareRiskWidget: View {
                             InsightBarRow(label: item.name, count: item.count, max: max, tone: .orange, link: DashboardLinks.report("installs", ["item": item.name]))
                         }
                     } else if recordsLoading {
-                        HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Loading install records…").appFont(.caption).foregroundStyle(.secondary) }.padding(4)
+                        SkeletonBars(count: 4).padding(4).skeletonAccessibility("Loading install records")
                     } else if recordsFailed {
                         Text("Install records unavailable.").appFont(.caption).foregroundStyle(.secondary).padding(4)
                     } else {
