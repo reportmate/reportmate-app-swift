@@ -171,13 +171,14 @@ re-flow as the window is resized:
 - Dashboard: column 1 holds Fleet Status, Installs (its two headline counts are
   the largest figures on the page; it replaces the old Errors and Warnings
   tiles), Management Tools Logs and Check-in Gaps. The wide column holds Recent
-  Events, App Usage, Platform Distribution and the OS version charts. At 2000 pt
-  of content width or more (a 27-inch display) two insight columns the width of
-  column 1 sit between them: column 2 opens with New Clients and ends with Reboot
-  & Update Debt, and the other cards are dealt alternately across both (1fr each,
-  the wide one 2fr). From 1500 pt there are three columns, column 2 holding New
-  Clients and three cards, the rest four across underneath. Below that the cards
-  sit in a two-column grid under the main layout. No card has a platform control
+  Events, Platform Distribution and the OS version charts. At 2000 pt of content
+  width or more (a 27-inch display) two columns the width of column 1 sit between
+  them: column 2 is New Clients, Directory Services, Connectivity Problems,
+  Protection Gaps and Expiring Certificates; column 3 is Update Debt, Storage, App
+  Usage, Software Risk and Reboot Debt (1fr each, the wide one 2fr). From 1500 pt
+  there are three columns, column 2 as on the wide layout and column 3's cards four
+  across underneath. Below that the cards sit in a two-column grid in the same
+  order. No card has a platform control
   of its own; every card follows the toolbar toggle. The web app switches at
   1680 and 2200 px.
 - Report widget rows stretch to fill the window, and scroll sideways only when
@@ -211,10 +212,10 @@ The top bar keeps every section tab on a device page too.
 The dashboard's twelve insight cards and the link parameters behind them are a
 contract shared with the web and Windows apps, written up in the web repo as
 [`docs/DASHBOARD-WIDGETS.md`](https://github.com/reportmate/reportmate-app-web/blob/main/docs/DASHBOARD-WIDGETS.md).
-Each card answers one question about the fleet: Installs, Reboot & Update Debt,
+Each card answers one question about the fleet: Installs, Reboot Debt (uptime),
+Update Debt (patch level against the fleet's latest, pending and deferred updates),
 Protection Gaps, Management Tools Logs (the MDM agent's own logs left out,
-messages grouped with their timestamps stripped), Storage, Check-in Gaps, OS
-Currency, Software Risk, Expiring Certificates, Directory Services (the Identity
+messages grouped with their timestamps stripped), Storage, Check-in Gaps, Software Risk, Expiring Certificates, Directory Services (the Identity
 report's classes: Cloud Joined, Domain Joined with Trusted, Unconfirmed and
 Broken, Standard, Unjoined), Connectivity Problems, and App Usage (the top ten
 apps on a fixed grid, with Usage and Catalog chips)

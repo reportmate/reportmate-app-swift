@@ -437,6 +437,8 @@ let appUsageEnvelope = #"""
     }
 
     @Test func renamedCardsAnswerUnderTheirNewKeys() {
+        #expect(DashboardInsightsDocument(json: json(#"{"cards": {"osCurrency": {"rated": 1}}}"#)).card("updateDebt")?.int("rated") == 1)
+        #expect(DashboardInsightsDocument.cardKeys.contains("updateDebt") && !DashboardInsightsDocument.cardKeys.contains("osCurrency"))
         let doc = DashboardInsightsDocument(json: json(#"{"cards": {"managementToolErrors": {"tools": []}, "directoryJoin": {"views": {}}}}"#))
         #expect(doc.card("managementToolLogs") != nil)
         #expect(doc.card("directoryServices") != nil)

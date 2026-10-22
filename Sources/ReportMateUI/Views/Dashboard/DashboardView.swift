@@ -152,14 +152,11 @@ struct DashboardView: View {
     static let wideBreakpoint: CGFloat = 2000
     /// Column 1 and each insight column never go narrower than this.
     static let columnMinimum: CGFloat = 360
-    /// The insight-column cards between New Clients and Reboot & Update Debt, by API key.
-    /// Installs, Management Tools Logs and Check-in Gaps sit in column 1 and App Usage
-    /// under Recent Events.
-    static let cardOrder = ["protectionGaps", "storage", "osCurrency", "softwareRisk",
-                            "expiringCertificates", "directoryServices", "connectivityProblems"]
-    /// Column 2 ends with Reboot & Update Debt; column 1 carries Management Tools Logs and
-    /// Check-in Gaps under Installs.
-    static let lastCard = "rebootDebt"
+    /// Column 2, under New Clients, and column 3, by API key (revision 5 of the spec).
+    /// Narrower tiers flow the same order into fewer columns: column 2's cards, then
+    /// column 3's. Installs, Management Tools Logs and Check-in Gaps sit in column 1.
+    static let column2 = ["directoryServices", "connectivityProblems", "protectionGaps", "expiringCertificates"]
+    static let column3 = ["updateDebt", "storage", "appUsage", "softwareRisk", "rebootDebt"]
 
     private var devices: [DeviceSummary] {
         guard let all = model.data?.devices else { return [] }
@@ -249,9 +246,8 @@ struct DashboardView: View {
             HStack(alignment: .top, spacing: 20) {
                 // Cards size to their content rather than to the tallest column.
                 statusColumn.frame(width: unit).fixedSize(horizontal: false, vertical: true)
-                insightStack(Self.cardOrder.enumerated().filter { $0.offset % 2 == 0 }.map(\.element), newClients: true, last: Self.lastCard)
-                    .frame(width: unit).fixedSize(horizontal: false, vertical: true)
-                insightStack(Self.cardOrder.enumerated().filter { $0.offset % 2 == 1 }.map(\.element)).frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                insightStack(Self.column2, newClients: true).frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                insightStack(Self.column3).frame(width: unit).fixedSize(horizontal: false, vertical: true)
                 activityColumn.frame(maxWidth: .infinity)
             }
         } else if contentWidth >= Self.desktopBreakpoint {
@@ -261,10 +257,10 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .top, spacing: 20) {
                     statusColumn.frame(width: unit).fixedSize(horizontal: false, vertical: true)
-                    insightStack(Array(Self.cardOrder.prefix(3)), newClients: true).frame(width: unit).fixedSize(horizontal: false, vertical: true)
+                    insightStack(Self.column2, newClients: true).frame(width: unit).fixedSize(horizontal: false, vertical: true)
                     activityColumn.frame(maxWidth: .infinity)
                 }
-                insightGrid(Array(Self.cardOrder.dropFirst(3)) + [Self.lastCard], maxColumns: 4)
+                insightGrid(Self.column3, maxColumns: 4)
             }
         } else {
             VStack(alignment: .leading, spacing: 20) {
@@ -279,7 +275,7 @@ struct DashboardView: View {
                         activityColumn
                     }
                 }
-                insightGrid(Self.cardOrder + [Self.lastCard], maxColumns: 2)
+                insightGrid(Self.column2 + Self.column3, maxColumns: 2)
             }
         }
     }
@@ -313,7 +309,6 @@ struct DashboardView: View {
             } else {
                 VStack(spacing: 20) {
                     RecentEventsWidget(events: events, connectionStatus: model.connectionStatus, lastUpdate: model.lastUpdate)
-                    AppUsageCard()
                     PlatformDistributionWidget(devices: devices)
                     osVersionRow
                 }
@@ -321,11 +316,10 @@ struct DashboardView: View {
         }
     }
 
-    private func insightStack(_ cards: [String], newClients: Bool = false, last: String? = nil) -> some View {
+    private func insightStack(_ cards: [String], newClients: Bool = false) -> some View {
         VStack(spacing: 20) {
             if newClients { newClientsCard }
             ForEach(cards, id: \.self) { card($0) }
-            if let last { card(last) }
         }
     }
 

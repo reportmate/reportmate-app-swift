@@ -29,7 +29,8 @@ struct InsightCardView: View {
         case "managementToolLogs", "managementToolErrors": ManagementToolLogsCard()
         case "storage": StorageCard()
         case "checkinGaps": CheckInGapsCard(platform: platform)
-        case "osCurrency": OSCurrencyCard()
+        case "updateDebt", "osCurrency": UpdateDebtCard()
+        case "appUsage": AppUsageCard()
         case "softwareRisk": SoftwareRiskCard()
         case "expiringCertificates": ExpiringCertificatesCard()
         case "directoryServices", "directoryJoin": DirectoryServicesCard(platform: platform)
@@ -38,11 +39,11 @@ struct InsightCardView: View {
     }
 }
 
-// MARK: - Reboot & Update Debt
+// MARK: - Reboot Debt
 
 struct RebootDebtCard: View {
     var body: some View {
-        InsightCard(key: "rebootDebt", title: "Reboot & Update Debt", subtitle: "Long uptimes and updates waiting", systemImage: "arrow.clockwise.circle", tone: .orange, link: DashboardLinks.system()) { c in
+        InsightCard(key: "rebootDebt", title: "Reboot Debt", subtitle: "Devices that have not restarted in a while", systemImage: "arrow.clockwise.circle", tone: .orange, link: DashboardLinks.system()) { c in
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 8) {
                     InsightFigure(value: c.count("uptime30dPlus"), label: "up 30+ days", tone: .red, link: c.item("uptime30dPlus")?.link)
@@ -57,10 +58,6 @@ struct RebootDebtCard: View {
                             InsightBarRow(label: b.label ?? b.key ?? "", count: b.count, max: max, tone: .orange, link: b.link)
                         }
                     }
-                }
-                InsightChips {
-                    StatChip(value: c.count("pendingUpdates") ?? 0, label: "with pending updates", tone: .yellow, link: c.item("pendingUpdates")?.link)
-                    StatChip(value: c.count("deferredUpdates") ?? 0, label: "with deferred updates", tone: .orange, link: c.item("deferredUpdates")?.link)
                 }
             }
         }
@@ -350,11 +347,15 @@ struct CheckInGapsCard: View {
     }
 }
 
-// MARK: - OS Currency
+// MARK: - Update Debt
 
-struct OSCurrencyCard: View {
+/// Patch level against the fleet's latest, with the devices that have updates pending
+/// or deferred (which used to sit on the reboot card).
+struct UpdateDebtCard: View {
+    @Environment(DashboardInsightsModel.self) private var insights
+
     var body: some View {
-        InsightCard(key: "osCurrency", title: "OS Currency", subtitle: "Patch level against the fleet's latest", systemImage: "arrow.triangle.2.circlepath", tone: .blue, link: DashboardLinks.system()) { c in
+        InsightCard(key: "updateDebt", title: "Update Debt", subtitle: "Patch level, pending and deferred updates", systemImage: "arrow.triangle.2.circlepath", tone: .blue, link: DashboardLinks.system()) { c in
             VStack(alignment: .leading, spacing: 12) {
                 let behind = c.item("behind")
                 if (c.int("rated") ?? 0) > 0 {
@@ -364,6 +365,12 @@ struct OSCurrencyCard: View {
                     ], center: "\(c.int("pctOnLatest") ?? 0)%")
                 }
                 InsightChips {
+                    // An API from before the split still carries these on the reboot card.
+                    let reboot = insights.card("rebootDebt")
+                    let pending = c.item("pendingUpdates") ?? reboot?.item("pendingUpdates")
+                    let deferred = c.item("deferredUpdates") ?? reboot?.item("deferredUpdates")
+                    StatChip(value: pending?.count ?? 0, label: "with pending updates", tone: .yellow, link: pending?.link)
+                    StatChip(value: deferred?.count ?? 0, label: "with deferred updates", tone: .orange, link: deferred?.link)
                     StatChip(value: c.count("unsupportedMac") ?? 0, label: "unsupported macOS", tone: .red, link: c.item("unsupportedMac")?.link)
                     StatChip(value: c.count("windows10") ?? 0, label: "on Windows 10", tone: .orange, link: c.item("windows10")?.link)
                 }

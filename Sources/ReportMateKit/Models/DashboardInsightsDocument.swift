@@ -9,7 +9,7 @@ public struct DashboardInsightsDocument: Sendable, Hashable {
     /// The card keys the API serves at `/dashboard/insights/{card}` and in the combined document.
     public static let cardKeys = [
         "installHealth", "rebootDebt", "protectionGaps", "managementToolLogs", "storage",
-        "checkinGaps", "osCurrency", "softwareRisk", "expiringCertificates", "directoryServices", "connectivityProblems",
+        "checkinGaps", "updateDebt", "softwareRisk", "expiringCertificates", "directoryServices", "connectivityProblems",
     ]
     /// App Usage has its own endpoint, `/dashboard/insights/appUsage`, because it takes filters.
     public static let appUsageKey = "appUsage"
@@ -156,5 +156,5 @@ public enum ManagementToolMessages {
 
 extension DashboardInsightsDocument {
     /// A card under its current key, or the key it had before the API renamed it.
-    public static let renamedKeys: [String: String] = ["managementToolLogs": "managementToolErrors", "directoryServices": "directoryJoin"]
+    public static let renamedKeys: [String: String] = ["managementToolLogs": "managementToolErrors", "directoryServices": "directoryJoin", "updateDebt": "osCurrency"]
 }

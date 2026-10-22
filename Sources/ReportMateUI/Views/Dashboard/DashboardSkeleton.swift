@@ -63,7 +63,6 @@ struct DashboardActivitySkeleton: View {
                 }
             }
             .skeletonAccessibility()
-            SkeletonCard { SkeletonBars(count: 6) }
             SkeletonCard {
                 VStack(spacing: 10) {
                     ForEach(0..<2, id: \.self) { _ in
