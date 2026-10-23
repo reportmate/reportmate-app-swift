@@ -50,6 +50,7 @@ struct ContentView: View {
                     .help("Back (⌘[)")
                     .disabled(!appState.canGoBack)
             }
+            .withoutToolbarGlass()
             // One row, like the web header: platform toggle on the left, search dead
             // centre, the sections on the right. Fixed items only: a fit-to-width
             // view inside a toolbar item makes the whole toolbar overflow.
@@ -59,18 +60,21 @@ struct ContentView: View {
             ToolbarItem(placement: .navigation) {
                 Image(nsImage: AppLogo.image).resizable().aspectRatio(contentMode: .fit).frame(height: 24)
             }
+            .withoutToolbarGlass()
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 10) {
                     PlatformToggle()
                     ToolbarSearchField(query: $searchQuery, selectedIndex: $searchIndex, focused: $searchFocused)
                 }
             }
+            .withoutToolbarGlass()
             ToolbarItemGroup(placement: .primaryAction) {
                 // Just under 1960 pt the full row no longer fits once the labels are sized for
                 // their bold form, and the toolbar then drops every label to icons.
                 TopNavBar(inline: true, compact: windowWidth < 1960)
                 trailingButtons
             }
+            .withoutToolbarGlass()
         }
         .background(GeometryReader { geo in Color.clear.onAppear { windowWidth = geo.size.width }.onChange(of: geo.size.width) { _, w in windowWidth = w } })
         .focusedSceneValue(\.appState, appState)
@@ -297,5 +301,19 @@ private struct SharedTasks: ViewModifier {
                 await appState.loadSettings()
                 await appState.loadDevices()
             }
+    }
+}
+
+extension ToolbarContent {
+    /// macOS 26 draws a glass capsule behind every toolbar item, which splits the one
+    /// header row into a string of bubbles. The controls draw their own chrome, so the
+    /// toolbar stays one flat row, as on earlier releases.
+    @ToolbarContentBuilder
+    func withoutToolbarGlass() -> some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
     }
 }
