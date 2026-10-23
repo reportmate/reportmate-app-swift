@@ -10,6 +10,8 @@ struct ToolbarSearchField: View {
     @Binding var query: String
     @Binding var selectedIndex: Int
     var focused: FocusState<Bool>.Binding
+    /// In a macOS 26+ window toolbar the system glass capsule is the field's chrome.
+    var glass = false
 
     private var results: [DeviceSummary] { DeviceSearch.search(appState.devices, query: query, limit: 8) }
 
@@ -27,10 +29,10 @@ struct ToolbarSearchField: View {
                 Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 8).padding(.vertical, 4)
+        .padding(.horizontal, glass ? 10 : 8).padding(.vertical, 4)
         .frame(width: 360)
-        .background(Color.subtleBackground, in: RoundedRectangle(cornerRadius: 7))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(focused.wrappedValue ? Color.blue.opacity(0.6) : Color.cardBorder))
+        .background(glass ? Color.clear : Color.subtleBackground, in: RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(glass ? Color.clear : (focused.wrappedValue ? Color.blue.opacity(0.6) : Color.cardBorder)))
         .onChange(of: query) { _, _ in selectedIndex = 0 }
         .onAppear { Task { await appState.loadDevices() } }
     }
