@@ -214,10 +214,18 @@ final class AppState {
             open(device: serial, tab: tab.flatMap(DeviceTab.init(rawValue:)), filter: logFocus ?? link.query["filter"])
         case .events, .eventsFailures: section = .events; pendingDeepLink = link
         case .report(let name):
-            if name == "management" { pages.managementMode = .enrollment }
-            if let s = AppSection(rawValue: name) { section = s; pendingDeepLink = link }
+            guard let s = AppSection(rawValue: name) else { break }
+            // `?tab=` picks the module report's tab, as on the web; the tab's own view takes the link.
+            var link = link
+            let tab = ReportTabs.normalized(s, link.query["tab"])
+            link.query["tab"] = tab.isEmpty ? nil : tab
+            pages.reportTabs[s] = tab
+            section = s
+            pendingDeepLink = link
         case .managementLogs:
-            pages.managementMode = .logs
+            var link = link
+            link.query["tab"] = "logs"
+            pages.reportTabs[.management] = "logs"
             section = .management
             pendingDeepLink = link
         case .applicationUsage(let app):
@@ -235,9 +243,9 @@ final class AppState {
         }
     }
 
-    /// Take the pending link if it targets `section`.
-    func consumeDeepLink(for section: AppSection) -> DeepLink? {
-        guard let link = pendingDeepLink, self.section == section else { return nil }
+    /// Take the pending link if it targets `section` and, on a module report, its tab.
+    func consumeDeepLink(for section: AppSection, tab: String = "") -> DeepLink? {
+        guard let link = pendingDeepLink, self.section == section, (link.query["tab"] ?? "") == tab else { return nil }
         pendingDeepLink = nil
         return link
     }
@@ -284,8 +292,12 @@ final class AppState {
         case .dashboard: return DeepLink(target: .dashboard)
         case .devices: return DeepLink(target: .devices, query: linkQuery)
         case .events: return DeepLink(target: linkQuery["failures"] == "1" ? .eventsFailures : .events, query: linkQuery.filter { $0.key != "failures" })
-        case .management where pages.managementMode == .logs: return DeepLink(target: .managementLogs, query: linkQuery)
-        default: return DeepLink(target: .report(section.rawValue), query: linkQuery)
+        default:
+            // A module report's tab travels as `?tab=`, the way the web links it.
+            var q = linkQuery
+            let tab = pages.tab(section)
+            q["tab"] = tab.isEmpty ? nil : tab
+            return DeepLink(target: .report(section.rawValue), query: q)
         }
     }
 
@@ -324,6 +336,43 @@ final class AppState {
                 history = saved
             }
         }
+    }
+
+    // MARK: Report tabs and commands
+
+    /// Show one of a module report's tabs; its filters start from what it last had.
+    func selectReportTab(_ tab: String, in section: AppSection) {
+        guard ReportTabs.tabs(for: section).contains(where: { $0.key == tab }) else { return }
+        if self.section != section { self.section = section }
+        path = NavigationPath()
+        linkQuery = [:]
+        pages.reportTabs[section] = tab
+    }
+
+    /// Step to the next or previous tab of the module report on screen.
+    func stepReportTab(by offset: Int) {
+        let tabs = ReportTabs.tabs(for: section)
+        guard currentRoute == nil, !tabs.isEmpty, let i = tabs.firstIndex(where: { $0.key == pages.tab(section) }) else { return }
+        selectReportTab(tabs[(i + offset + tabs.count) % tabs.count].key, in: section)
+    }
+
+    var hasReportTabs: Bool { currentRoute == nil && !ReportTabs.tabs(for: section).isEmpty }
+
+    /// The CSV export of the report on screen, for File › Export CSV; set by the report.
+    var reportExport: (() -> Void)?
+
+    /// Copy a link to what is on screen: the web handoff link when the web address is known.
+    func copyCurrentLink() {
+        let link = currentDeepLink
+        let text = configuration.normalizedWebURL.flatMap { link.handoffURL(webBase: $0)?.absoluteString } ?? link.url.absoluteString
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// The address of what is on screen, for a CSV's provenance column.
+    var currentReportURL: String {
+        let link = currentDeepLink
+        return configuration.normalizedWebURL.flatMap { link.webURL(base: $0)?.absoluteString } ?? link.url.absoluteString
     }
 
     // MARK: Devices

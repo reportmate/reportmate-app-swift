@@ -16,7 +16,8 @@ import Foundation
 ///     reportmate://applications/usage/<app>?days=30
 ///     reportmate://applications/coverage
 ///     reportmate://system?osVersion=15.4  (and the other reports)
-///     reportmate://management/logs?tool=installs&level=error&hours=24
+///     reportmate://system?tab=services&serviceNames=["spooler"]   (a module report's tab, as on the web)
+///     reportmate://management?tab=logs&tool=installs&level=error&hours=24   (also /management/logs)
 ///     reportmate://settings
 ///     reportmate://this-mac                                    (this-device, this-pc and local are aliases)
 ///     reportmate://<web host>/device/<serial>#installs   (a pasted web URL, scheme swapped)

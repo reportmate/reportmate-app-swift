@@ -1,4 +1,5 @@
 import SwiftUI
+import ReportMateKit
 
 /// Every page's model, owned by `AppState` instead of the page view, so leaving a
 /// page and coming back shows the data it had at once and refreshes it in the
@@ -14,9 +15,20 @@ final class PageModels {
     let events = EventsFeedModel()
     let installs = InstallsReportModel()
     let applications = ApplicationsReportModel()
-    /// Management's two views: MDM enrollment, or the management tools' logs.
-    enum ManagementMode { case enrollment, logs }
-    var managementMode: ManagementMode = .enrollment
+    /// The tab each module report shows (`?tab=` on the web); "" is the module's main report.
+    var reportTabs: [AppSection: String] = [:]
+    func tab(_ section: AppSection) -> String { reportTabs[section] ?? "" }
+    /// Each sub-report's filters, in web query form, kept across navigation.
+    var subReportParams: [String: ReportParams] = [:]
+    @ObservationIgnored private var subReports: [String: AnyObject] = [:]
+
+    /// A sub-report's loader, kept so a return shows the last rows at once.
+    func subReport<Model: AnyObject>(_ key: String, make: () -> Model) -> Model {
+        if let m = subReports[key] as? Model { return m }
+        let m = make()
+        subReports[key] = m
+        return m
+    }
     let managementLogs = ManagementLogsModel()
 
     @ObservationIgnored private var reports: [String: FleetReportModel] = [:]

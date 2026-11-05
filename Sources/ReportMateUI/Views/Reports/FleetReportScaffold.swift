@@ -183,7 +183,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    if let titleControl { titleControl } else { Text(section.title).appFont(.title3, weight: .semibold) }
+                    if let titleControl { titleControl } else if !ReportTabs.tabs(for: section).isEmpty { ReportTabSwitch(section: section) } else { Text(section.title).appFont(.title3, weight: .semibold) }
                     Text(subtitleText(rows.count)).appFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()

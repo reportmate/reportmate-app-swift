@@ -209,12 +209,12 @@ struct ContentView: View {
             case .events: EventsView()
             case .installs: InstallsReportView()
             case .applications: ApplicationsReportView()
-            case .system: SystemReportView()
-            case .management: ManagementReportView()
-            case .identity: IdentityReportView()
+            case .system: ModuleReportHost(section: .system) { SystemReportView() }
+            case .management: ModuleReportHost(section: .management) { ManagementReportView() }
+            case .identity: ModuleReportHost(section: .identity) { IdentityReportView() }
             case .hardware: HardwareReportView()
             case .peripherals: PeripheralsReportView()
-            case .security: SecurityReportView()
+            case .security: ModuleReportHost(section: .security) { SecurityReportView() }
             case .network: NetworkReportView()
             }
         }
