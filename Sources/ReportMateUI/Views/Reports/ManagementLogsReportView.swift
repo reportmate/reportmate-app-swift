@@ -113,7 +113,7 @@ struct ManagementLogsReportView: View {
         }
         .onChange(of: appState.refreshRequested) { _, _ in reload(force: true) }
         .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
-            guard let link = appState.consumeDeepLink(for: .management) else { return }
+            guard let link = appState.consumeDeepLink(for: .management, tab: "logs") else { return }
             tool = link.query["tool"]
             level = ["error", "warning"].contains(link.query["level"] ?? "") ? link.query["level"] : nil
             hours = link.query["hours"] == "168" ? 168 : 24
@@ -132,7 +132,7 @@ struct ManagementLogsReportView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    ManagementViewSwitch()
+                    ReportTabSwitch(section: .management)
                     Text("Errors and warnings in the management tools' own logs, MDM agent excluded").appFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -329,26 +329,5 @@ struct ManagementLogsReportView: View {
                 }
             }
         }
-    }
-}
-
-/// Management's header: a two-segment control where the title goes, Device Management
-/// Service (MDM enrollment) or Management Tools Logs; the subtitle under it follows.
-struct ManagementViewSwitch: View {
-    @Environment(AppState.self) private var appState
-
-    var body: some View {
-        Picker("Management", selection: Binding(get: { appState.pages.managementMode }, set: { mode in
-            appState.linkQuery = [:]
-            appState.pages.managementMode = mode
-        })) {
-            Text("Device Management Service").tag(PageModels.ManagementMode.enrollment)
-            Text("Management Tools Logs").tag(PageModels.ManagementMode.logs)
-        }
-        .pickerStyle(.segmented)
-        .controlSize(.large)
-        .labelsHidden()
-        .fixedSize()
-        .help("MDM enrollment, or the management tools' logs across the fleet")
     }
 }

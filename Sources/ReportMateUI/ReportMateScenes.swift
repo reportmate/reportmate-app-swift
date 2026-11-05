@@ -65,14 +65,18 @@ struct AppCommands: Commands {
                 .keyboardShortcut("k", modifiers: .command)
             Button("Refresh") { appState?.refreshRequested += 1 }
                 .keyboardShortcut("r", modifiers: .command)
-            Button("Copy Link") {
-                guard let appState else { return }
-                let link = appState.currentDeepLink
-                let text = appState.configuration.normalizedWebURL.flatMap { link.handoffURL(webBase: $0)?.absoluteString } ?? link.url.absoluteString
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-            }
-            .keyboardShortcut("c", modifiers: [.command, .shift])
+            Button("Copy Link") { appState?.copyCurrentLink() }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+            Button("Export CSV…") { appState?.reportExport?() }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(appState?.reportExport == nil)
+            Divider()
+            Button("Next Report Tab") { appState?.stepReportTab(by: 1) }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+                .disabled(!(appState?.hasReportTabs ?? false))
+            Button("Previous Report Tab") { appState?.stepReportTab(by: -1) }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+                .disabled(!(appState?.hasReportTabs ?? false))
             Divider()
             Button("Show All Platforms") { appState?.platformFilter = .all }
                 .keyboardShortcut("0", modifiers: [.command, .shift])
