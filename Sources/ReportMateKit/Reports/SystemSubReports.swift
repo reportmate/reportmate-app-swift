@@ -1,6 +1,6 @@
 import Foundation
 
-// System › Services, Updates, Background Items and Extensions: ports of the web's
+// System › Services, Updates, Background and Extensions: ports of the web's
 // `src/lib/system/{services,services-view,services-export,updates,item-reports,
 // background,extensions}.ts`, over `/api/v1/system/<report>[/filters]`.
 
@@ -510,7 +510,7 @@ public struct ItemChoiceFilter: Sendable, Hashable {
     public var fromTeamCatalog = false
 }
 
-/// Background Items or Extensions, described as data the way the web's `ItemReportConfig` is.
+/// Background or Extensions, described as data the way the web's `ItemReportConfig` is.
 public struct ItemReportSpec: @unchecked Sendable {
     public var tab: String
     public var api: String

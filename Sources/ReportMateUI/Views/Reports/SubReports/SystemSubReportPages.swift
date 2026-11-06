@@ -296,7 +296,7 @@ struct UpdatesReportPage: View {
 
 // MARK: - Background items and extensions
 
-/// System › Background Items and Extensions: one row per device and reported item.
+/// System › Background and Extensions: one row per device and reported item.
 struct ItemReportPage: View {
     @Environment(AppState.self) private var appState
     let spec: ItemReportSpec
