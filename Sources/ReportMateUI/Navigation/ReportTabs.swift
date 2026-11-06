@@ -13,8 +13,8 @@ enum ReportTabs {
     static func tabs(for section: AppSection) -> [Tab] {
         switch section {
         case .system:
-            return [Tab(key: "", title: "Operating System Information"), Tab(key: "services", title: "Services"), Tab(key: "updates", title: "Updates"),
-                    Tab(key: "background", title: "Background Items"), Tab(key: "extensions", title: "Extensions")]
+            return [Tab(key: "", title: "System"), Tab(key: "services", title: "Services"), Tab(key: "updates", title: "Updates"),
+                    Tab(key: "background", title: "Background"), Tab(key: "extensions", title: "Extensions")]
         case .management:
             return [Tab(key: "", title: "Device Management Service"), Tab(key: "profiles", title: "Configuration Profiles"),
                     Tab(key: "preferences", title: "Managed Preferences"), Tab(key: "logs", title: "Management Tools Logs")]
