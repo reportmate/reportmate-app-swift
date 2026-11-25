@@ -455,11 +455,7 @@ struct SubReportTable<Row: Identifiable>: View {
     var activateLabel = "Open Device"
 
     var body: some View {
-        if #available(macOS 14.4, *) {
-            NativeReportTable(rows: rows, columns: columns, sort: $sort, ascending: $ascending, device: device, deviceTab: deviceTab, link: link, activate: activate, activateLabel: activateLabel)
-        } else {
-            LegacyReportTable(rows: rows, columns: columns, sort: $sort, ascending: $ascending, device: device, deviceTab: deviceTab)
-        }
+        NativeReportTable(rows: rows, columns: columns, sort: $sort, ascending: $ascending, device: device, deviceTab: deviceTab, link: link, activate: activate, activateLabel: activateLabel)
     }
 }
 
@@ -469,7 +465,6 @@ private func tsv<Row>(_ rows: [Row], _ columns: [ReportColumn<Row>]) -> String {
         .map { $0.joined(separator: "\t") }.joined(separator: "\n")
 }
 
-@available(macOS 14.4, *)
 private struct NativeReportTable<Row: Identifiable>: View {
     @Environment(AppState.self) private var appState
     let rows: [Row]
@@ -548,54 +543,6 @@ private struct NativeReportTable<Row: Identifiable>: View {
     }
 }
 
-/// macOS 14.0 to 14.3 have no `TableColumnForEach`; a plain sortable list stands in.
-private struct LegacyReportTable<Row: Identifiable>: View {
-    @Environment(AppState.self) private var appState
-    let rows: [Row]
-    let columns: [ReportColumn<Row>]
-    @Binding var sort: String
-    @Binding var ascending: Bool
-    let device: (Row) -> ReportDevice?
-    let deviceTab: DeviceTab?
-
-    var body: some View {
-        ScrollView([.horizontal, .vertical]) {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    ForEach(rows) { row in
-                        HStack(alignment: .top, spacing: 12) {
-                            ForEach(columns) { c in
-                                ReportCell(row: row, column: c, device: device(row)) {
-                                    if let d = device(row) { appState.open(device: d.serialNumber, tab: deviceTab) }
-                                }
-                                .frame(width: c.kind == .device ? 220 : 160, alignment: .leading)
-                            }
-                        }
-                        .padding(.horizontal, 16).padding(.vertical, 6)
-                        Divider()
-                    }
-                } header: {
-                    HStack(spacing: 12) {
-                        ForEach(columns) { c in
-                            Button {
-                                if sort == c.key { ascending.toggle() } else { sort = c.key; ascending = true }
-                            } label: {
-                                HStack(spacing: 3) {
-                                    Text(c.label).appFont(.caption, weight: .semibold)
-                                    if sort == c.key { Image(systemName: ascending ? "chevron.up" : "chevron.down").appFont(.caption2) }
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .frame(width: c.kind == .device ? 220 : 160, alignment: .leading)
-                        }
-                    }
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(Color.subtleBackground)
-                }
-            }
-        }
-    }
-}
 
 /// One cell: the value drawn by the column's kind, with its explanatory second line.
 struct ReportCell<Row>: View {
