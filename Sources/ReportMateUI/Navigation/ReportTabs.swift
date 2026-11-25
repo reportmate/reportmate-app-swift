@@ -21,7 +21,8 @@ enum ReportTabs {
         case .security:
             return [Tab(key: "", title: "Fleet Security"), Tab(key: "vulnerabilities", title: "Vulnerabilities"), Tab(key: "threats", title: "Threat Detections")]
         case .identity:
-            return [Tab(key: "", title: "Identity & Users"), Tab(key: "posture", title: "Sign-in & Recovery Posture")]
+            return [Tab(key: "", title: "Identity & Users"), Tab(key: "posture", title: "Sign-in & Recovery Posture"),
+                    Tab(key: "admins", title: "Admins Report")]
         default:
             return []
         }
@@ -87,6 +88,7 @@ struct ModuleReportHost<Main: View>: View {
         case (.security, "vulnerabilities"): VulnerabilitiesReportPage()
         case (.security, "threats"): ThreatsReportPage()
         case (.identity, "posture"): PostureReportPage()
+        case (.identity, "admins"): IdentityReportView(showAdminsReport: true)
         default: main
         }
     }

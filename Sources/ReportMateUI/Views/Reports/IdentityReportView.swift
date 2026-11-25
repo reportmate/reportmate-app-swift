@@ -16,8 +16,7 @@ struct IdentityReportView: View {
 
     @State private var sortColumn: Column = .device
     @State private var ascending = true
-    @State private var noAdminsOnly = false
-    @State private var showAdminsReport = false
+    var showAdminsReport = false
     @State private var showUtilization = false
     @State private var directoryFilter: String? = nil
     @State private var authFilter: String? = nil
@@ -29,7 +28,7 @@ struct IdentityReportView: View {
     private func i(_ row: ReportRow) -> IdentityReportRow { IdentityReportRow(json: row.json) }
 
     private var widgetLabels: [String] {
-        [directoryFilter, authFilter, adminAccountFilter.map { "Admin: \($0)" }, showAdminsReport ? "Admins Report" : nil,
+        [directoryFilter, authFilter, adminAccountFilter.map { "Admin: \($0)" },
          tokenFilter.map { $0 == .withToken ? "SecureToken: holders" : "SecureToken: missing" },
          bootstrapFilter.map { $0 == .escrowed ? "Bootstrap: escrowed" : "Bootstrap: not escrowed" }].compactMap { $0 }
     }
@@ -44,13 +43,12 @@ struct IdentityReportView: View {
     }
 
     private func clearWidgetFilters() {
-        directoryFilter = nil; authFilter = nil; adminAccountFilter = nil; showAdminsReport = false; tokenFilter = nil; bootstrapFilter = nil
+        directoryFilter = nil; authFilter = nil; adminAccountFilter = nil; tokenFilter = nil; bootstrapFilter = nil
     }
 
     private func filtered(_ rows: [ReportRow]) -> [(row: ReportRow, i: IdentityReportRow)] {
         rows.map { ($0, i($0)) }.filter { pair in
             let d = pair.i
-            if noAdminsOnly, d.adminUsers > 0 { return false }
             if let directoryFilter {
                 switch directoryFilter {
                 case "Broken", "Unconfirmed", "Trusted": if d.trustLabel != directoryFilter { return false }
@@ -80,21 +78,29 @@ struct IdentityReportView: View {
 
     var body: some View {
         FleetReportContainer(
-            section: .identity, model: model, activeFilterCount: widgetLabels.count, clearFilters: clearWidgetFilters, subtitle: "User accounts, sessions, and identity management", searchPlaceholder: "Search devices or users...",
+            section: .identity, model: model, activeFilterCount: widgetLabels.count, reportTab: showAdminsReport ? "admins" : "", clearFilters: clearWidgetFilters, subtitle: showAdminsReport ? "Local administrator accounts reported by devices" : "User accounts, sessions, and identity management", searchPlaceholder: "Search devices or users...",
             searchKeys: { row in
                 let d = IdentityReportRow(json: row.json)
-                return [row.deviceName, row.serialNumber] + d.usernames + d.loggedInUsernames
+                return [row.deviceName, row.serialNumber] + (showAdminsReport ? d.adminUsernames : d.usernames + d.loggedInUsernames)
             },
             toolbar: { rows in
-                Toggle(isOn: $showAdminsReport) { Label("Admins Report", systemImage: "checkmark.shield") }.toggleStyle(.button).help("Flat per-(admin, device) report for security review")
                 if showAdminsReport {
-                    Toggle(isOn: Binding(get: { noAdminsOnly }, set: { on in noAdminsOnly = on; if on { showAdminsReport = false } })) { Label("No Admin Users", systemImage: "exclamationmark.triangle") }.toggleStyle(.button).tint(.yellow)
-                }
-                if rows.contains(where: { (IdentityReportRow(json: $0.json).sessionSummary?.totalSessions ?? 0) > 0 }) {
-                    Toggle(isOn: $showUtilization) { Label(showUtilization ? "Back to List" : "Utilization Report", systemImage: "chart.bar") }.toggleStyle(.button).help("Show session utilization report for devices with RDP data")
-                }
-                CSVExportButton(filename: "identity-report", headers: ["Device Name", "Serial Number", "Platform", "Total Users", "Admin Users", "Currently Logged In", "Last Seen"]) {
-                    filtered(rows).map { p in [p.row.deviceName, p.row.serialNumber, p.i.platformText, String(p.i.totalUsers), String(p.i.adminUsers), String(p.i.currentlyLoggedIn), p.row.json["lastSeen"].string ?? ""] }
+                    Button("No Admin Users") {
+                        appState.open(deepLink: DeepLink(target: .report("identity"), query: ["admins": "0"]))
+                    }
+                    CSVExportButton(filename: "local-admins", headers: ["Admin Account", "Device Name", "Serial Number", "Platform", "Account Created", "Last Seen"]) {
+                        adminRows(filtered(rows)).map { r in
+                            [r.admin, r.row.deviceName, r.row.serialNumber, r.i.platformText,
+                             r.created.map { $0.ISO8601Format() } ?? "", r.row.json["lastSeen"].string ?? ""]
+                        }
+                    }
+                } else {
+                    if rows.contains(where: { (IdentityReportRow(json: $0.json).sessionSummary?.totalSessions ?? 0) > 0 }) {
+                        Toggle(isOn: $showUtilization) { Label(showUtilization ? "Back to List" : "Utilization Report", systemImage: "chart.bar") }.toggleStyle(.button).help("Show session utilization report for devices with RDP data")
+                    }
+                    CSVExportButton(filename: "identity-report", headers: ["Device Name", "Serial Number", "Platform", "Total Users", "Admin Users", "Currently Logged In", "Last Seen"]) {
+                        filtered(rows).map { p in [p.row.deviceName, p.row.serialNumber, p.i.platformText, String(p.i.totalUsers), String(p.i.adminUsers), String(p.i.currentlyLoggedIn), p.row.json["lastSeen"].string ?? ""] }
+                    }
                 }
             },
             widgets: { rows in widgets(rows.map(i)) },
@@ -123,11 +129,51 @@ struct IdentityReportView: View {
 
     // MARK: Widgets
 
+    @ViewBuilder
     private func widgets(_ all: [IdentityReportRow]) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            directoryWidget(all).reportWidgetWidth(320)
-            authWidget(all).reportWidgetWidth(300)
-            adminsWidget(all).reportWidgetWidth(320)
+        if showAdminsReport {
+            let now = Date()
+            let ages = all.flatMap { device in
+                Set(device.adminUsernames.map { $0.lowercased() }).map { ageDays(device.adminCreationTimes[$0], now: now) }
+            }
+            let counts = all.map { Set($0.adminUsernames.map { $0.lowercased() }).count }
+            HStack(alignment: .top, spacing: 12) {
+                adminCountWidget("Admin Account Age", [
+                    ("Under 30 days", ages.count(where: { $0.map { $0 < 30 } == true })),
+                    ("30–364 days", ages.count(where: { $0.map { (30..<365).contains($0) } == true })),
+                    ("365 days or more", ages.count(where: { $0.map { $0 >= 365 } == true })),
+                    ("Unknown", ages.count(where: { $0 == nil })),
+                ]).reportWidgetWidth(280)
+                adminCountWidget("Administrators per Device", [
+                    ("None reported", counts.count(where: { $0 == 0 })),
+                    ("1 administrator", counts.count(where: { $0 == 1 })),
+                    ("2 or more administrators", counts.count(where: { $0 >= 2 })),
+                ]).reportWidgetWidth(280)
+                adminsWidget(all).reportWidgetWidth(320)
+            }
+        } else {
+            HStack(alignment: .top, spacing: 12) {
+                directoryWidget(all).reportWidgetWidth(320)
+                authWidget(all).reportWidgetWidth(300)
+                adminsWidget(all).reportWidgetWidth(320)
+            }
+        }
+    }
+
+    private func ageDays(_ created: Date?, now: Date = Date()) -> Int? {
+        guard let created, created <= now else { return nil }
+        return Int(now.timeIntervalSince(created) / 86_400)
+    }
+
+    private func adminCountWidget(_ title: String, _ entries: [(String, Int)]) -> some View {
+        ReportWidgetBox(title: title) {
+            ForEach(entries, id: \.0) { label, count in
+                HStack {
+                    Text(label).appFont(.caption)
+                    Spacer()
+                    Text(count.formatted()).appFont(.caption, weight: .medium).monospacedDigit()
+                }
+            }
         }
     }
 
@@ -253,7 +299,7 @@ struct IdentityReportView: View {
         }
         let entries = counts.values.sorted { $0.count != $1.count ? $0.count > $1.count : $0.display < $1.display }
         let maxCount = entries.first?.count ?? 0
-        return ReportWidgetBox(title: "Administrator Accounts") {
+        return ReportWidgetBox(title: showAdminsReport ? "Administrator Names" : "Administrator Accounts") {
             if entries.isEmpty {
                 Text("No admin accounts found").appFont(.caption).foregroundStyle(.tertiary)
             } else {
@@ -350,38 +396,43 @@ struct IdentityReportView: View {
         }
     }
 
-    private func adminsReport(_ pairs: [(row: ReportRow, i: IdentityReportRow)]) -> some View {
-        var rows: [(admin: String, row: ReportRow, i: IdentityReportRow)] = []
-        for p in pairs {
-            for a in p.i.adminUsernames {
-                if let f = adminAccountFilter, a.lowercased() != f.lowercased() { continue }
-                rows.append((a, p.row, p.i))
+    private typealias AdminRow = (admin: String, row: ReportRow, i: IdentityReportRow, created: Date?)
+
+    private func adminRows(_ pairs: [(row: ReportRow, i: IdentityReportRow)]) -> [AdminRow] {
+        pairs.flatMap { p -> [AdminRow] in
+            var seen = Set<String>()
+            return p.i.adminUsernames.compactMap { name in
+                let key = name.lowercased()
+                guard seen.insert(key).inserted, adminAccountFilter == nil || adminAccountFilter?.lowercased() == key else { return nil }
+                return (name, p.row, p.i, p.i.adminCreationTimes[key])
             }
+        }.sorted { a, b in
+            let order = a.admin.localizedCaseInsensitiveCompare(b.admin)
+            return order == .orderedSame
+                ? a.row.deviceName.localizedCaseInsensitiveCompare(b.row.deviceName) == .orderedAscending
+                : order == .orderedAscending
         }
-        rows.sort { a, b in
-            let c = a.admin.lowercased().compare(b.admin.lowercased())
-            if c != .orderedSame { return c == .orderedAscending }
-            return a.row.deviceName.lowercased() < b.row.deviceName.lowercased()
-        }
+    }
+
+    private func adminsReport(_ pairs: [(row: ReportRow, i: IdentityReportRow)]) -> some View {
+        let rows = adminRows(pairs)
         return VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Local Administrators Report").appFont(.headline)
                     HStack(spacing: 6) {
-                        Text("\(rows.count) admin assignments across \(pairs.count) devices.").appFont(.caption).foregroundStyle(.secondary)
+                        Text("\(rows.count) admin assignments across \(Set(rows.map { $0.row.serialNumber }).count) devices.").appFont(.caption).foregroundStyle(.secondary)
                         if let f = adminAccountFilter { Text("Filtered to: \(f)").appFont(.caption, design: .monospaced).foregroundStyle(.yellow) }
                     }
                 }
                 Spacer()
-                CSVExportButton(filename: "local-admins", headers: ["Admin Account", "Device Name", "Serial Number", "Platform", "Last Seen"]) {
-                    rows.map { [$0.admin, $0.row.deviceName, $0.row.serialNumber, $0.i.platformText, $0.row.json["lastSeen"].string ?? ""] }
-                }
             }
             .padding(16)
             ReportTable {
                 ReportHeaderLabel(title: "Admin Account", width: 220)
                 ReportHeaderLabel(title: "Device")
                 ReportHeaderLabel(title: "Platform", width: 100)
+                ReportHeaderLabel(title: "Account Age", width: 100)
                 ReportHeaderLabel(title: "Last Seen", width: 120)
             } rows: {
                 if rows.isEmpty { ReportEmptyRows(title: "No local admin accounts found.", message: "", systemImage: "person.badge.shield.checkmark") }
@@ -395,6 +446,8 @@ struct IdentityReportView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         Text(r.i.platformText).appFont(.callout).frame(width: 100, alignment: .leading)
+                        Text(ageDays(r.created).map { $0 == 1 ? "1 day" : "\($0.formatted()) days" } ?? "Unknown")
+                            .appFont(.callout).frame(width: 100, alignment: .leading)
                         Text(r.row.lastSeen.map { TimeFormatting.relative($0) } ?? "-").appFont(.callout).frame(width: 120, alignment: .leading)
                     }
                     .padding(.horizontal, 16).padding(.vertical, 6)

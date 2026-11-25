@@ -221,6 +221,7 @@ final class AppState {
             link.query["tab"] = tab.isEmpty ? nil : tab
             pages.reportTabs[s] = tab
             section = s
+            if s == .identity, tab == "admins" { path = NavigationPath() }
             pendingDeepLink = link
         case .managementLogs:
             var link = link
@@ -258,7 +259,8 @@ final class AppState {
         switch platformFilter {
         case .macOS: link.query["platform"] = "mac"
         case .windows: link.query["platform"] = "win"
-        case .all: break
+        case .all:
+            if link.target == .report("identity"), link.query["tab"] == "admins" { link.query["platform"] = "all" }
         }
         return link
     }
@@ -361,12 +363,17 @@ final class AppState {
     /// The CSV export of the report on screen, for File › Export CSV; set by the report.
     var reportExport: (() -> Void)?
 
-    /// Copy a link to what is on screen: the web handoff link when the web address is known.
-    func copyCurrentLink() {
+    var currentShareURL: String {
         let link = currentDeepLink
-        let text = configuration.normalizedWebURL.flatMap { link.handoffURL(webBase: $0)?.absoluteString } ?? link.url.absoluteString
+        if link.target == .report("identity"), link.query["tab"] == "admins" {
+            return currentReportURL
+        }
+        return configuration.normalizedWebURL.flatMap { link.handoffURL(webBase: $0)?.absoluteString } ?? link.url.absoluteString
+    }
+
+    func copyCurrentLink() {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        NSPasteboard.general.setString(currentShareURL, forType: .string)
     }
 
     /// The address of what is on screen, for a CSV's provenance column.
