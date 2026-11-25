@@ -115,6 +115,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
     let model: FleetReportModel
     /// Widget filters the report keeps itself, so the Clear Filters button can count and clear them.
     var activeFilterCount: Int = 0
+    var reportTab = ""
     var clearFilters: (() -> Void)? = nil
     var query: [String: String?] = [:]
     var subtitle: String? = nil
@@ -131,7 +132,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
     /// Drawn where the title goes, in place of the section name (Management's two views).
     var titleControl: AnyView? = nil
 
-    init(section: AppSection, model: FleetReportModel, activeFilterCount: Int = 0, clearFilters: (() -> Void)? = nil, query: [String: String?] = [:], subtitle: String? = nil, searchPlaceholder: String = "Search…",
+    init(section: AppSection, model: FleetReportModel, activeFilterCount: Int = 0, reportTab: String = "", clearFilters: (() -> Void)? = nil, query: [String: String?] = [:], subtitle: String? = nil, searchPlaceholder: String = "Search…",
          searchKeys: @escaping (ReportRow) -> [String?] = { [$0.deviceName, $0.serialNumber, $0.inventory.assetTag] },
          @ViewBuilder toolbar: @escaping ([ReportRow]) -> Toolbar = { _ in EmptyView() },
          widgets: (([ReportRow]) -> Widgets)?,
@@ -141,6 +142,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
         self.section = section
         self.model = model
         self.activeFilterCount = activeFilterCount
+        self.reportTab = reportTab
         self.clearFilters = clearFilters
         self.query = query
         self.subtitle = subtitle
@@ -255,7 +257,7 @@ struct FleetReportContainer<Content: View, Toolbar: View, Widgets: View>: View {
         .task(id: appState.configuration) { await model.load(api: appState.api, query: query) }
         .onChange(of: appState.refreshRequested) { _, _ in Task { await model.load(api: appState.api, query: query, force: true) } }
         .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
-            guard let linking, let link = appState.consumeDeepLink(for: section) else { return }
+            guard let linking, let link = appState.consumeDeepLink(for: section, tab: reportTab) else { return }
             var f = ReportLinkFilter(report: linking.report ?? section.rawValue, query: link.query)
             linking.absorb(&f)
             linkFilter = f

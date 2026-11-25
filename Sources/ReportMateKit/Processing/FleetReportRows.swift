@@ -597,6 +597,7 @@ public struct IdentityReportRow: Sendable, Hashable {
     public var ldapBound: Bool
     public var usernames: [String]
     public var adminUsernames: [String]
+    public var adminCreationTimes: [String: Date]
     public var loggedInUsernames: [String]
     public var enrollmentType: String?
     public var trustStatus: String?
@@ -640,6 +641,12 @@ public struct IdentityReportRow: Sendable, Hashable {
         ldapBound = json["ldapBound"].boolish || ds["ldap"]["bound"].boolish
         usernames = json["users"].elements.compactMap { $0["username"].nonEmptyString }
         adminUsernames = json["adminUsernames"].elements.compactMap(\.nonEmptyString)
+        adminCreationTimes = [:]
+        for account in json["adminAccounts"].elements {
+            if let username = account["username"].nonEmptyString, let created = FlexibleDate.parse(account["creationTime"]) {
+                adminCreationTimes[username.lowercased()] = created
+            }
+        }
         loggedInUsernames = json["loggedInUsernames"].elements.compactMap(\.nonEmptyString)
         // The web route classifies every row: with no directory data at all a device is
         // simply a standard, unjoined-to-nothing Mac or PC, not an unknown.

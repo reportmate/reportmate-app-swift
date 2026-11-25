@@ -251,33 +251,19 @@ struct PlatformToggle: View {
     }
 }
 
-/// Copy Link: the web handoff URL when a web dashboard is configured (it
-/// opens the app when installed and the web page otherwise), plus the raw
-/// `reportmate://` and web forms.
-/// One button: copies the link that opens this exact view in the app and falls
-/// back to the web dashboard when a web URL is configured, otherwise the plain
-/// app link. No choices to make; the fallback is a Settings concern.
 struct CopyLinkMenu: View {
     @Environment(AppState.self) private var appState
     @State private var copied = false
 
-    private var link: DeepLink { appState.currentDeepLink }
-    private var webBase: URL? { appState.configuration.normalizedWebURL }
-
     var body: some View {
         Button {
-            if let webBase, let handoff = link.handoffURL(webBase: webBase) { copy(handoff.absoluteString) } else { copy(link.url.absoluteString) }
+            appState.copyCurrentLink()
+            copied = true
+            Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
         } label: {
             Label(copied ? "Copied" : "Copy Link", systemImage: copied ? "checkmark" : "link")
         }
         .help("Copy a link to this exact view (⌘⇧C)")
-    }
-
-    private func copy(_ s: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(s, forType: .string)
-        copied = true
-        Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
     }
 }
 
