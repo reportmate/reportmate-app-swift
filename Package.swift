@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "ReportMate",
     platforms: [
-        .macOS(.v14)
+        .macOS("27.0")
     ],
     products: [
         .library(name: "ReportMateKit", targets: ["ReportMateKit"]),

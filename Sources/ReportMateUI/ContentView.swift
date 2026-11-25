@@ -42,14 +42,12 @@ struct ContentView: View {
     }
 
     private static var systemGlass: Bool {
-        if #available(macOS 26.0, *) { return true } else { return false }
+        return true
     }
 
     @ToolbarContentBuilder
     private func toolbarGroupGap() -> some ToolbarContent {
-        if #available(macOS 26.0, *) {
-            ToolbarSpacer(.fixed, placement: .primaryAction)
-        }
+        ToolbarSpacer(.fixed, placement: .primaryAction)
     }
 
     /// Standalone: the controls live in the window toolbar.
@@ -319,10 +317,6 @@ extension ToolbarContent {
     /// Artwork rather than a control: no glass capsule behind it on macOS 26+.
     @ToolbarContentBuilder
     func withoutToolbarGlass() -> some ToolbarContent {
-        if #available(macOS 26.0, *) {
-            self.sharedBackgroundVisibility(.hidden)
-        } else {
-            self
-        }
+        self.sharedBackgroundVisibility(.hidden)
     }
 }

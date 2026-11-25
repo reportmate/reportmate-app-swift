@@ -108,7 +108,7 @@ fi
 ICON_SOURCE="Sources/ReportMateMac/Resources/ReportMate.icon"
 ICON_OUT=".build/app/actool-out"
 rm -rf "$ICON_OUT"; mkdir -p "$ICON_OUT"
-if [ -d "$ICON_SOURCE" ] && xcrun actool --compile "$ICON_OUT" --platform macosx --minimum-deployment-target 14.0 \
+if [ -d "$ICON_SOURCE" ] && xcrun actool --compile "$ICON_OUT" --platform macosx --minimum-deployment-target 27.0 \
         --app-icon "ReportMate" --output-partial-info-plist "$ICON_OUT/partial-info.plist" --warnings --errors "$ICON_SOURCE" >/dev/null 2>&1 \
    && [ -f "$ICON_OUT/Assets.car" ]; then
     cp "$ICON_OUT/Assets.car" "$APP/Contents/Resources/Assets.car"
