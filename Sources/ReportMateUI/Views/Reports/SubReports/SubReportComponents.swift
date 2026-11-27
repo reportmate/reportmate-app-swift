@@ -148,6 +148,19 @@ struct SubReportScaffold<Selections: View, Status: View, Content: View>: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 ReportTabSwitch(section: section)
+                if section == .security {
+                    Picker("Vulnerability view", selection: Binding(
+                        get: { appState.pages.tab(.security) },
+                        set: { appState.selectReportTab($0, in: .security) }
+                    )) {
+                        Text("CVEs").tag("vulnerabilities")
+                        Text("Threat Detections").tag("threats")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityLabel("Vulnerability view")
+                }
                 Text(description).appFont(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)

@@ -217,7 +217,10 @@ final class AppState {
             guard let s = AppSection(rawValue: name) else { break }
             // `?tab=` picks the module report's tab, as on the web; the tab's own view takes the link.
             var link = link
-            let tab = ReportTabs.normalized(s, link.query["tab"])
+            let requested = link.query["tab"]
+            let isThreats = s == .security && (requested == "threats" || (requested == "vulnerabilities" && link.query["view"] == "threats"))
+            let tab = isThreats ? "threats" : ReportTabs.normalized(s, requested)
+            if isThreats { link.query["view"] = nil }
             link.query["tab"] = tab.isEmpty ? nil : tab
             pages.reportTabs[s] = tab
             section = s
@@ -298,7 +301,9 @@ final class AppState {
             // A module report's tab travels as `?tab=`, the way the web links it.
             var q = linkQuery
             let tab = pages.tab(section)
-            q["tab"] = tab.isEmpty ? nil : tab
+            let isThreats = section == .security && tab == "threats"
+            q["tab"] = isThreats ? "vulnerabilities" : tab.isEmpty ? nil : tab
+            if isThreats { q["view"] = "threats" }
             return DeepLink(target: .report(section.rawValue), query: q)
         }
     }
@@ -344,7 +349,7 @@ final class AppState {
 
     /// Show one of a module report's tabs; its filters start from what it last had.
     func selectReportTab(_ tab: String, in section: AppSection) {
-        guard ReportTabs.tabs(for: section).contains(where: { $0.key == tab }) else { return }
+        guard (section == .security && tab == "threats") || ReportTabs.tabs(for: section).contains(where: { $0.key == tab }) else { return }
         if self.section != section { self.section = section }
         path = NavigationPath()
         linkQuery = [:]
@@ -354,7 +359,9 @@ final class AppState {
     /// Step to the next or previous tab of the module report on screen.
     func stepReportTab(by offset: Int) {
         let tabs = ReportTabs.tabs(for: section)
-        guard currentRoute == nil, !tabs.isEmpty, let i = tabs.firstIndex(where: { $0.key == pages.tab(section) }) else { return }
+        let current = pages.tab(section)
+        let key = section == .security && current == "threats" ? "vulnerabilities" : current
+        guard currentRoute == nil, !tabs.isEmpty, let i = tabs.firstIndex(where: { $0.key == key }) else { return }
         selectReportTab(tabs[(i + offset + tabs.count) % tabs.count].key, in: section)
     }
 

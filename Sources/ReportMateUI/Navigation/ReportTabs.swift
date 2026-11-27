@@ -19,7 +19,9 @@ enum ReportTabs {
             return [Tab(key: "", title: "Device Management Service"), Tab(key: "profiles", title: "Configuration Profiles"),
                     Tab(key: "preferences", title: "Managed Preferences"), Tab(key: "logs", title: "Management Tools Logs")]
         case .security:
-            return [Tab(key: "", title: "Fleet Security"), Tab(key: "vulnerabilities", title: "Vulnerabilities"), Tab(key: "threats", title: "Threat Detections")]
+            return [Tab(key: "", title: "Security")]
+                + SecurityReportView.Category.allCases.map { Tab(key: $0.rawValue, title: $0.title) }
+                + [Tab(key: "vulnerabilities", title: "Vulnerabilities")]
         case .identity:
             return [Tab(key: "", title: "Identity & Users"), Tab(key: "posture", title: "Sign-in & Recovery Posture"),
                     Tab(key: "admins", title: "Admins Report")]
@@ -37,7 +39,8 @@ enum ReportTabs {
     }
 
     static func title(_ section: AppSection, _ key: String) -> String {
-        tabs(for: section).first { $0.key == key }?.title ?? section.title
+        if section == .security && key == "threats" { return "Vulnerabilities" }
+        return tabs(for: section).first { $0.key == key }?.title ?? section.title
     }
 }
 
@@ -48,14 +51,23 @@ struct ReportTabSwitch: View {
     let section: AppSection
 
     private var selection: Binding<String> {
-        Binding(get: { appState.pages.tab(section) }, set: { appState.selectReportTab($0, in: section) })
+        Binding(get: {
+            let tab = appState.pages.tab(section)
+            return section == .security && tab == "threats" ? "vulnerabilities" : tab
+        }, set: { appState.selectReportTab($0, in: section) })
     }
 
     var body: some View {
         let tabs = ReportTabs.tabs(for: section)
-        ViewThatFits(in: .horizontal) {
-            picker(tabs).pickerStyle(.segmented).controlSize(.large)
-            picker(tabs).pickerStyle(.menu).controlSize(.large)
+        Group {
+            if section == .security {
+                picker(tabs).pickerStyle(.menu).controlSize(.large)
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    picker(tabs).pickerStyle(.segmented).controlSize(.large)
+                    picker(tabs).pickerStyle(.menu).controlSize(.large)
+                }
+            }
         }
         .labelsHidden()
         .fixedSize()
@@ -87,6 +99,8 @@ struct ModuleReportHost<Main: View>: View {
         case (.management, "logs"): ManagementLogsReportView()
         case (.security, "vulnerabilities"): VulnerabilitiesReportPage()
         case (.security, "threats"): ThreatsReportPage()
+        case (.security, let key):
+            SecurityReportView(category: SecurityReportView.Category(rawValue: key)).id(key)
         case (.identity, "posture"): PostureReportPage()
         case (.identity, "admins"): IdentityReportView(showAdminsReport: true)
         default: main

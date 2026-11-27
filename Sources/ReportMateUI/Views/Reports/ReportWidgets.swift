@@ -6,10 +6,18 @@ import ReportMateKit
 /// A titled widget box in a report's Widgets accordion.
 struct ReportWidgetBox<Content: View>: View {
     let title: String
+    var openReport: (() -> Void)? = nil
     @ViewBuilder var content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).appFont(.callout, weight: .medium).foregroundStyle(.secondary)
+            if let openReport {
+                Button(action: openReport) {
+                    Text(title).appFont(.callout, weight: .medium).foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text(title).appFont(.callout, weight: .medium).foregroundStyle(.secondary)
+            }
             content
         }
         .padding(12)
@@ -114,10 +122,11 @@ struct MiniDonutWidget: View {
     @Binding var selected: String?
     /// Names the population when the figure describes only part of the fleet.
     var subtitle: String? = nil
+    var openReport: (() -> Void)? = nil
 
     var body: some View {
         let total = data.reduce(0) { $0 + $1.value }
-        ReportWidgetBox(title: title) {
+        ReportWidgetBox(title: title, openReport: openReport) {
             if let subtitle { Text(subtitle).appFont(.caption2).foregroundStyle(.secondary).padding(.bottom, 4) }
             if total == 0 {
                 Text("No data").appFont(.caption).foregroundStyle(.tertiary)
