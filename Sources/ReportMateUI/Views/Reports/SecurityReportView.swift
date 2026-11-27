@@ -8,6 +8,66 @@ struct SecurityReportView: View {
     /// Kept by `AppState` across navigation, so a return shows the last rows at once.
     private var model: FleetReportModel { appState.pages.report("/security") }
 
+    enum Category: String, CaseIterable {
+        case encryption, protection, detection, firewall, tampering, access, certificates
+
+        var title: String { rawValue.capitalized }
+    }
+
+    let category: Category?
+
+    init(category: Category? = nil) {
+        self.category = category
+        _certSearchExpanded = State(initialValue: category == .certificates)
+    }
+
+    private func shows(_ value: Category?) -> Bool { category == nil || category == value }
+
+    private func openReport(_ tab: String) -> (() -> Void)? {
+        guard category == nil else { return nil }
+        return { appState.selectReportTab(tab, in: .security) }
+    }
+
+    private struct Detail {
+        let title: String
+        let path: String
+        var nested: String? = nil
+
+        func value(in row: SecurityReportRow) -> String {
+            let value = nested.map { row.json[path][$0] } ?? row.json[path]
+            return value.nonEmptyString ?? value.int.map(String.init) ?? "Not reported"
+        }
+    }
+
+    private var details: [Detail] {
+        switch category {
+        case .protection:
+            [Detail(title: "Product", path: "antivirusName"), Detail(title: "Version", path: "antivirusVersion"),
+             Detail(title: "Last scan", path: "antivirusLastScan")]
+        case .detection:
+            [Detail(title: "Blocked (30 days)", path: "detectionsBlocked30d"), Detail(title: "Cleaned (30 days)", path: "detectionsCleaned30d"),
+             Detail(title: "Last detection", path: "lastThreatDetectedAt")]
+        case .access:
+            [Detail(title: "SSH configuration", path: "secureShell", nested: "statusDisplay")]
+        case .certificates:
+            [Detail(title: "Reported certificates", path: "certificateCount"), Detail(title: "Expired", path: "expiredCertCount"),
+             Detail(title: "Expiring soon", path: "expiringSoonCertCount")]
+        default: []
+        }
+    }
+
+    private func status(_ row: SecurityReportRow, in category: Category) -> String {
+        switch category {
+        case .encryption: row.encryptionLabel
+        case .protection: row.protectionLabel
+        case .detection: row.detectionLabel
+        case .firewall: row.firewallLabel
+        case .tampering: row.tamperSummary
+        case .access: row.remoteLabel
+        case .certificates: row.certLabel(includingSystemManaged: showSystemManaged)
+        }
+    }
+
     enum Column { case device, encryption, protection, detection, firewall, tampering, remote, certificates, cve }
     @State private var sortColumn: Column = .device
     @State private var ascending = true
@@ -77,7 +137,7 @@ struct SecurityReportView: View {
             case .device: av = a.row.deviceName.lowercased(); bv = b.row.deviceName.lowercased()
             case .encryption: av = a.s.encryptionEnabled ? "1" : "0"; bv = b.s.encryptionEnabled ? "1" : "0"
             case .protection: av = a.s.protectionLabel; bv = b.s.protectionLabel
-            case .detection: av = pad(a.s.detectionCount); bv = pad(b.s.detectionCount)
+            case .detection: av = pad(category == .detection ? a.s.activeThreatCount : a.s.detectionCount); bv = pad(category == .detection ? b.s.activeThreatCount : b.s.detectionCount)
             case .firewall: av = a.s.firewallEnabled ? "1" : "0"; bv = b.s.firewallEnabled ? "1" : "0"
             case .tampering: av = a.s.tamperLabel; bv = b.s.tamperLabel
             case .remote: av = a.s.remoteLabel; bv = b.s.remoteLabel
@@ -90,57 +150,46 @@ struct SecurityReportView: View {
 
     var body: some View {
         FleetReportContainer(
-            section: .security, model: model, activeFilterCount: widgetFilters.count, clearFilters: clearWidgetFilters, subtitle: "Security posture across the fleet", searchPlaceholder: "Search devices...",
+            section: .security, model: model, activeFilterCount: widgetFilters.count, reportTab: category?.rawValue ?? "",
+            clearFilters: clearWidgetFilters, subtitle: category.map { "\($0.title) across the fleet" } ?? "Security posture across the fleet",
+            searchPlaceholder: "Search devices...",
             searchKeys: { row in
                 let d = SecurityReportRow(json: row.json, platform: row.platform)
                 return [row.deviceName, row.serialNumber, d.antivirusName, d.autoLoginUser]
             },
             toolbar: { rows in
-                CSVExportButton(filename: "security-report", headers: ["Device Name", "Serial Number", "Platform", "Encryption", "Protection Name", "Protection Status", "Detections", "Tampering", "Firewall", "Access", "Expired Certs", "Expiring Certs", "Vulnerabilities", "Critical Vulnerabilities"], rows: {
-                    filtered(rows).map { p in
-                        let d = p.s
-                        return [p.row.deviceName, p.row.serialNumber, p.row.platform.displayName, d.encryptionLabel, d.antivirusName ?? "", d.protectionLabel,
-                                d.detectionCount > 0 ? "\(d.detectionCount) threat\(d.detectionCount == 1 ? "" : "s")" : "Clean", d.tamperSummary, d.firewallEnabled ? "On" : "Off",
-                                [d.sshRunning ? "SSH" : nil, d.isWindows && d.rdpEnabled ? "RDP" : nil].compactMap { $0 }.joined(separator: "+").isEmpty ? "None" : [d.sshRunning ? "SSH" : nil, d.isWindows && d.rdpEnabled ? "RDP" : nil].compactMap { $0 }.joined(separator: "+"),
-                                String(d.expiredCertCount), String(d.expiringSoonCertCount), String(d.cveCount), String(d.criticalCveCount)]
-                    }
-                }, label: "Export")
+                if let category {
+                    CSVExportButton(filename: "security-\(category.rawValue)",
+                                    headers: ["Device Name", "Serial Number", "Platform", category.title] + details.map(\.title),
+                                    rows: {
+                        filtered(rows).map { p in
+                            [p.row.deviceName, p.row.serialNumber, p.row.platform.displayName, status(p.s, in: category)]
+                                + details.map { $0.value(in: p.s) }
+                        }
+                    }, label: "Export")
+                } else {
+                    CSVExportButton(filename: "security-report", headers: ["Device Name", "Serial Number", "Platform", "Encryption", "Protection Name", "Protection Status", "Detections", "Tampering", "Firewall", "Access", "Expired Certs", "Expiring Certs", "Vulnerabilities", "Critical Vulnerabilities"], rows: {
+                        filtered(rows).map { p in
+                            let d = p.s
+                            return [p.row.deviceName, p.row.serialNumber, p.row.platform.displayName, d.encryptionLabel, d.antivirusName ?? "", d.protectionLabel,
+                                    d.detectionCount > 0 ? "\(d.detectionCount) threat\(d.detectionCount == 1 ? "" : "s")" : "Clean", d.tamperSummary, d.firewallEnabled ? "On" : "Off",
+                                    [d.sshRunning ? "SSH" : nil, d.isWindows && d.rdpEnabled ? "RDP" : nil].compactMap { $0 }.joined(separator: "+").isEmpty ? "None" : [d.sshRunning ? "SSH" : nil, d.isWindows && d.rdpEnabled ? "RDP" : nil].compactMap { $0 }.joined(separator: "+"),
+                                    String(d.expiredCertCount), String(d.expiringSoonCertCount), String(d.cveCount), String(d.criticalCveCount)]
+                        }
+                    }, label: "Export")
+                }
             },
             widgets: { rows in widgets(rows.map(s)) },
             linking: linking
         ) { rows in
             VStack(spacing: 0) {
                 ActiveFiltersBar(labels: widgetFilters, clear: clearWidgetFilters)
-                certificateSearch
+                if shows(.certificates) { certificateSearch }
                 table(filtered(rows))
             }
         }
-        .onChange(of: appState.pendingDeepLink, initial: true) { _, _ in
-            guard let link = appState.consumeDeepLink(for: .security) else { return }
-            applyDeepLink(link.query)
-        }
-        .onChange(of: linkQuery, initial: true) { _, q in appState.linkQuery = q }
         .onChange(of: appState.showSystemManagedCertificates) { _, _ in
             if certSearched { Task { await searchCertificates(select: selectedCertName) } }
-        }
-    }
-
-    /// The web page's parameters: `certs=expired|expiring` picks a slice of the
-    /// Certificates donut, `certSearch` and `certStatus` run a search, and
-    /// `certClass=all` shows system-managed certificates.
-    private func applyDeepLink(_ query: [String: String]) {
-        switch query["certs"]?.lowercased() {
-        case "expired": certFilter = "Has Expired"
-        case "expiring": certFilter = "Expiring Soon"
-        default: break
-        }
-        if query["certClass"]?.lowercased() == "all" { appState.showSystemManagedCertificates = true }
-        let status = query["certStatus"]?.lowercased()
-        if let status, ["all", "valid", "expiring", "expired"].contains(status) { certStatus = status }
-        if let search = query["certSearch"] { certQuery = search }
-        if query["certSearch"] != nil || (status != nil && status != "all") {
-            certSearchExpanded = true
-            Task { await searchCertificates(select: query["certSearch"]) }
         }
     }
 
@@ -148,7 +197,7 @@ struct SecurityReportView: View {
     /// expiring certificates, exploited CVEs) narrow the rows. `certSearch` runs the
     /// certificate search and filters the table to that certificate.
     private var linking: ReportLinking {
-        var q: [String: String] = [:]
+        var q = linkQuery
         if encryptionFilter == "Not Encrypted" { q["encryption"] = "off" }
         if firewallFilter == "Disabled" { q["firewall"] = "off" }
         if detectionFilter == "Threats Detected" { q["threats"] = "1" }
@@ -166,16 +215,15 @@ struct SecurityReportView: View {
             if f.params["threats"] == "1" { _ = f.take("threats"); detectionFilter = "Threats Detected" }
             if f.params["certs"] == "expired" { _ = f.take("certs"); certFilter = "Has Expired" }
             if f.params["cve"] == "critical" { _ = f.take("cve"); cveFilter = "Critical" }
-            let name = f.take("certSearch").joined(separator: ",")
-            let status = f.take("certStatus").first
-            if !name.isEmpty {
-                certQuery = name
-                certStatus = status ?? "all"
+            if f.take("certClass").first == "all" { appState.showSystemManagedCertificates = true }
+            let name = f.params["certSearch"] ?? ""
+            f.params["certSearch"] = nil
+            let status = f.take("certStatus").first ?? "all"
+            certQuery = name
+            certStatus = ["all", "valid", "expiring", "expired"].contains(status) ? status : "all"
+            if shows(.certificates), !name.isEmpty || certStatus != "all" {
                 certSearchExpanded = true
-                Task {
-                    await searchCertificates()
-                    selectedCertName = certGroups.first { $0.commonName == name }?.commonName ?? certGroups.first?.commonName
-                }
+                Task { await searchCertificates(select: name.isEmpty ? nil : name) }
             }
         }, matches: { row, f in f.matches(security: SecurityReportRow(json: row.json, platform: row.platform)) }, widgetQuery: q)
     }
@@ -186,19 +234,35 @@ struct SecurityReportView: View {
 
     private func widgets(_ all: [SecurityReportRow]) -> some View {
         let green = Color.green, red = Color.red, amber = Color.orange, gray = Color.secondary.opacity(0.5), blue = Color.blue
-        return UniformGrid(minColumnWidth: 230, maxColumns: 8, spacing: 12) {
-            MiniDonutWidget(title: "Encryption", data: donutData(all, \.encryptionLabel), colors: ["Encrypted": green, "Not Encrypted": red], selected: $encryptionFilter)
+        return UniformGrid(minColumnWidth: 230, maxColumns: category == nil ? 8 : 1, spacing: 12) {
+            if shows(.encryption) {
+                MiniDonutWidget(title: "Encryption", data: donutData(all, \.encryptionLabel), colors: ["Encrypted": green, "Not Encrypted": red], selected: $encryptionFilter, openReport: openReport("encryption"))
+            }
             // The API carries antivirus fields for Windows only (false on a Mac), so
             // the Protection figure describes the devices that report it, not the fleet.
             let protectionRows = all.filter(\.reportsProtection)
-            MiniDonutWidget(title: "Protection", data: donutData(protectionRows, \.protectionLabel), colors: ["Current": green, "Out of Date": amber, "Disabled": red], selected: $protectionFilter,
-                            subtitle: protectionRows.count == all.count ? nil : "\(protectionRows.count) of \(all.count) devices report antivirus")
-            MiniDonutWidget(title: "Detection", data: donutData(all, \.detectionLabel), colors: ["Clean": green, "Threats Detected": red], selected: $detectionFilter)
-            MiniDonutWidget(title: "Firewall", data: donutData(all, \.firewallLabel), colors: ["Enabled": green, "Disabled": gray], selected: $firewallFilter)
-            MiniDonutWidget(title: "Tampering", data: donutData(all, \.tamperLabel), colors: ["Secured": green, "Insecure": red], selected: $tamperingFilter)
-            MiniDonutWidget(title: "Access", data: donutData(all, \.remoteLabel), colors: ["SSH + RDP": blue, "SSH Only": green, "RDP Only": amber, "SSH Enabled": green, "Disabled": gray], selected: $remoteFilter)
-            MiniDonutWidget(title: "Certificates", data: donutData(all) { $0.certLabel(includingSystemManaged: showSystemManaged) }, colors: ["Valid": green, "Expiring Soon": amber, "Has Expired": red], selected: $certFilter)
-            MiniDonutWidget(title: "Vulnerabilities", data: donutData(all, \.cveLabel), colors: ["None": green, "Has CVEs": amber, "Critical": red], selected: $cveFilter)
+            if shows(.protection) {
+                MiniDonutWidget(title: "Protection", data: donutData(protectionRows, \.protectionLabel), colors: ["Current": green, "Out of Date": amber, "Disabled": red], selected: $protectionFilter,
+                            subtitle: protectionRows.count == all.count ? nil : "\(protectionRows.count) of \(all.count) devices report antivirus", openReport: openReport("protection"))
+            }
+            if shows(.detection) {
+                MiniDonutWidget(title: "Detection", data: donutData(all, \.detectionLabel), colors: ["Clean": green, "Threats Detected": red], selected: $detectionFilter, openReport: openReport("detection"))
+            }
+            if shows(.firewall) {
+                MiniDonutWidget(title: "Firewall", data: donutData(all, \.firewallLabel), colors: ["Enabled": green, "Disabled": gray], selected: $firewallFilter, openReport: openReport("firewall"))
+            }
+            if shows(.tampering) {
+                MiniDonutWidget(title: "Tampering", data: donutData(all, \.tamperLabel), colors: ["Secured": green, "Insecure": red], selected: $tamperingFilter, openReport: openReport("tampering"))
+            }
+            if shows(.access) {
+                MiniDonutWidget(title: "Access", data: donutData(all, \.remoteLabel), colors: ["SSH + RDP": blue, "SSH Only": green, "RDP Only": amber, "SSH Enabled": green, "Disabled": gray], selected: $remoteFilter, openReport: openReport("access"))
+            }
+            if shows(.certificates) {
+                MiniDonutWidget(title: "Certificates", data: donutData(all) { $0.certLabel(includingSystemManaged: showSystemManaged) }, colors: ["Valid": green, "Expiring Soon": amber, "Has Expired": red], selected: $certFilter, openReport: openReport("certificates"))
+            }
+            if shows(nil) {
+                MiniDonutWidget(title: "Vulnerabilities", data: donutData(all, \.cveLabel), colors: ["None": green, "Has CVEs": amber, "Critical": red], selected: $cveFilter, openReport: openReport("vulnerabilities"))
+            }
         }
     }
 
@@ -314,57 +378,80 @@ struct SecurityReportView: View {
     private func table(_ pairs: [(row: ReportRow, s: SecurityReportRow)]) -> some View {
         ReportTable {
             ReportSortHeader(title: "Device", column: .device, sortColumn: $sortColumn, ascending: $ascending, width: 200)
-            ReportSortHeader(title: "Encryption", column: .encryption, sortColumn: $sortColumn, ascending: $ascending, width: 110)
-            ReportSortHeader(title: "Protection", column: .protection, sortColumn: $sortColumn, ascending: $ascending, width: 90)
-            ReportSortHeader(title: "Detection", column: .detection, sortColumn: $sortColumn, ascending: $ascending, width: 90)
-            ReportSortHeader(title: "Tampering", column: .tampering, sortColumn: $sortColumn, ascending: $ascending)
-            ReportSortHeader(title: "Firewall", column: .firewall, sortColumn: $sortColumn, ascending: $ascending, width: 70)
-            ReportSortHeader(title: "Access", column: .remote, sortColumn: $sortColumn, ascending: $ascending, width: 100)
-            ReportSortHeader(title: "Certs", column: .certificates, sortColumn: $sortColumn, ascending: $ascending, width: 80)
-            ReportSortHeader(title: "Vulnerabilities", column: .cve, sortColumn: $sortColumn, ascending: $ascending, width: 110)
+            if shows(.encryption) { ReportSortHeader(title: "Encryption", column: .encryption, sortColumn: $sortColumn, ascending: $ascending, width: 110) }
+            if shows(.protection) { ReportSortHeader(title: "Protection", column: .protection, sortColumn: $sortColumn, ascending: $ascending, width: 90) }
+            if shows(.detection) { ReportSortHeader(title: "Detection", column: .detection, sortColumn: $sortColumn, ascending: $ascending, width: 90) }
+            if shows(.tampering) { ReportSortHeader(title: "Tampering", column: .tampering, sortColumn: $sortColumn, ascending: $ascending) }
+            if shows(.firewall) { ReportSortHeader(title: "Firewall", column: .firewall, sortColumn: $sortColumn, ascending: $ascending, width: 70) }
+            if shows(.access) { ReportSortHeader(title: "Access", column: .remote, sortColumn: $sortColumn, ascending: $ascending, width: 100) }
+            if shows(.certificates) { ReportSortHeader(title: "Certs", column: .certificates, sortColumn: $sortColumn, ascending: $ascending, width: 80) }
+            if shows(nil) { ReportSortHeader(title: "Vulnerabilities", column: .cve, sortColumn: $sortColumn, ascending: $ascending, width: 110) }
+            ForEach(details, id: \.title) { detail in
+                Text(detail.title).appFont(.caption, weight: .medium).frame(width: 150, alignment: .leading)
+            }
         } rows: {
             if pairs.isEmpty { ReportEmptyRows(title: "No security records found", systemImage: "lock") }
             ForEach(pairs, id: \.row.id) { pair in
                 let d = pair.s
                 HStack(alignment: .top, spacing: 12) {
                     ReportDeviceCell(row: pair.row, tab: .security).frame(width: 200, alignment: .leading)
-                    Pill("\(d.isWindows ? "BitLocker" : "FileVault") \(d.encryptionEnabled ? "On" : "Off")", tone: d.encryptionEnabled ? .green : .red).frame(width: 110, alignment: .leading)
-                    Pill(d.antivirusEnabled ? (d.antivirusUpToDate ? "Current" : "Outdated") : (d.reportsProtection ? "Disabled" : "—"), tone: d.antivirusEnabled ? (d.antivirusUpToDate ? .green : .orange) : (d.reportsProtection ? .red : .gray)).frame(width: 90, alignment: .leading)
-                    Pill(d.detectionCount == 0 ? "Clean" : "\(d.detectionCount) threat\(d.detectionCount == 1 ? "" : "s")", tone: d.detectionCount == 0 ? .green : .red).frame(width: 90, alignment: .leading)
-                    FlowLayout(spacing: 4) {
-                        if d.isWindows {
-                            Pill("TPM \(d.tpmPresent && d.tpmEnabled ? "On" : "Off")", tone: d.tpmPresent && d.tpmEnabled ? .green : .red)
-                        } else if let sip = d.sipEnabled {
-                            Pill("SIP \(sip ? "On" : "Off")", tone: sip ? .green : .red)
+                    if shows(.encryption) {
+                        Pill("\(d.isWindows ? "BitLocker" : "FileVault") \(d.encryptionEnabled ? "On" : "Off")", tone: d.encryptionEnabled ? .green : .red).frame(width: 110, alignment: .leading)
+                    }
+                    if shows(.protection) {
+                        Pill(d.antivirusEnabled ? (d.antivirusUpToDate ? "Current" : "Outdated") : (d.reportsProtection ? "Disabled" : "—"), tone: d.antivirusEnabled ? (d.antivirusUpToDate ? .green : .orange) : (d.reportsProtection ? .red : .gray)).frame(width: 90, alignment: .leading)
+                    }
+                    if shows(.detection) {
+                        let count = category == .detection ? d.activeThreatCount : d.detectionCount
+                        Pill(count == 0 ? "Clean" : "\(count) threat\(count == 1 ? "" : "s")", tone: count == 0 ? .green : .red).frame(width: 90, alignment: .leading)
+                    }
+                    if shows(.tampering) {
+                        FlowLayout(spacing: 4) {
+                            if d.isWindows {
+                                Pill("TPM \(d.tpmPresent && d.tpmEnabled ? "On" : "Off")", tone: d.tpmPresent && d.tpmEnabled ? .green : .red)
+                            } else if let sip = d.sipEnabled {
+                                Pill("SIP \(sip ? "On" : "Off")", tone: sip ? .green : .red)
+                            }
+                            Pill("SB \(d.secureBootEnabled ? "On" : "Off")", tone: d.secureBootEnabled ? .green : .red)
+                            if d.firmwarePasswordStatus == "Set" || d.firmwarePasswordStatus == "Not Set" {
+                                Pill("FW \(d.firmwarePasswordStatus == "Set" ? "On" : "Off")", tone: d.firmwarePasswordStatus == "Set" ? .green : .red)
+                            }
                         }
-                        Pill("SB \(d.secureBootEnabled ? "On" : "Off")", tone: d.secureBootEnabled ? .green : .red)
-                        if d.firmwarePasswordStatus == "Set" || d.firmwarePasswordStatus == "Not Set" {
-                            Pill("FW \(d.firmwarePasswordStatus == "Set" ? "On" : "Off")", tone: d.firmwarePasswordStatus == "Set" ? .green : .red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if shows(.firewall) {
+                        Pill(d.firewallEnabled ? "On" : "Off", tone: .gray).frame(width: 70, alignment: .leading)
+                    }
+                    if shows(.access) {
+                        HStack(spacing: 4) {
+                            if d.sshRunning { Pill("SSH", tone: .gray) }
+                            if d.isWindows, d.rdpEnabled { Pill("RDP", tone: .gray) }
+                            if !d.sshRunning, !(d.isWindows && d.rdpEnabled) { Text("None").appFont(.caption).foregroundStyle(.tertiary) }
                         }
+                        .frame(width: 100, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    Pill(d.firewallEnabled ? "On" : "Off", tone: .gray).frame(width: 70, alignment: .leading)
-                    HStack(spacing: 4) {
-                        if d.sshRunning { Pill("SSH", tone: .gray) }
-                        if d.isWindows, d.rdpEnabled { Pill("RDP", tone: .gray) }
-                        if !d.sshRunning, !(d.isWindows && d.rdpEnabled) { Text("None").appFont(.caption).foregroundStyle(.tertiary) }
-                    }
-                    .frame(width: 100, alignment: .leading)
-                    HStack(spacing: 4) {
-                        if d.expiredCertCount > 0 { Pill("\(d.expiredCertCount)", tone: .red) }
-                        if d.expiringSoonCertCount > 0 { Pill("\(d.expiringSoonCertCount)", tone: .orange) }
-                        if d.expiredCertCount == 0, d.expiringSoonCertCount == 0 { Text("OK").appFont(.caption).foregroundStyle(.green) }
-                    }
-                    .frame(width: 80, alignment: .leading)
-                    HStack(spacing: 4) {
-                        if d.cveCount > 0 {
-                            if d.criticalCveCount > 0 { Pill("\(d.criticalCveCount)C", tone: .red) }
-                            Text("\(d.cveCount)").appFont(.caption).foregroundStyle(.secondary)
-                        } else {
-                            Text("None").appFont(.caption).foregroundStyle(.green)
+                    if shows(.certificates) {
+                        HStack(spacing: 4) {
+                            if d.expiredCertCount > 0 { Pill("\(d.expiredCertCount)", tone: .red) }
+                            if d.expiringSoonCertCount > 0 { Pill("\(d.expiringSoonCertCount)", tone: .orange) }
+                            if d.expiredCertCount == 0, d.expiringSoonCertCount == 0 { Text("OK").appFont(.caption).foregroundStyle(.green) }
                         }
+                        .frame(width: 80, alignment: .leading)
                     }
-                    .frame(width: 110, alignment: .leading)
+                    if shows(nil) {
+                        HStack(spacing: 4) {
+                            if d.cveCount > 0 {
+                                if d.criticalCveCount > 0 { Pill("\(d.criticalCveCount)C", tone: .red) }
+                                Text("\(d.cveCount)").appFont(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Text("None").appFont(.caption).foregroundStyle(.green)
+                            }
+                        }
+                        .frame(width: 110, alignment: .leading)
+                    }
+                    ForEach(details, id: \.title) { detail in
+                        Text(detail.value(in: d)).appFont(.caption).frame(width: 150, alignment: .leading)
+                    }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 8)
                 Divider()

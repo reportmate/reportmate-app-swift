@@ -46,7 +46,7 @@ public struct ReportLinkFilter: Sendable, Hashable {
     public static let parameters: [String: [String]] = [
         "devices": ["status", "search", "platform", "tool", "level"],
         "system": ["osVersion", "uptime", "pending", "deferred", "edition", "os", "patch"],
-        "security": ["encryption", "firewall", "antivirus", "sip", "secureBoot", "threats", "certs", "cve", "certSearch", "certStatus"],
+        "security": ["encryption", "firewall", "antivirus", "sip", "secureBoot", "threats", "certs", "cve", "certSearch", "certStatus", "certClass"],
         "management": ["provider", "enrolled", "enrollmentType", "platform", "lastSeen"],
         "hardware": ["arch", "storage", "memory", "type", "processor", "capacity", "platform"],
         "installs": ["filter", "item", "stale", "view", "agent"],
